@@ -1,0 +1,8 @@
+
+# Artefatos locais do Herdr. Snapshots de revisao e estado de
+# migracao nascem por rodada e nao devem versionar.
+/.herdr/review/
+/.herdr/ask/
+/.herdr/handoff/
+/.herdr/migration.lock
+/.herdr/migration-state.json
