@@ -1,0 +1,10 @@
+error[E0624]: associated function `new` is private
+ --> tests/ui/slots_sem_par.rs:9:25
+  |
+9 |     let _slots = Slots::new(experts, 256, 128, 1, s, 7);
+  |                         ^^^ private associated function
+  |
+ ::: src/cache/core.rs
+  |
+  |     fn new(experts: &[(&[bf16], &[bf16])], hidden: usize, inter: usize, n_slots: usize, compute: Arc<Stream>, owner: u64) -> Result<Self, Error> {
+  |     -------------------------------------------------------------------------------------------------------------------------------------------- private associated function defined here

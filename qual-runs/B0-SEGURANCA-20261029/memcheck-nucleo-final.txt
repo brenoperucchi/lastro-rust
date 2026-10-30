@@ -1,0 +1,18 @@
+$ /opt/cuda/bin/compute-sanitizer --version
+NVIDIA (R) Compute Sanitizer
+Copyright (c) 2020-2026 NVIDIA Corporation
+Version 2026.2.1.0 (build 38334959) (public-release)
+$ /opt/cuda/bin/compute-sanitizer --tool memcheck target/release/deps/moe_rt-ee3e24ae44ca5966 cache --nocapture --test-threads=1
+========= COMPUTE-SANITIZER
+
+running 4 tests
+test cache::core::tests::conferencias_em_tempo_de_execucao ... ok
+test cache::core::tests::copia_em_segundo_plano_espera_a_leitura_do_slot ... janela forçada: tipada igual à referência (expert antigo) em 20/20; mutante leu o expert novo em 20/20
+ok
+test cache::core::tests::protocolo_custa_pouco_no_host ... protocolo no host: 0.560 µs por camada (4 eventos consultados, 399996 acertos em 100000 camadas, k = 8, 64 slots)
+ok
+test cache::core::tests::slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.87s
+
+========= ERROR SUMMARY: 0 errors

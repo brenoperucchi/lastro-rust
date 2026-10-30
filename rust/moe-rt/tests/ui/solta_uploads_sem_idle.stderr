@@ -1,0 +1,9 @@
+error[E0499]: cannot borrow `*epoch` as mutable more than once at a time
+  --> tests/ui/solta_uploads_sem_idle.rs:10:14
+   |
+ 9 |     let (_lv, mut idle) = epoch.router_logits(router, xd)?;
+   |                           ----- first mutable borrow occurs here
+10 |     let _h = epoch.add_cpu_out(h, y, 1.0)?;
+   |              ^^^^^ second mutable borrow occurs here
+11 |     idle.release_uploads();
+   |     ---- first borrow later used here

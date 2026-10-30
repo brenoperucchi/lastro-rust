@@ -1,0 +1,30 @@
+M2a: granite-3.1-3b-a800m-instruct; conversas [4, 5, 6, 7] (3814 tokens); 1280 experts de 4.72 MB; CPU com 8 threads; backlog 4; admissão evento
+
+política   orçam. slots |  ms/tok mediana   tok/s | acerto    CPU  cóp.s cóp.bg | roteador   CPU ms |   rot.igual |  sim ms/acerto | logits texto-a / conversas
+resident     100%  1280 |    5.06    4.93   197.8 | 100.0%   0.0%   0.00   0.00 |      NaN     0.00 | 122047/122048 |                | 2.9e-6 / referência
+lru_sync      25%   320 |   36.21   36.03    27.6 |  47.7%   0.0% 133.88   0.00 |    32.79     0.00 | 122047/122048 |                | 2.9e-6 / 0.0e0
+lru_sync      50%   640 |   17.02   15.52    58.8 |  79.7%   0.0%  51.96   0.00 |    14.57     0.00 | 122047/122048 |                | 2.9e-6 / 0.0e0
+lru_cpu       25%   320 |   13.47   13.26    74.2 |  50.1%  49.9%   0.00  42.79 |     1.85     8.97 | 122048/122048 |                | 3.5e-6 / 6.6e-6
+lru_cpu       50%   640 |    8.50    8.24   117.6 |  80.3%  19.7%   0.00  28.24 |     2.24     3.62 | 122048/122048 |                | 3.8e-6 / 5.9e-6
+
+mediana de ms/token por posição no contexto (tokens na faixa):
+política   orçam. |          0-256        256-512       512-1024          1024+
+resident     100% |    4.73 (1024)    4.85 (1024)    4.96 (1611)    5.05 ( 155)
+lru_sync      25% |   37.35 (1024)   36.83 (1024)   34.87 (1611)   33.96 ( 155)
+lru_sync      50% |   16.25 (1024)   14.20 (1024)   15.97 (1611)   16.78 ( 155)
+lru_cpu       25% |   13.51 (1024)   13.00 (1024)   13.27 (1611)   13.17 ( 155)
+lru_cpu       50% |    8.19 (1024)    7.88 (1024)    8.47 (1611)    8.60 ( 155)
+
+contagens exatas nas conversas e hash dos logits (texto-a e conversas):
+política   orçam. |   acertos     cóp.s    cóp.bg  descart.       CPU | hash
+resident     100% |         –         –         –         –         – | 162ca54cd7716a68
+lru_sync      25% |    465777    510607         0         0         0 | 162ca54cd7716a68
+lru_sync      50% |    778193    198191         0         0         0 | 162ca54cd7716a68
+lru_cpu       25% |    488692         0    163190    324502    487692 | 30b6b0b4b70c32dd
+lru_cpu       50% |    784428         0    107694     84262    191956 | e515459161d10702
+
+ms/tok e tok/s: média nas conversas, mediana ao lado; acerto e CPU: fração dos experts pedidos; cóp.s e cóp.bg: cópias por token;
+roteador: espera do host pela leitura dos logits, por token (inclui o cálculo da GPU até ali); CPU ms: experts na CPU por token;
+sim: ms/token e acerto previstos pelo simulador para o mesmo orçamento e política (residente: 1000/tg_gpu do llama.cpp).
+logits: maior erro relativo (L2) contra o transformers no texto-a e, nas conversas, contra a passada residente; limite 1e-4, argmax igual;
+resultado: logits dentro da tolerância em todas as configurações

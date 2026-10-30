@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+  --> tests/ui/lanca_slot_carregando.rs:14:25
+   |
+14 |     epoch.launch_expert(carregando, xd, 1.0)?;
+   |           ------------- ^^^^^^^^^^ expected `ResidentSlot<'_>`, found `LoadingSlot`
+   |           |
+   |           arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/cache/core.rs
+   |
+   |     pub fn launch_expert(&mut self, slot: ResidentSlot<'_>, xd: &Tensor<f32>, g: f32) -> Result<(), Error> {
+   |            ^^^^^^^^^^^^^

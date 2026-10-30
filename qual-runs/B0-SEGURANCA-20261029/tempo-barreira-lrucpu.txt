@@ -1,0 +1,5 @@
+lru_cpu em barreira (mesmo trabalho): ms/token média | roteador | CPU ms; antes inclui as 2 execuções do rodar-antes.sh
+1b 25% | pares antes 15.51 15.92 15.73 | final 15.99 15.69 15.69 | mediana 15.73 → 15.69 (-0.3%) | CPU ms 5.35 → 5.32 | rot 0.92 → 0.91 | antes do rodar-antes 15.66 15.82, depois 15.90
+1b 50% | pares antes 9.55 9.65 9.68 | final 9.87 9.62 9.55 | mediana 9.65 → 9.62 (-0.3%) | CPU ms 2.61 → 2.59 | rot 1.03 → 1.03 | antes do rodar-antes 9.60 9.65, depois 9.59
+3b 25% | pares antes 30.44 31.20 31.27 | final 31.07 30.66 30.55 | mediana 31.20 → 30.66 (-1.7%) | CPU ms 10.80 → 10.27 | rot 1.51 → 1.49 | antes do rodar-antes 30.47 30.27, depois 30.61
+3b 50% | pares antes 15.16 15.32 15.40 | final 15.42 15.21 15.17 | mediana 15.32 → 15.21 (-0.7%) | CPU ms 3.93 → 3.83 | rot 1.87 → 1.86 | antes do rodar-antes 15.11 15.06, depois 15.16

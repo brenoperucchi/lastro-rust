@@ -1237,3 +1237,206 @@ nota de que a prova dinâmica da espera do evento só fica completa no B complet
 **Ordem de implementação:** (1) `AdmitMode::Barrier` em commit separado e o `antes` medido com ele; (2) núcleo, `SlotId`
 e o mapa só de `Resident`, sem mudar o comportamento; (3) `begin_copy` com `CopyMode`; (4) `Pins`; (5) `ComputeIdle` na
 escolha de vítima e nos uploads; (6) os testes; (7) as medidas e o veredito.
+
+### B0 — implementação (29/10)
+
+Material em `qual-runs/B0-SEGURANCA-20261029/` (binários `antes`, `depois` e `final` com sha256, fontes com sha256,
+saídas do `cargo test`, do `memcheck` (com o comando e a versão do `compute-sanitizer` no topo) e do `m2a`, scripts
+`rodar-antes.sh`, `rodar-depois.sh` e `rodar-final.sh`). `depois` é o código revisado na rodada 33; `final` é o mesmo com
+as correções dela (abaixo).
+
+**O que mudou no código.** `src/cache.rs` ficou com a política (LRU, `LruSync`/`LruCpu`, backlog, contadores) e
+`#![deny(unsafe_code)]` (não `forbid`, como o desenho dizia: o `forbid` não deixaria o `#[allow(unsafe_code)]` do
+submódulo; um teste segura o resto); o protocolo foi para `src/cache/core.rs`, o único módulo do cache com
+`#[allow(unsafe_code)]`:
+
+- `Slots`: estados `Free`, `Reserved`, `Loading{key, last_use}` e `Resident{key, last_use}`, com geração por slot. O mapa
+  chave → slot só lista `Resident`; as cópias em segundo plano ficam em `pending` até o evento terminar (`settle`), como no
+  `apply_pending` do Strata. `Lookup::{Hit(SlotId), Loading, Miss}` substitui o ramo `Some(_)` do slot carregando.
+- `pin_layer(&keys) -> Pins` marca os experts pedidos na camada; `victim(&Pins, &Idle)` recusa um `Pins` de outra camada
+  (tempo de execução) e devolve um `Victim` (`#[must_use]`, sem `Clone`) que a cópia consome. A cópia confere que a
+  vítima ainda está reservada na mesma geração (um `clear` no meio a invalida) e que a chave é falta.
+- `Slots` e `Epoch` só nascem juntos (`core::new_pair`), na mesma stream de cálculo e com um id de instância que `Pins`,
+  `Idle`, `SlotId`, `Victim` e `ResidentSlot` carregam; usar um deles noutra instância dá erro. Sem isso (rodada 33), dois
+  objetos criados com streams diferentes deixavam a cópia na stream de cálculo correr contra os lançamentos por uma API
+  segura.
+- As duas formas de cópia são métodos que gravam o próprio evento: `copy_on_compute` (na stream de cálculo, slot
+  `Resident` na hora) e `copy_in_background` (grava o evento de ordem no cálculo, a stream de cópia espera, slot `Loading`).
+  O `CopyMode` do desenho virou esses dois métodos; o evento não aparece na API.
+- `resident(SlotId) -> ResidentSlot` confere estado e geração; `Epoch::launch_expert` só aceita `ResidentSlot`.
+- `Epoch::router_logits` devolve os logits e um `Idle<'_>`, que toma a `Epoch` emprestada (`&mut`): enquanto ele vive não
+  há lançamento, e só ele escolhe vítima, solta os uploads da CPU (`release_uploads`) e lê `x` para a CPU. A versão forte
+  do rev-1 coube no cutile sem o recuo para `ComputeIdle` por valor.
+- O `ExpertCache` fica inutilizável depois de um erro (flag `poisoned`, as duas streams sincronizadas), como antes.
+
+Duas diferenças de comportamento apareceram na releitura linha a linha contra o código antigo e foram corrigidas antes de
+compilar: o código antigo atualizava o `last_use` de um slot carregando quando a chave era pedida (conta para o LRU depois
+do `settle`; o `pin_layer` faz o mesmo agora), e o `Drop` do `ExpertCache` sincroniza as streams antes de os campos caírem.
+
+**Testes novos (6; a suíte passou de 38 para 44, todos verdes e sem warnings, `cargo-test-final.txt`; os números dos
+testes do núcleo estão em `nucleo-nocapture-final.txt`):**
+
+- `tests/tipos.rs`, `trybuild`: os 6 casos de `tests/ui/` falham pelo motivo esperado e os 6 gêmeos de `tests/ui-pass/`
+  compilam. Criar `Slots` sem o par (rodada 34): E0624, construtor privado; o gêmeo usa `new_pair`. Lançar um slot carregando: E0308 (`LoadingSlot` onde se pede `ResidentSlot`). Reusar a vítima: E0382. Vítima
+  sem `pin_layer`: "cannot construct `Pins` ... due to private fields" (era E0451 com um campo só; com o id de
+instância o rustc muda a mensagem, mesmo motivo). Vítima depois de um lançamento: E0499 (o `Idle` ainda empresta a
+  `Epoch`). Soltar os uploads depois de enfileirar a saída da CPU: E0499. Mensagens geradas com rustc 1.97.0.
+- `tests/tipos.rs`: falha se os atributos com `unsafe_code` em `cache.rs` não forem exatamente o `#![deny(unsafe_code)]` e
+  o `#[allow(unsafe_code)]` do `pub mod core` (pega também `allow(dead_code, unsafe_code)` e `expect(unsafe_code)`).
+- `cache::core::tests::copia_em_segundo_plano_espera_a_leitura_do_slot`, a janela forçada: um callback de host
+  (`cuLaunchHostFunc`) bloqueia a stream de cálculo, um expert que lê o slot entra na fila atrás dele, e só então vem a
+  cópia de outro expert para o mesmo slot. Pela `copy_in_background`, a saída é bit a bit a do expert antigo em **20 de
+  20**; pelo mutante sem a espera do evento, é bit a bit a do expert novo em **20 de 20** (o teste exige 20: a cópia do
+  mutante é esperada antes de o portão abrir, então o resultado não depende de tempo). Sem kernel de espera. A primeira
+  versão travou: o `h0` era criado com `sync_on` na stream bloqueada e o portão só abria pelo prazo de 10 s; agora o `h0`
+  vem antes do portão e o `send` falha com essa explicação.
+- `cache::core::tests::slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada` (rodada 33): portão na stream de cópia,
+  então a cópia em segundo plano fica presa e o slot `Loading` de verdade, estado que a barreira nunca alcança (ela drena a
+  fila antes do `pin_layer`). Confere que a chave dá `Lookup::Loading` e fica fora do mapa, que `settle(false)` não promove
+  antes do evento, e que um slot carregando pedido numa camada ganha o uso dela: depois do `settle`, a vítima é o outro
+  slot. O controle negativo (sem o pedido) escolhe o slot carregando. A primeira versão passou sozinha e falhou na suíte em
+  paralelo e no `memcheck`, com o portão aberto pelo prazo: o `router_logits` dentro da janela aloca e sincroniza o device,
+  inclusive a stream presa; agora ele vem antes de fechar o portão.
+- `cache::core::tests::conferencias_em_tempo_de_execucao` (rodada 33): `Pins` de outra camada, `SlotId` de um slot
+  sobrescrito, vítima reservada antes de um `clear`, cópia de chave já residente, e `Pins`, `Idle`, `SlotId` e
+  `ResidentSlot` de outra instância: todos dão erro.
+- Mutantes (`mutantes.sh`, saída em `mutantes-nucleo.txt`, com o trecho trocado e a linha `FAILED` de cada um; o script
+  guarda o `core.rs`, aplica um de cada vez e confere o sha256 ao restaurar): os 7 são reprovados pelo teste esperado.
+  `pin_layer` sem o laço dos slots carregando e `settle` sem a consulta do evento (teste do slot carregando);
+  `copy_in_background` sem gravar e esperar o evento de ordem (janela forçada, agora pelo caminho real e não por um
+  mutante escrito no teste); `resident` sem a geração, `victim` sem o relógio do `Pins`, `victim` sem conferir a
+  instância e a cópia sem conferir a vítima (conferências).
+- `cache::core::tests::protocolo_custa_pouco_no_host`: `settle` com 4 cópias prontas na fila (as `query()` dos eventos),
+  `pin_layer`, 8 consultas e a conferência de estado, geração e instância dos acertos custam **0,35 µs por camada** (64
+  slots; 0,56 sob o `memcheck`; critério ≤ 3 µs). A primeira versão, sem eventos na fila, media só a contabilidade (0,028
+  µs). Escolha de vítima e cópias ficam de fora (custam o mesmo que antes do B0); o tempo de parede abaixo as cobre.
+- `memcheck` (`compute-sanitizer` 2026.2.1, comando no topo de `memcheck-nucleo-final.txt` e `memcheck-model-final.txt`): 0
+  erros nos 4 testes do núcleo e na suíte de modelo (19 testes).
+
+**`unsafe` no núcleo fora dos testes, por função e motivo (15 ocorrências; `cache.rs` tinha 17 linhas com `unsafe`, 16
+antes do `synchronize` do modo `Barrier`, e agora tem 0):**
+
+| Função | Quantas | O que | Por que é seguro |
+|---|---|---|---|
+| `Slots::weights` | 1 | `u16` pinned lido como `bf16` | `bf16` é `repr(transparent)` sobre `u16` |
+| `Slots::clear`, `Slots::settle` | 2 | `synchronize` da stream de cópia | só espera |
+| `copy_on_compute`, `copy_in_background` | 2 | chamam `copy_raw` | mesma stream das leituras, ou espera do evento gravado ali mesmo |
+| `Slots::copy_raw` | 2 | `unsafe fn` e as duas cópias H2D assíncronas | tamanhos conferidos em `new`; o `Drop` sincroniza antes de soltar o buffer pinned |
+| `Slots::sync_all` | 1 | `synchronize` das duas streams | só espera |
+| `Epoch::router_logits` | 1 | GEMV do roteador | formas múltiplas dos blocos (conferido em `ExpertCache::new`) |
+| `Epoch::launch_expert` | 1 | `enqueue_expert` | slot `Resident` (o `ResidentSlot` prova); formas conferidas |
+| `Epoch::finish_gpu`, `Epoch::add_cpu_out` | 3 | `axpby` e o upload da saída da CPU | upload retido em `keep` até o próximo `Idle` |
+| `Epoch::sync` | 1 | `synchronize` | só espera |
+| `Idle::read_x` | 1 | cópia D2H de `x` e `synchronize` | `x` vive até a espera |
+
+**Medida 1, admissão em barreira (critério bit a bit).** O `antes` rodou duas vezes por modelo e as duas deram as mesmas
+contagens exatas e o mesmo hash dos logits em todas as políticas, inclusive `lru_cpu` (o modo `Barrier` serve de referência).
+O `depois` rodou uma vez por modelo: acertos, cópias síncronas, cópias em segundo plano, descartes, experts na CPU e hash
+dos logits **iguais aos do antes** em residente, `cache_full`, `lru_sync` e `lru_cpu`, a 25% e 50%, no 1B e no 3B. Logits
+dentro da tolerância contra o transformers em todas as configurações. Referência do 3B:
+
+| política | orçam. | acertos | cóp.s | cóp.bg | descart. | CPU | hash |
+|---|---|---|---|---|---|---|---|
+| lru_sync | 25% | 465777 | 510607 | 0 | 0 | 0 | 162ca54cd7716a68 |
+| lru_sync | 50% | 778193 | 198191 | 0 | 0 | 0 | 162ca54cd7716a68 |
+| lru_cpu | 25% | 439404 | 0 | 414057 | 122923 | 536980 | 1a68c295e433deef |
+| lru_cpu | 50% | 778977 | 0 | 188904 | 8503 | 197407 | deddc039191cc684 |
+
+**Medida 2, tempo com a admissão por evento (o padrão),** 5 pares antes/depois intercalados por modelo (`tempo-evento.txt`),
+ms/token, média nas conversas:
+
+| modelo | política | antes (5) | depois (5) | mediana | critério |
+|---|---|---|---|---|---|
+| 1B | residente | 3,02 3,04 3,01 3,04 3,01 | 3,01 3,01 3,01 3,01 3,03 | 3,02 → 3,01 (−0,3%) | ≤ 1% ✓ |
+| 1B | lru_sync 25% | 18,94 18,68 18,62 18,69 18,66 | 18,69 18,63 18,80 18,60 19,14 | 18,68 → 18,69 (+0,1%) | ≤ 1% ✓ |
+| 1B | lru_sync 50% | 11,75 11,66 11,61 11,66 11,63 | 11,68 11,61 11,69 11,58 11,90 | 11,66 → 11,68 (+0,2%) | ≤ 1% ✓ |
+| 3B | residente | 4,84 4,88 4,83 4,86 4,94 | 4,87 4,84 4,84 4,83 5,06 | 4,86 → 4,84 (−0,4%) | ≤ 1% ✓ |
+| 3B | lru_sync 25% | 36,05 36,08 35,92 36,06 36,31 | 36,21 36,00 36,03 36,05 36,21 | 36,06 → 36,05 (−0,0%) | ≤ 1% ✓ |
+| 3B | lru_sync 50% | 17,02 17,02 16,98 16,98 17,17 | 17,03 16,99 17,04 17,00 17,02 | 17,02 → 17,02 (+0,0%) | ≤ 1% ✓ |
+| 3B | lru_cpu 25% | 13,07 13,37 13,11 12,97 14,22 | 13,32 13,53 13,23 13,24 13,47 | 13,11 → 13,32 (+1,6%) | na faixa do antes (12,97–14,22) ✓ |
+| 3B | lru_cpu 50% | 8,25 8,14 8,13 8,02 8,84 | 8,10 8,00 8,09 8,08 8,50 | 8,14 → 8,09 (−0,6%) | na faixa do antes (8,02–8,84) ✓ |
+
+O quinto par saiu mais lento nos dois binários (residente 3B: 4,94 e 5,06), e o antes 5 teve o modo lento do `lru_cpu`
+(14,22 a 25%). A faixa do antes que o critério usa inclui esse par; sem ele, ela é 12,97–13,37 e dois dos cinco depois
+(13,47 e 13,53) ficam acima (rodada 33). No `lru_cpu` a 25%, o depois ficou acima do antes em 4 dos 5 pares, com a
+diferença quase toda no tempo dos experts na CPU.
+
+**Medida 3, o viés do `lru_cpu` com trabalho idêntico (rodada 33, `rodar-final.sh`, `tempo-barreira-lrucpu.txt`).** Em
+barreira, antes e depois fazem exatamente o mesmo trabalho (as 6 execuções de cada modelo dão a mesma tabela de contagens),
+então uma diferença de tempo seria custo do código e não da admissão. 3 pares antes/final intercalados, ms/token:
+
+| modelo | orçam. | antes (3) | final (3) | mediana | experts na CPU, ms/token |
+|---|---|---|---|---|---|
+| 1B | 25% | 15,51 15,92 15,73 | 15,99 15,69 15,69 | 15,73 → 15,69 (−0,3%) | 5,35 → 5,32 |
+| 1B | 50% | 9,55 9,65 9,68 | 9,87 9,62 9,55 | 9,65 → 9,62 (−0,3%) | 2,61 → 2,59 |
+| 3B | 25% | 30,44 31,20 31,27 | 31,07 30,66 30,55 | 31,20 → 30,66 (−1,7%) | 10,80 → 10,27 |
+| 3B | 50% | 15,16 15,32 15,40 | 15,42 15,21 15,17 | 15,32 → 15,21 (−0,7%) | 3,93 → 3,83 |
+
+Com o mesmo trabalho, o final não saiu mais lento (de −0,3% a −1,7%), e o mesmo binário varia até 2,7% entre execuções
+(3B a 25%: 30,44–31,27). Com n = 3 pares e o antes sempre primeiro, isso quer dizer "sem diferença detectável acima de
+~2–3%", não "sem viés": juntando todas as execuções em barreira do 3B a 25% (antes 30,47 30,27 30,44 31,20 31,27; depois e
+final 30,61 31,07 30,66 30,55), as medianas são 30,47 e 30,64 (+0,6%) (rodada 34). O que sustenta que o B0 não custa
+tempo é o micro-teste de host abaixo, mais a igualdade bit a bit do trabalho. O custo do protocolo
+no host é o do micro-teste: 0,35 µs por camada com 4 eventos consultados, ~11 µs por token no 3B.
+
+**Medida 4, barreira com os binários finais:** contagens exatas e hash dos logits iguais aos do antes nas quatro políticas,
+nos dois modelos (`m2a-{1b,3b}-final-barreira-1.txt`). As correções da rodada 33 não mudaram o comportamento.
+
+**Medida 5, tempo com os binários finais (rodada 34, `rodar-final-tempo.sh`, `tempo-final.txt`).** O `final` acrescentou
+as conferências de instância e da vítima ao caminho de cópia e de lançamento; os critérios da medida 2 foram refeitos
+com ele: 5 pares antes/final intercalados, admissão por evento, ms/token, média nas conversas.
+
+| modelo | política | antes (5) | final (5) | mediana | critério |
+|---|---|---|---|---|---|
+| 1B | residente | 3,07 3,02 3,06 3,03 3,03 | 3,04 3,03 3,05 3,03 3,04 | 3,03 → 3,04 (+0,3%) | ≤ 1% ✓ |
+| 1B | lru_sync 25% | 18,80 18,79 18,88 18,87 18,90 | 18,82 18,95 18,82 18,91 19,28 | 18,87 → 18,91 (+0,2%) | ≤ 1% ✓ |
+| 1B | lru_sync 50% | 11,75 11,77 11,68 11,72 11,82 | 11,75 11,79 11,71 11,87 11,71 | 11,75 → 11,75 (+0,0%) | ≤ 1% ✓ |
+| 3B | residente | 4,89 4,90 4,85 4,83 5,00 | 4,85 4,89 4,84 4,90 4,90 | 4,89 → 4,89 (+0,0%) | ≤ 1% ✓ |
+| 3B | lru_sync 25% | 36,38 36,53 36,51 36,49 36,41 | 36,28 36,25 36,47 36,58 36,64 | 36,49 → 36,47 (−0,1%) | ≤ 1% ✓ |
+| 3B | lru_sync 50% | 17,29 17,14 17,29 17,13 17,28 | 17,20 17,23 17,17 17,53 17,46 | 17,28 → 17,23 (−0,3%) | ≤ 1% ✓ |
+
+O 3,41 ms/token do residente 1B na única amostra anterior do final (`m2a-1b-final-barreira-1.txt`) não se repetiu: as 5
+execuções do final ficaram em 3,03–3,05, iguais às do antes. O caminho residente nem passa pelo `ExpertCache`; foi ruído
+daquela execução. Logits dentro da tolerância nas 20 saídas.
+
+**Veredito da tese 1 no B0 (reescrito depois das rodadas 33 e 34).** Dentro do `ExpertCache`, os cinco erros de ordem de
+uso e a criação de `Slots` e `Epoch` separados deixam de compilar; o estado, a geração, o relógio da camada e a instância são conferidos em tempo de execução, com teste
+para cada conferência; e todo o `unsafe` do cache está em 15 blocos de um módulo. Em três camadas:
+
+- **Estático (o compilador recusa):** lançar um slot que não seja `Resident`; reusar uma vítima já consumida; forjar o
+  `Pins` (só `pin_layer` o cria); escolher vítima ou soltar os uploads da CPU depois de um lançamento na camada;
+  criar `Slots` e `Epoch` separados (só `new_pair`, na mesma stream). Os 6 casos de `trybuild` falham com a mensagem
+  esperada e os 6 gêmeos compilam. O `unsafe` fora do núcleo é recusado pelo `deny(unsafe_code)`, e o teste de texto
+  impede que um `allow` o desligue.
+- **Verificado em tempo de execução, com teste e mutante:** `Pins` de outra camada; geração e estado do slot ao lançar;
+  vítima reservada antes de um `clear`; cópia de chave que não é falta; objetos de outra instância; slot carregando fora do
+  mapa até o evento, e com o uso das camadas que o pedem.
+- **Núcleo `unsafe`:** as cópias H2D, a gravação e espera dos eventos, os lançamentos e a sincronização que produz o
+  `Idle` (tabela acima).
+
+O que os tipos não provam, e o texto não deve dizer: o `Pins` prova que a camada foi fixada, não que a lista de chaves
+estava completa (`pin_layer(&[])` compila); o que impede lançar um acerto que foi despejado é a geração conferida em
+`resident`. O `Idle` prova que nada foi lançado desde a leitura dos logits, não que a stream está parada (em `LruSync` as
+cópias da camada já estão na fila dela). Quem ordena cópia e kernel é a ordem das streams e o evento dentro do núcleo; os
+tipos impedem usar esses dois mecanismos fora de ordem. O controle negativo do evento só existe no teste forçado, porque
+no protocolo de hoje o `Idle` vem de uma sincronização e a espera nunca é exercitada; ela passa a ser necessária no B
+completo, quando a escolha de vítima deixar de esperar o roteador, e aí a janela forçada vira o teste de regressão dela.
+
+O comportamento não mudou (barreira bit a bit nos dois modelos, antes, depois e final). O tempo ficou dentro dos critérios
+(medida 2, no `depois`; medida 5, no `final`) e sem diferença detectável com trabalho idêntico (medida 3).
+
+**Rodada 33** (`.herdr/review/strata-opencode-33/`, completa; rev-1 aprova com ressalvas, rev-2 aprova; sem P0/P1). Todos
+os achados procederam e foram corrigidos: os dois revisores acharam que `Slots` e `Epoch` com streams ou instâncias
+diferentes passavam pela API segura (construtor único e id de instância); vítima sem geração e cópia de chave que não é
+falta (conferidas); as linhas de `eprintln!` com os números não estavam em arquivo (`nucleo-nocapture-final.txt`);
+`forbid`/`deny`, 16/17 e o teste de texto fraco (corrigidos); a faixa do `lru_cpu` esticada pelo par lento (medida 3). O
+rev-1 notou que a barreira nunca exercita `Loading`/`pending` (teste do slot carregando) e que o mutante da janela
+dependia de tempo (agora determinístico); o rev-2, que as conferências em tempo de execução não tinham teste e que `Pins`
+e `Idle` provavam menos do que o texto dizia (veredito reescrito acima).
+
+**Rodada 34** (`.herdr/review/strata-opencode-34/`, completa; rev-1 aprova com ressalvas, rev-2 aprova; sem P0/P1/P2). Os
+dois conferiram, um a um, que os achados da rodada 33 estão resolvidos e que o veredito tem o alcance que as provas
+sustentam. Ressalvas, todas tratadas: o caso de criar `Slots` sem o par não tinha `trybuild` (sexto caso) e os mutantes não
+tinham registro (`mutantes.sh`, `mutantes-nucleo.txt`; os dois revisores); os critérios de tempo foram medidos no `depois`
+e não no `final`, e o residente do 1B marcou 3,41 ms/token na única amostra do final, contra 3,09 e 3,03 do antes (rev-1;
+medida 5); "sem viés" era forte demais para 3 pares (rev-2; texto da medida 3).

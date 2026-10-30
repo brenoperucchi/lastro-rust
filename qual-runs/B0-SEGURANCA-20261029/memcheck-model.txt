@@ -1,0 +1,26 @@
+========= COMPUTE-SANITIZER
+
+running 19 tests
+test atencao_em_duas_passadas_bate_com_a_referencia_em_toda_fronteira_de_fatia ... ok
+test atencao_recusa_part_com_menos_blocos_que_a_grade_pede ... ok
+test cache_cheio_preenchido_antes_so_tem_acertos_e_bate_com_a_cpu ... ok
+test cache_largado_com_admissoes_em_voo_nao_quebra_o_processo ... ok
+test cache_lru_cpu_bate_com_a_cpu_e_admite_em_segundo_plano ... ok
+test cache_lru_cpu_com_barreira_repete_logits_e_contadores ... ok
+test cache_lru_cpu_descarta_admissao_quando_o_backlog_esta_cheio ... ok
+test cache_lru_sync_bate_com_a_cpu_e_so_copia_quando_falta ... ok
+test cache_lru_sync_nao_despeja_acerto_da_mesma_camada_e_segue_o_lru_de_referencia ... ok
+test configuracao_le_o_granite_e_recusa_variantes_nao_suportadas ... ok
+test leitor_npy_le_f32_e_i32_e_recusa_dtype_errado ... ok
+test leitor_npy_recusa_arquivo_truncado_ou_malformado_sem_entrar_em_panico ... ok
+test modelo_na_gpu_bate_com_a_cpu_com_hidden_que_nao_e_potencia_de_dois ... ok
+test modelo_na_gpu_bate_com_a_cpu_por_mais_de_uma_fatia_da_atencao ... ok
+test modelo_na_gpu_recusa_no_upload_dimensao_de_tile_que_nao_e_potencia_de_dois ... ok
+test passo_com_roteamento_dado_de_fora_calcula_o_mesmo_e_as_variantes_parciais_nao_quebram_o_modelo ... ok
+test passo_com_token_fora_do_vocabulario_ou_cache_kv_cheio_devolve_erro_e_o_modelo_segue_utilizavel ... ok
+test rmsnorm_normaliza_pela_raiz_da_media_dos_quadrados ... ok
+test rope_gira_as_metades_de_cada_cabeca_e_posicao_zero_e_identidade ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.63s
+
+========= ERROR SUMMARY: 0 errors

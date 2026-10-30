@@ -1,0 +1,73 @@
+== pin_layer sem os slots carregando
+-  if keys.contains(key) {
++  if false && keys.contains(key) {
+test cache::core::tests::conferencias_em_tempo_de_execucao ... ok
+test cache::core::tests::copia_em_segundo_plano_espera_a_leitura_do_slot ... ok
+test cache::core::tests::protocolo_custa_pouco_no_host ... ok
+test cache::core::tests::slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada ... FAILED
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.78s
+resultado: reprovado por slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada (esperado)
+
+== settle sem consultar o evento
+-  if !self.slots[s].ready.query()? {
++  if false && !self.slots[s].ready.query()? {
+test cache::core::tests::conferencias_em_tempo_de_execucao ... ok
+test cache::core::tests::copia_em_segundo_plano_espera_a_leitura_do_slot ... ok
+test cache::core::tests::protocolo_custa_pouco_no_host ... ok
+test cache::core::tests::slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada ... FAILED
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.71s
+resultado: reprovado por slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada (esperado)
+
+== resident sem a geração
+-  State::Resident { .. } if s.gen == id.gen =>
++  State::Resident { .. } =>
+test cache::core::tests::conferencias_em_tempo_de_execucao ... FAILED
+test cache::core::tests::copia_em_segundo_plano_espera_a_leitura_do_slot ... ok
+test cache::core::tests::protocolo_custa_pouco_no_host ... ok
+test cache::core::tests::slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada ... ok
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.76s
+resultado: reprovado por conferencias_em_tempo_de_execucao (esperado)
+
+== victim sem o relógio do Pins
+-  if pins.clock != self.clock {
++  if false {
+test cache::core::tests::conferencias_em_tempo_de_execucao ... FAILED
+test cache::core::tests::copia_em_segundo_plano_espera_a_leitura_do_slot ... ok
+test cache::core::tests::protocolo_custa_pouco_no_host ... ok
+test cache::core::tests::slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada ... ok
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.73s
+resultado: reprovado por conferencias_em_tempo_de_execucao (esperado)
+
+== copy_in_background sem o evento de ordem
+-          self.order.record(&self.compute)?;
+        self.copy.wait_event(&self.order)?;
++  
+test cache::core::tests::conferencias_em_tempo_de_execucao ... ok
+test cache::core::tests::copia_em_segundo_plano_espera_a_leitura_do_slot ... FAILED
+test cache::core::tests::protocolo_custa_pouco_no_host ... ok
+test cache::core::tests::slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada ... ok
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.73s
+resultado: reprovado por copia_em_segundo_plano_espera_a_leitura_do_slot (esperado)
+
+== victim sem conferir a instância
+-  if pins.owner != self.owner || idle.e.owner != self.owner {
++  if false {
+test cache::core::tests::conferencias_em_tempo_de_execucao ... FAILED
+test cache::core::tests::copia_em_segundo_plano_espera_a_leitura_do_slot ... ok
+test cache::core::tests::protocolo_custa_pouco_no_host ... ok
+test cache::core::tests::slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada ... ok
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.75s
+resultado: reprovado por conferencias_em_tempo_de_execucao (esperado)
+
+== cópia sem conferir a vítima
+-  if s.state != State::Reserved || s.gen != v.gen {
++  if false {
+test cache::core::tests::conferencias_em_tempo_de_execucao ... FAILED
+test cache::core::tests::copia_em_segundo_plano_espera_a_leitura_do_slot ... ok
+test cache::core::tests::protocolo_custa_pouco_no_host ... ok
+test cache::core::tests::slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada ... ok
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.75s
+resultado: reprovado por conferencias_em_tempo_de_execucao (esperado)
+
+core.rs restaurado (sha256 igual ao de antes)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.61s
