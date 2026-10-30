@@ -1,0 +1,22 @@
+modelo 3b: 32 camadas × 40 experts (k=8), 1280 experts; treino 3604 tokens, teste 3814 tokens; parâmetros runtime, protocolo runtime; c_copy 0.236 ms (0.335 com a CPU ocupada), c_cpu 0.0694 ms (0.0610 sem cópia), h 0.0052 ms, g 0.1094 ms, o_layer 0.0367 ms
+validação contra qual-runs/M2F-FUSOES-20261029/m2a-3b-final-1.txt (protocolo runtime, backlog 4); residente simulado 4.83 ms/token
+  política   orçam.  slots | acerto sim  medido   Δpt | ms/tok sim  medido     Δ | cóp.s sim/med | cóp.bg sim/med | ok
+  lru_cpu      10%    128 |      23.9%   23.6%  +0.3 |      18.20   17.53  +3.8% |    0.0/0.0    |   54.4/52.6   | sim
+  lru_cpu      25%    320 |      50.4%   50.2%  +0.2 |      13.49   13.33  +1.2% |    0.0/0.0    |   40.3/41.8   | sim
+  lru_cpu      50%    640 |      80.6%   80.3%  +0.3 |       8.16    8.16  -0.0% |    0.0/0.0    |   24.1/27.1   | sim
+  lru_cpu      75%    960 |      95.7%   95.7%  -0.0 |       5.56    5.73  -2.9% |    0.0/0.0    |    9.1/9.6    | sim
+  lru_sync     10%    128 |       0.0%    0.0%  +0.0 |      65.24   64.39  +1.3% |  256.0/256.0  |    0.0/0.0    | sim
+  lru_sync     25%    320 |      47.7%   47.7%  +0.0 |      36.43   36.23  +0.5% |  133.9/133.9  |    0.0/0.0    | sim
+  lru_sync     50%    640 |      79.7%   79.7%  +0.0 |      17.09   17.16  -0.4% |   51.9/52.0   |    0.0/0.0    | sim
+  lru_sync     75%    960 |      95.8%   95.8%  +0.0 |       7.36    7.49  -1.8% |   10.7/10.7   |    0.0/0.0    | sim
+resultado: dentro do critério em todas as linhas
+validação contra qual-runs/M2F-FUSOES-20261029/m2a-3b-final-backlog0-1.txt (protocolo runtime, backlog 0); residente simulado 4.83 ms/token
+  política   orçam.  slots | acerto sim  medido   Δpt | ms/tok sim  medido     Δ | cóp.s sim/med | cóp.bg sim/med | ok
+  lru_cpu      25%    320 |       0.0%    0.0%  +0.0 |      19.12   19.10  +0.1% |    0.0/0.0    |    0.0/0.0    | sim
+  lru_cpu      50%    640 |       0.0%    0.0%  +0.0 |      19.12   18.62  +2.7% |    0.0/0.0    |    0.0/0.0    | sim
+resultado: dentro do critério em todas as linhas
+validação contra qual-runs/M2F-FUSOES-20261029/m2a-3b-final-backlog0-2.txt (protocolo runtime, backlog 0); residente simulado 4.83 ms/token
+  política   orçam.  slots | acerto sim  medido   Δpt | ms/tok sim  medido     Δ | cóp.s sim/med | cóp.bg sim/med | ok
+  lru_cpu      25%    320 |       0.0%    0.0%  +0.0 |      19.12   19.14  -0.1% |    0.0/0.0    |    0.0/0.0    | sim
+  lru_cpu      50%    640 |       0.0%    0.0%  +0.0 |      19.12   19.23  -0.6% |    0.0/0.0    |    0.0/0.0    | sim
+resultado: dentro do critério em todas as linhas

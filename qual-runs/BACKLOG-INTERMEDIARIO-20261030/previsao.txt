@@ -1,0 +1,35 @@
+Previsões gravadas em 30/10 às 10:34:05, com a medida em curso e antes de ler qualquer resultado com backlog 1 ou 2 (só a
+primeira execução, 1B backlog 0, estava em andamento). Gerado por previsao.py com o simulador de sha acima.
+Critério combinado (rodada 36, rev-2): o modelo trata o tráfego como sim ou não (uma cópia em voo pesa como quatro). Se o
+ms/token medido com backlog 1 ou 2 ficar mais de 10% abaixo da previsão, ou o CPU ms/token por expert nas camadas com
+tráfego ficar mais perto do c_cpu_quiet que do c_cpu, o modelo binário cai e a comparação custo × lfu_cpu tem de ser refeita
+com um custo proporcional às cópias em voo. Controle da mesma sessão: backlog 0 e 4, intercalados.
+Ressalva: um ajuste em Python (ajuste_cpu.py, sem taskset) rodou de ~10:31:50 a ~10:33:20, durante a execução
+m2a-1b-backlog0-1; ela será comparada com a repetição 2 antes de entrar na conta.
+
+simulador: c46570848ecbd72a313e24453c3a674f9def53ba5621c290d65a67f3ff644b98
+modelo  orçam. backlog | ms/token acerto CPU ms/token cópias bg/token camadas com tráfego
+1b       10%       0 |     9.74   0.0%       7.70            0.0               0.0%
+1b       10%       1 |    10.07  19.8%       7.15           24.0             100.0%
+1b       10%       2 |    10.29  17.2%       7.37           40.7             100.0%
+1b       10%       4 |    10.51  14.8%       7.59           47.1             100.0%
+1b       25%       0 |     9.74   0.0%       7.70            0.0               0.0%
+1b       25%       1 |     7.79  45.3%       4.87           21.0              99.2%
+1b       25%       2 |     7.91  44.0%       4.99           32.2              99.7%
+1b       25%       4 |     7.94  43.7%       5.02           35.6             100.0%
+1b       50%       0 |     9.74   0.0%       7.70            0.0               0.0%
+1b       50%       1 |     5.04  76.3%       2.11           13.0              87.1%
+1b       50%       2 |     5.10  75.7%       2.17           21.0              94.3%
+1b       50%       4 |     5.11  75.5%       2.18           22.7              98.7%
+3b       10%       0 |    19.12   0.0%      15.62            0.0               0.0%
+3b       10%       1 |    18.20  23.9%      13.52           31.7             100.0%
+3b       10%       2 |    18.26  23.6%      13.58           47.8             100.0%
+3b       10%       4 |    18.20  23.9%      13.52           54.4             100.0%
+3b       25%       0 |    19.12   0.0%      15.62            0.0               0.0%
+3b       25%       1 |    13.38  51.0%       8.70           26.4              98.3%
+3b       25%       2 |    13.49  50.4%       8.81           37.8              99.6%
+3b       25%       4 |    13.49  50.4%       8.81           40.3             100.0%
+3b       50%       0 |    19.12   0.0%      15.62            0.0               0.0%
+3b       50%       1 |     8.14  80.7%       3.43           15.6              82.5%
+3b       50%       2 |     8.15  80.7%       3.43           22.8              93.4%
+3b       50%       4 |     8.16  80.6%       3.44           24.1              98.4%

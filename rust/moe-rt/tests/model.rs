@@ -1,24 +1,12 @@
 //! Testes do M1b sem o checkpoint real: configuração, RoPE, RMSNorm, leitor de `.npy` e o modelo inteiro num Granite MoE
 //! sintético pequeno (GPU contra CPU, por mais de uma fatia de posições da atenção).
-use cutile::half::bf16;
 use moe_rt::gpu_model::{GpuModel, ATTN_BN};
-use moe_rt::model::{rmsnorm, rope, Config, CpuSession, HostModel};
+use moe_rt::model::{rmsnorm, rope, Config, CpuSession};
 use moe_rt::npy::Npy;
-use moe_rt::weights::Checkpoint;
 use std::fs;
 
 mod common;
-use common::{bf, bytes, gpu_or_skip, scratch, values, write_safetensors};
-
-fn tiny_config(vocab: usize) -> serde_json::Value {
-    serde_json::json!({
-        "model_type": "granitemoe", "hidden_size": 256, "intermediate_size": 128, "num_hidden_layers": 2,
-        "num_attention_heads": 4, "num_key_value_heads": 2, "vocab_size": vocab, "num_local_experts": 4,
-        "num_experts_per_tok": 2, "rope_theta": 10000.0, "rms_norm_eps": 1e-6, "embedding_multiplier": 2.0,
-        "residual_multiplier": 0.5, "attention_multiplier": 0.125, "logits_scaling": 4.0, "rope_scaling": null,
-        "attention_bias": false, "tie_word_embeddings": true
-    })
-}
+use common::{gpu_or_skip, scratch, tiny_config, tiny_model, tiny_model_with, values};
 
 #[test]
 fn configuracao_le_o_granite_e_recusa_variantes_nao_suportadas() {
@@ -122,45 +110,6 @@ fn leitor_npy_recusa_arquivo_truncado_ou_malformado_sem_entrar_em_panico() {
         let r = r.unwrap_or_else(|_| panic!("pânico em vez de erro: {what}"));
         assert!(r.is_err(), "aceitou: {what}");
     }
-}
-
-/// Granite MoE sintético: H=256, I=128, 2 camadas, 4 cabeças de Q e 2 de KV de 64, 4 experts com 2 ativos, vocabulário ímpar.
-fn tiny_model(name: &str) -> (common::Scratch, HostModel) {
-    tiny_model_with(name, tiny_config(33))
-}
-
-fn tiny_model_with(name: &str, json: serde_json::Value) -> (common::Scratch, HostModel) {
-    let cfg = Config::from_json(&json).unwrap();
-    let tmp = scratch(name);
-    let (h, i, e, d) = (cfg.hidden, cfg.inter, cfg.experts, cfg.head_dim);
-    let (qd, kvd) = (cfg.heads * d, cfg.kv_heads * d);
-    let mut seed = 10u64;
-    let mut w = |n: usize, scale: f32| {
-        seed += 1;
-        bf(&values(n, seed).into_iter().map(|x| x * scale).collect::<Vec<_>>())
-    };
-    let norm = |w: Vec<bf16>| w.into_iter().map(|x| bf16::from_f32(1.0 + x.to_f32())).collect::<Vec<_>>();
-    let mut t: Vec<(String, Vec<usize>, Vec<bf16>)> = vec![
-        ("model.embed_tokens.weight".into(), vec![cfg.vocab, h], w(cfg.vocab * h, 1.0)),
-        ("model.norm.weight".into(), vec![h], norm(w(h, 0.1))),
-    ];
-    for l in 0..cfg.layers {
-        let p = format!("model.layers.{l}");
-        t.push((format!("{p}.input_layernorm.weight"), vec![h], norm(w(h, 0.1))));
-        t.push((format!("{p}.post_attention_layernorm.weight"), vec![h], norm(w(h, 0.1))));
-        t.push((format!("{p}.self_attn.q_proj.weight"), vec![qd, h], w(qd * h, 0.1)));
-        t.push((format!("{p}.self_attn.k_proj.weight"), vec![kvd, h], w(kvd * h, 0.1)));
-        t.push((format!("{p}.self_attn.v_proj.weight"), vec![kvd, h], w(kvd * h, 0.1)));
-        t.push((format!("{p}.self_attn.o_proj.weight"), vec![h, qd], w(h * qd, 0.1)));
-        t.push((format!("{p}.block_sparse_moe.router.layer.weight"), vec![e, h], w(e * h, 0.5)));
-        t.push((format!("{p}.block_sparse_moe.input_linear.weight"), vec![e, 2 * i, h], w(e * 2 * i * h, 0.1)));
-        t.push((format!("{p}.block_sparse_moe.output_linear.weight"), vec![e, h, i], w(e * h * i, 0.1)));
-    }
-    let tensors: Vec<(&str, &str, Vec<usize>, Vec<u8>)> = t.iter().map(|(n, s, v)| (n.as_str(), "BF16", s.clone(), bytes(v))).collect();
-    write_safetensors(&tmp.0, &tensors);
-    let ck = Checkpoint::open(tmp.0.parent().unwrap()).unwrap();
-    let m = HostModel::load(&ck, cfg).unwrap();
-    (tmp, m)
 }
 
 #[test]
@@ -619,4 +568,150 @@ fn passo_com_roteamento_dado_de_fora_calcula_o_mesmo_e_as_variantes_parciais_nao
     let (lg, _, tm) = c.step_probe(toks[0], Probe::default()).unwrap();
     assert_eq!(lg, normal[0].0);
     assert_eq!(tm.count, None);
+}
+
+/// LFU de referência no modo barreira (toda cópia de uma camada vale a partir da seguinte), com a regra do C: todos os experts
+/// pedidos na camada são tocados na `Freq` antes das decisões; a falta vai à CPU e, com menos de `backlog` cópias na fila,
+/// toma o primeiro slot livre, senão o residente de menor pontuação fora dos pedidos da camada (o de menor índice em empate),
+/// e só se a pontuação dele for menor que a da falta. Devolve (acertos, cópias, descartes, CPU, recusas do filtro).
+fn reference_lfu(routes: &[Vec<Vec<usize>>], experts: usize, layers: usize, cap: usize, backlog: usize) -> (u64, u64, u64, u64, u64) {
+    let mut freq = moe_rt::cache::Freq::new(layers * experts, layers);
+    // (chave, residente?) por slot; não residente = carregando nesta camada.
+    let mut slots: Vec<Option<(usize, bool)>> = vec![None; cap];
+    let (mut step, mut hits, mut copies, mut dropped, mut cpu, mut filtered) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    for tok in routes {
+        for (l, chosen) in tok.iter().enumerate() {
+            slots.iter_mut().flatten().for_each(|s| s.1 = true);
+            let keys: Vec<usize> = chosen.iter().map(|&e| l * experts + e).collect();
+            for &k in &keys {
+                freq.touch(k, step);
+            }
+            step += 1;
+            for &key in &keys {
+                if slots.iter().flatten().any(|s| s.0 == key && s.1) {
+                    hits += 1;
+                    continue;
+                }
+                cpu += 1;
+                let loading = slots.iter().flatten().filter(|s| !s.1).count();
+                let pick = if loading >= backlog {
+                    None
+                } else if let Some(i) = slots.iter().position(|s| s.is_none()) {
+                    Some(i)
+                } else {
+                    let mut best: Option<(usize, f64)> = None;
+                    for (i, s) in slots.iter().enumerate() {
+                        let (k, res) = s.unwrap();
+                        if res && !keys.contains(&k) {
+                            let p = freq.score(k);
+                            if best.is_none_or(|(_, b)| p < b) {
+                                best = Some((i, p));
+                            }
+                        }
+                    }
+                    let admit = best.filter(|&(_, p)| p < freq.score(key)).map(|(i, _)| i);
+                    filtered += u64::from(best.is_some() && admit.is_none());
+                    admit
+                };
+                match pick {
+                    Some(i) => {
+                        slots[i] = Some((key, false));
+                        copies += 1;
+                    }
+                    None => dropped += 1,
+                }
+            }
+        }
+    }
+    (hits, copies, dropped, cpu, filtered)
+}
+
+/// C: o `lfu_cpu` no modo barreira segue o LFU de referência contador a contador, bate com a CPU e filtra admissões (a
+/// referência conta as recusas do filtro, e os contadores iguais mostram que o cache recusou as mesmas).
+#[test]
+fn cache_lfu_cpu_segue_o_lfu_de_referencia_e_bate_com_a_cpu() {
+    use moe_rt::cache::{AdmitMode, CacheConfig, Policy};
+    use moe_rt::gpu_model::Experts;
+    let Some(device) = gpu_or_skip() else { return };
+    // 16 experts por camada (2 por token): com experts raros, a falta nem sempre vence o residente mais fraco.
+    let mut json = tiny_config(33);
+    json["num_local_experts"] = 16.into();
+    let (_tmp, m) = tiny_model_with("cache-lfu-ref", json);
+    let cpu = moe_rt::cpu::Cpu::new(3);
+    // Duas conversas de 48 tokens (o KV do modelo de teste tem 64 posições); o cache persiste entre elas, como no m2a.
+    let toks: Vec<usize> = values(96, 131).iter().map(|v| ((v + 1.0) * 16.0) as usize % m.cfg.vocab).collect();
+    let want: Vec<Vec<f32>> = toks
+        .chunks(48)
+        .flat_map(|conv| {
+            let mut c = CpuSession::new(&m, &cpu);
+            conv.iter().map(|&t| c.step(t).0).collect::<Vec<_>>()
+        })
+        .collect();
+    let mut filtrou = 0;
+    for (slots, backlog) in [(3usize, 2usize), (8, 8), (12, 1), (6, 4)] {
+        let cfg = CacheConfig { slots, policy: Policy::LfuCpu, backlog, cpu_threads: 3, admit: AdmitMode::Barrier };
+        let mut g = GpuModel::upload_cached(&m, device.new_stream().unwrap(), ATTN_BN, cfg).unwrap();
+        let mut routes = Vec::new();
+        for (t, &tok) in toks.iter().enumerate() {
+            if t % 48 == 0 {
+                g.reset();
+            }
+            let (lg, r) = g.step(tok).unwrap();
+            let num: f64 = lg.iter().zip(&want[t]).map(|(p, q)| ((p - q) as f64).powi(2)).sum();
+            let den: f64 = want[t].iter().map(|q| (*q as f64).powi(2)).sum();
+            assert!((num / den).sqrt() < 1e-5, "{slots} slots, posição {t}: longe da CPU");
+            routes.push(r.into_iter().map(|x| x.experts).collect::<Vec<_>>());
+        }
+        let (hits, copies, dropped, ncpu, filtered) = reference_lfu(&routes, m.cfg.experts, m.cfg.layers, slots, backlog);
+        let Experts::Cached(cache) = &g.experts else { unreachable!() };
+        let s = &cache.stats;
+        assert_eq!((s.hits, s.bg_copies, s.bg_dropped, s.cpu, s.sync_copies), (hits, copies, dropped, ncpu, 0), "{slots} slots: cache {s:?}");
+        assert!(s.hits > 0 && s.bg_copies > 0, "{slots} slots: {s:?}");
+        eprintln!("lfu_cpu {slots} slots, backlog {backlog}: {s:?}; recusas do filtro {filtered}");
+        filtrou += filtered;
+    }
+    assert!(filtrou > 0, "nenhuma recusa do filtro de frequência: o teste não exercitou a admissão do LFU");
+}
+
+/// C: o `lfu_cpu` com admissão por evento bate com a CPU e respeita o orçamento, e o `clear` zera as frequências: depois de
+/// uma sequência A e do `clear`, nenhuma chave tem frequência, e a sequência B dá os mesmos contadores que num cache novo
+/// (modo barreira). O roteador do modelo de teste usa só 4 ou 5 chaves, pouco para a frequência velha aparecer nos
+/// contadores; por isso a checagem direta da `Freq`. O toque do expert que ainda está carregando fica em `tests/portao.rs`.
+#[test]
+fn cache_lfu_cpu_por_evento_bate_com_a_cpu_e_clear_zera_as_frequencias() {
+    use moe_rt::cache::{AdmitMode, CacheConfig, Policy};
+    use moe_rt::gpu_model::Experts;
+    let s = cached_matches_cpu(Policy::LfuCpu, 4, 2);
+    assert_eq!(s.sync_copies, 0, "{s:?}");
+    assert!(s.cpu > 0 && s.hits > 0, "{s:?}");
+    let Some(device) = gpu_or_skip() else { return };
+    let mut json = tiny_config(33);
+    json["num_local_experts"] = 16.into();
+    let (_tmp, m) = tiny_model_with("cache-lfu-clear", json);
+    let seq = |seed: u64| -> Vec<usize> { values(48, seed).iter().map(|v| ((v + 1.0) * 16.0) as usize % m.cfg.vocab).collect() };
+    let (a, b) = (seq(141), seq(143));
+    let novo = || {
+        let cfg = CacheConfig { slots: 6, policy: Policy::LfuCpu, backlog: 4, cpu_threads: 2, admit: AdmitMode::Barrier };
+        GpuModel::upload_cached(&m, device.new_stream().unwrap(), ATTN_BN, cfg).unwrap()
+    };
+    let keys = m.cfg.layers * m.cfg.experts;
+    let roda = |g: &mut GpuModel, toks: &[usize]| {
+        g.reset();
+        for &t in toks {
+            g.step(t).unwrap();
+        }
+        let Experts::Cached(cache) = &mut g.experts else { unreachable!() };
+        assert!((0..keys).any(|k| cache.freq().score(k).is_finite()), "nenhuma frequência depois da sequência");
+        let s = &cache.stats;
+        let r = (s.hits, s.bg_copies, s.bg_dropped, s.cpu);
+        cache.clear().unwrap();
+        assert!((0..keys).all(|k| cache.freq().score(k) == f64::NEG_INFINITY), "o clear deixou frequências");
+        cache.stats = Default::default();
+        r
+    };
+    let fresco = roda(&mut novo(), &b);
+    let mut g = novo();
+    roda(&mut g, &a);
+    let depois = roda(&mut g, &b);
+    assert_eq!(depois, fresco, "B depois de A e do clear diferiu de B num cache novo: frequências ou slots sobraram");
 }

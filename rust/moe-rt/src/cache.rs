@@ -7,6 +7,8 @@
 //!   segundo plano por outra stream, que antes espera tudo o que já foi enfileirado no cálculo (então também as leituras do
 //!   slot despejado). O slot só vale depois que o evento da cópia termina; até lá o expert continua indo para a CPU. Se já
 //!   houver `backlog` cópias na fila, a admissão é descartada.
+//! - [`Policy::LfuCpu`] (C): como o `LruCpu`, mas despeja o residente de menor frequência com decaimento ([`Freq`]) e só
+//!   admite a falta se a frequência dela vence a dele; senão, a admissão é descartada.
 //!
 //! O protocolo de segurança mora em [`core`] (B0), o único módulo com `unsafe`; este arquivo é a política e os contadores.
 //!
@@ -35,6 +37,7 @@ use std::time::Instant;
 pub enum Policy {
     LruSync,
     LruCpu,
+    LfuCpu,
 }
 
 impl Policy {
@@ -42,11 +45,48 @@ impl Policy {
         match self {
             Policy::LruSync => "lru_sync",
             Policy::LruCpu => "lru_cpu",
+            Policy::LfuCpu => "lfu_cpu",
         }
     }
 }
 
-/// Quando uma admissão em segundo plano (`LruCpu`) vira slot válido.
+/// Meia-vida da frequência do `LfuCpu`, em tokens (o `HALF_LIFE` do simulador).
+pub const HALF_LIFE: f64 = 128.0;
+
+/// Frequência com decaimento por chave, a mesma do simulador (`touch_freq` e `score` em `tools/moe_sim.py`), para os dois
+/// darem as mesmas escolhas. Guarda log₂ do valor e o passo (camada) da última atualização; tocar soma 1 ao valor decaído
+/// com meia-vida de `HALF_LIFE` tokens. A pontuação `log₂ v + passo / (HALF_LIFE · L)` ordena as chaves como o valor decaído
+/// até um mesmo instante, e não muda com o tempo.
+#[derive(Clone, Debug)]
+pub struct Freq {
+    lv: Vec<f64>,
+    step: Vec<u64>,
+    per: f64,
+}
+
+impl Freq {
+    pub fn new(keys: usize, layers: usize) -> Self {
+        Self { lv: vec![f64::NEG_INFINITY; keys], step: vec![0; keys], per: HALF_LIFE * layers as f64 }
+    }
+
+    pub fn touch(&mut self, key: usize, step: u64) {
+        let (lv, s0) = (self.lv[key], self.step[key]);
+        let v = if lv > f64::NEG_INFINITY { (lv - (step - s0) as f64 / self.per).exp2() } else { 0.0 };
+        self.lv[key] = (v + 1.0).log2();
+        self.step[key] = step;
+    }
+
+    pub fn score(&self, key: usize) -> f64 {
+        self.lv[key] + self.step[key] as f64 / self.per
+    }
+
+    pub fn clear(&mut self) {
+        self.lv.fill(f64::NEG_INFINITY);
+        self.step.fill(0);
+    }
+}
+
+/// Quando uma admissão em segundo plano (`LruCpu`, `LfuCpu`) vira slot válido.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AdmitMode {
     /// Quando o evento da cópia já terminou no começo de uma camada (`ready.query()`): o número de admissões e de acertos
@@ -75,6 +115,8 @@ pub struct CacheStats {
     pub cpu: u64,
     pub bg_copies: u64,
     pub bg_dropped: u64,
+    /// Pedidos de um expert com a admissão ainda em andamento (já contados em `cpu`).
+    pub loading: u64,
     /// Tempo de parede do host esperando a leitura dos logits do roteador (inclui o cálculo da GPU até ali).
     pub router_wait_ms: f64,
     /// Tempo de parede dos experts na CPU.
@@ -93,6 +135,9 @@ pub struct ExpertCache {
     epoch: Epoch,
     slots: Slots,
     cpu: Cpu,
+    freq: Freq,
+    /// Camadas passadas desde a criação ou o último `clear` (o passo da `Freq`).
+    step: u64,
     poisoned: bool,
 }
 
@@ -125,6 +170,8 @@ impl ExpertCache {
             epoch,
             slots,
             cpu: Cpu::new(cfg.cpu_threads),
+            freq: Freq::new(total, c.layers),
+            step: 0,
             cfg,
             poisoned: false,
         })
@@ -144,8 +191,21 @@ impl ExpertCache {
         self.slots.loading_count()
     }
 
-    /// Esvazia o cache (para começar uma medição do zero).
+    /// Só para testes: ver `Slots::hold_copies`.
+    #[doc(hidden)]
+    pub fn hold_copies(&self) -> Result<std::sync::mpsc::Sender<()>, Error> {
+        self.slots.hold_copies()
+    }
+
+    /// Frequências do `LfuCpu` (só leitura).
+    pub fn freq(&self) -> &Freq {
+        &self.freq
+    }
+
+    /// Esvazia o cache e zera as frequências (para começar uma medição do zero).
     pub fn clear(&mut self) -> Result<(), Error> {
+        self.freq.clear();
+        self.step = 0;
         self.slots.clear()
     }
 
@@ -200,6 +260,13 @@ impl ExpertCache {
         // de uma falta na ordem do roteador.
         let keys: Vec<usize> = r.experts.iter().map(|&x| l * e + x).collect();
         let pins = self.slots.pin_layer(&keys);
+        if self.cfg.policy == Policy::LfuCpu {
+            // Como o simulador: todos os experts pedidos são tocados antes das decisões da camada.
+            for &key in &keys {
+                self.freq.touch(key, self.step);
+            }
+        }
+        self.step += 1;
         let mut gpu: Vec<(SlotId, f32)> = Vec::new();
         let mut cpu: Vec<(usize, f32)> = Vec::new();
         for (&key, &g) in keys.iter().zip(&r.weights) {
@@ -209,8 +276,9 @@ impl ExpertCache {
                     gpu.push((id, g));
                 }
                 Lookup::Loading => {
-                    // Admissão ainda em andamento: só acontece em LruCpu.
+                    // Admissão ainda em andamento: só acontece em LruCpu e LfuCpu.
                     self.stats.cpu += 1;
+                    self.stats.loading += 1;
                     cpu.push((key, g));
                 }
                 Lookup::Miss => match self.cfg.policy {
@@ -226,11 +294,17 @@ impl ExpertCache {
                             cpu.push((key, g));
                         }
                     },
-                    Policy::LruCpu => {
+                    Policy::LruCpu | Policy::LfuCpu => {
                         self.stats.cpu += 1;
                         cpu.push((key, g));
                         let admitted = if self.slots.loading_count() < self.cfg.backlog {
-                            match self.slots.victim(&pins, &idle)? {
+                            let v = if self.cfg.policy == Policy::LruCpu {
+                                self.slots.victim(&pins, &idle)?
+                            } else {
+                                let freq = &self.freq;
+                                self.slots.victim_min_by(&pins, &idle, |k| freq.score(k), freq.score(key))?
+                            };
+                            match v {
                                 Some(v) => {
                                     self.slots.copy_in_background(v, key)?;
                                     true
@@ -250,7 +324,7 @@ impl ExpertCache {
             }
         }
 
-        // `x` no host para os experts da CPU, lido agora, com a stream de cálculo ainda sem os experts da GPU (em LruCpu ela
+        // `x` no host para os experts da CPU, lido agora, com a stream de cálculo ainda sem os experts da GPU (em Lru/LfuCpu ela
         // está parada; em LruSync só há CPU quando faltou slot, e aí a espera inclui as cópias desta camada).
         let x = if cpu.is_empty() { Vec::new() } else { idle.read_x(xd)? };
         drop(idle);
@@ -284,5 +358,27 @@ impl Drop for ExpertCache {
     fn drop(&mut self) {
         // Antes de os campos caírem (os roteadores vêm antes de `epoch` e `slots` na declaração).
         self.slots.sync_all();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn freq_da_as_mesmas_pontuacoes_do_simulador() {
+        // Valores de `Sim.touch_freq`/`Sim.score` em tools/moe_sim.py, com L = 3 e 4 experts (chave = camada·4 + expert),
+        // na mesma sequência de toques (passo, chave).
+        let mut f = Freq::new(12, 3);
+        for (step, key) in [(0, 0), (0, 1), (1, 4), (2, 8), (3, 0), (3, 2), (5, 4), (100, 0), (400, 1), (401, 1), (1000, 2), (1500, 8)] {
+            f.touch(key, step);
+        }
+        let esperado = [(0, 1.6795384259222959), (1, 2.35640533956035), (2, 2.824937203935159), (4, 1.007821901389905), (8, 3.9997256579758678)];
+        for (key, v) in esperado {
+            assert!((f.score(key) - v).abs() < 1e-12, "chave {key}: {} contra {v}", f.score(key));
+        }
+        assert_eq!(f.score(3), f64::NEG_INFINITY);
+        f.clear();
+        assert_eq!(f.score(8), f64::NEG_INFINITY);
     }
 }

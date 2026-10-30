@@ -14,3 +14,13 @@ pub mod model;
 pub mod npy;
 pub mod pool;
 pub mod weights;
+
+/// Os testes de unidade que usam a GPU rodam em threads do mesmo processo; os dois testes de portão do núcleo fecham uma
+/// stream com um callback de host, e qualquer sincronização do contexto feita por outro teste nesse meio tempo espera o
+/// portão (prende até o prazo ou deixa a cópia assentar antes da conferência). Todo teste de unidade com GPU segura esta
+/// trava do começo ao fim.
+#[cfg(test)]
+pub(crate) fn gpu_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static GPU: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    GPU.lock().unwrap_or_else(|e| e.into_inner())
+}

@@ -1,0 +1,24 @@
+M2a: granite-3.1-3b-a800m-instruct; conversas [4, 5, 6, 7] (3814 tokens); 1280 experts de 4.72 MB; CPU com 8 threads; backlog 4; admissão barreira; aquecimento [0, 1, 2, 3]
+
+política   orçam. slots |  ms/tok mediana   tok/s | acerto    CPU  cóp.s cóp.bg | roteador   CPU ms |   rot.igual |  sim ms/acerto | logits texto-a / conversas
+resident     100%  1280 |    4.67    4.56   214.0 | 100.0%   0.0%   0.00   0.00 |      NaN     0.00 | 122047/122048 |                | 2.9e-6 / referência
+lfu_cpu       25%   320 |   13.29   12.58    75.2 |  55.3%  44.7%   0.00   2.99 |     1.52     8.74 | 122046/122048 |                | 3.2e-6 / 5.4e-6
+lfu_cpu       50%   640 |    7.42    6.98   134.7 |  82.4%  17.6%   0.00   2.51 |     1.37     3.17 | 122048/122048 |                | 2.9e-6 / 5.8e-6
+
+mediana de ms/token por posição no contexto (tokens na faixa):
+política   orçam. |          0-256        256-512       512-1024          1024+
+resident     100% |    4.52 (1024)    4.54 (1024)    4.62 (1611)    4.63 ( 155)
+lfu_cpu       25% |   13.73 (1024)   12.21 (1024)   12.07 (1611)   12.35 ( 155)
+lfu_cpu       50% |    7.94 (1024)    6.62 (1024)    6.73 (1611)    7.05 ( 155)
+
+contagens exatas nas conversas e hash dos logits (texto-a e conversas):
+política   orçam. |   acertos     cóp.s    cóp.bg  descart.       CPU | hash
+resident     100% |         –         –         –         –         – | 162ca54cd7716a68
+lfu_cpu       25% |    539584         0     11398    425402    436800 | 28090cc4cd6f7f64
+lfu_cpu       50% |    804959         0      9591    161834    171425 | cbc6fdc486a34879
+
+ms/tok e tok/s: média nas conversas, mediana ao lado; acerto e CPU: fração dos experts pedidos; cóp.s e cóp.bg: cópias por token;
+roteador: espera do host pela leitura dos logits, por token (inclui o cálculo da GPU até ali); CPU ms: experts na CPU por token;
+sim: ms/token e acerto previstos pelo simulador para o mesmo orçamento e política (residente: 1000/tg_gpu do llama.cpp).
+logits: maior erro relativo (L2) contra o transformers no texto-a e, nas conversas, contra a passada residente; limite 1e-4, argmax igual;
+resultado: logits dentro da tolerância em todas as configurações

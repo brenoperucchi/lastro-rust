@@ -188,6 +188,20 @@ impl Slots {
         self.pending.len()
     }
 
+    /// Só para testes: fecha a stream de cópia com um callback de host até o `send` no transmissor devolvido (ou 10 s). As
+    /// admissões enfileiradas depois ficam `Loading`. Nada pode sincronizar a stream de cópia antes do `send`.
+    pub fn hold_copies(&self) -> Result<std::sync::mpsc::Sender<()>, Error> {
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        self._ctx.bind_to_thread()?;
+        // SAFETY: contexto corrente (acima); o callback não chama CUDA.
+        unsafe {
+            self.copy.launch_host_function(move || {
+                let _ = rx.recv_timeout(std::time::Duration::from_secs(10));
+            })
+        }?;
+        Ok(tx)
+    }
+
     /// Pesos de um expert na origem pinned (para o caminho de CPU).
     pub fn weights(&self, key: usize) -> (&[bf16], &[bf16]) {
         let buf = self.store[key].as_slice();
@@ -265,12 +279,7 @@ impl Slots {
     /// Slot a sobrescrever: um livre, senão o `Resident` de uso mais antigo que não guarda expert pedido nesta camada. O slot
     /// sai do mapa na hora (o expert antigo passa a ser falta) e fica `Reserved` até a cópia.
     pub fn victim(&mut self, pins: &Pins, idle: &Idle<'_>) -> Result<Option<Victim>, Error> {
-        if pins.owner != self.owner || idle.e.owner != self.owner {
-            return Err(foreign());
-        }
-        if pins.clock != self.clock {
-            return Err(tensor_error("Pins de outra camada"));
-        }
+        self.check_pins(pins, idle)?;
         let free = self.slots.iter().position(|s| s.state == State::Free);
         let pick = free.or_else(|| {
             self.slots
@@ -284,6 +293,41 @@ impl Slots {
                 .map(|(i, _)| i)
         });
         Ok(pick.map(|i| self.reserve(i)))
+    }
+
+    /// Como [`victim`](Self::victim), para as políticas que pontuam os experts: um slot livre, senão o `Resident` de menor
+    /// `prio(chave)` fora dos pinos (empate pelo índice do slot), e esse só se a prioridade for menor que `ceiling`. Recusar
+    /// não muda estado nenhum.
+    pub fn victim_min_by(&mut self, pins: &Pins, idle: &Idle<'_>, prio: impl Fn(usize) -> f64, ceiling: f64) -> Result<Option<Victim>, Error> {
+        self.check_pins(pins, idle)?;
+        if let Some(i) = self.slots.iter().position(|s| s.state == State::Free) {
+            return Ok(Some(self.reserve(i)));
+        }
+        let mut best: Option<(usize, f64)> = None;
+        for (i, s) in self.slots.iter().enumerate() {
+            if let State::Resident { key, last_use } = s.state {
+                if last_use < self.clock {
+                    let p = prio(key);
+                    if best.is_none_or(|(_, b)| p < b) {
+                        best = Some((i, p));
+                    }
+                }
+            }
+        }
+        Ok(match best {
+            Some((i, p)) if p < ceiling => Some(self.reserve(i)),
+            _ => None,
+        })
+    }
+
+    fn check_pins(&self, pins: &Pins, idle: &Idle<'_>) -> Result<(), Error> {
+        if pins.owner != self.owner || idle.e.owner != self.owner {
+            return Err(foreign());
+        }
+        if pins.clock != self.clock {
+            return Err(tensor_error("Pins de outra camada"));
+        }
+        Ok(())
     }
 
     /// Um slot `Free`, sem despejar ninguém (para `fill`).
@@ -545,9 +589,11 @@ mod tests {
     const E: usize = 8;
     const RODADAS: usize = 20;
 
-    fn device() -> Option<Arc<Device>> {
+    /// A GPU com a trava dos testes de unidade (`crate::gpu_test_lock`), segura enquanto o teste viver.
+    fn device() -> Option<(std::sync::MutexGuard<'static, ()>, Arc<Device>)> {
+        let trava = crate::gpu_test_lock();
         match Device::new(0) {
-            Ok(d) => Some(d),
+            Ok(d) => Some((trava, d)),
             Err(e) => {
                 assert!(std::env::var("MOE_RT_REQUIRE_GPU").as_deref() != Ok("1"), "MOE_RT_REQUIRE_GPU=1 e sem GPU: {e:?}");
                 None
@@ -647,7 +693,7 @@ mod tests {
 
     #[test]
     fn copia_em_segundo_plano_espera_a_leitura_do_slot() {
-        let Some(device) = device() else { return };
+        let Some((_trava, device)) = device() else { return };
         let s = device.new_stream().unwrap();
         let (mut slots, mut epoch, _router, xd) = par(&s, 2, 1);
 
@@ -708,7 +754,7 @@ mod tests {
 
     #[test]
     fn slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada() {
-        let Some(device) = device() else { return };
+        let Some((_trava, device)) = device() else { return };
         let s = device.new_stream().unwrap();
         assert_eq!(vitima_depois_de_carregar(&s, true), 1, "o slot que carregava o expert pedido na camada 3 foi despejado");
         assert_eq!(vitima_depois_de_carregar(&s, false), 0, "controle negativo: sem o pin da camada 3 a vítima devia ser o slot 0");
@@ -717,8 +763,72 @@ mod tests {
     /// As conferências em tempo de execução: geração ao lançar, `Pins` de outra camada, vítima velha, chave que não é falta, e
     /// objetos de outra instância.
     #[test]
+    fn vitima_por_prioridade_recusa_sem_mudar_estado() {
+        // C: o lfu_cpu só despeja o residente de menor pontuação, e só se o candidato o vence; recusar não pode reservar.
+        let Some((_trava, device)) = device() else { return };
+        let s = device.new_stream().unwrap();
+        let (mut slots, mut epoch, router, xd) = par(&s, 5, 3);
+        let prio = |key: usize| [3.0, 1.0, 1.0, 9.0, 0.0][key];
+        // Com slot livre, admite sem olhar a prioridade.
+        let pins = slots.pin_layer(&[]);
+        {
+            let (_lv, idle) = epoch.router_logits(&router, &xd).unwrap();
+            let v = slots.victim_min_by(&pins, &idle, prio, f64::NEG_INFINITY).unwrap().expect("slot livre recusado");
+            slots.copy_on_compute(v, 0).unwrap();
+        }
+        for key in [1, 2] {
+            let v = slots.free_slot().unwrap();
+            slots.copy_on_compute(v, key).unwrap();
+        }
+        slots.sync_all();
+        let antes: Vec<(State, u64)> = slots.slots.iter().map(|x| (x.state, x.gen)).collect();
+
+        // Cheio. O menor fora dos pinos é o 1 ou o 2 (empate em 1,0): sai o de menor índice de slot. Teto igual: recusa.
+        let pins = slots.pin_layer(&[]);
+        {
+            let (_lv, idle) = epoch.router_logits(&router, &xd).unwrap();
+            assert!(slots.victim_min_by(&pins, &idle, prio, 1.0).unwrap().is_none(), "empate com o teto admitido");
+        }
+        let depois: Vec<(State, u64)> = slots.slots.iter().map(|x| (x.state, x.gen)).collect();
+        assert_eq!(antes, depois, "recusar mudou estado ou geração");
+        assert!(matches!(slots.lookup(1), Lookup::Hit(_)) && matches!(slots.lookup(2), Lookup::Hit(_)));
+
+        // Pino: com 1 fixado, o candidato que vence sai pelo 2; o 0 (3,0) fica.
+        let slot_de = |slots: &Slots, key: usize| slots.slot_of[key].unwrap();
+        let s2 = slot_de(&slots, 2);
+        let pins = slots.pin_layer(&[1]);
+        {
+            let (_lv, idle) = epoch.router_logits(&router, &xd).unwrap();
+            let v = slots.victim_min_by(&pins, &idle, prio, 9.0).unwrap().expect("candidato que vence recusado");
+            assert_eq!(v.index, s2);
+            slots.copy_on_compute(v, 3).unwrap();
+        }
+        slots.sync_all();
+        assert!(matches!(slots.lookup(2), Lookup::Miss) && matches!(slots.lookup(1), Lookup::Hit(_)));
+
+        // Sem pinos e empate entre slots: o de menor índice. Aqui 1 (1,0) é o único mínimo; depois dele, 0 (3,0) < 3 (9,0).
+        let s1 = slot_de(&slots, 1);
+        let s0 = slot_de(&slots, 0);
+        let pins = slots.pin_layer(&[]);
+        {
+            let (_lv, idle) = epoch.router_logits(&router, &xd).unwrap();
+            let v = slots.victim_min_by(&pins, &idle, prio, 2.0).unwrap().unwrap();
+            assert_eq!(v.index, s1);
+            slots.copy_on_compute(v, 4).unwrap();
+        }
+        let pins = slots.pin_layer(&[4]);
+        {
+            let (_lv, idle) = epoch.router_logits(&router, &xd).unwrap();
+            let v = slots.victim_min_by(&pins, &idle, |k| if k == 4 { 0.0 } else { 5.0 }, 6.0).unwrap().unwrap();
+            assert_eq!(v.index, s0.min(slot_de(&slots, 3)), "empate não saiu pelo menor índice");
+            slots.copy_on_compute(v, 2).unwrap();
+        }
+        slots.sync_all();
+    }
+
+    #[test]
     fn conferencias_em_tempo_de_execucao() {
-        let Some(device) = device() else { return };
+        let Some((_trava, device)) = device() else { return };
         let s = device.new_stream().unwrap();
         let (mut slots, mut epoch, router, xd) = par(&s, 3, 2);
         let mut ids = Vec::new();
@@ -778,7 +888,7 @@ mod tests {
     /// ficam de fora (custam o mesmo que antes do B0; o tempo de parede do `m2a` as cobre).
     #[test]
     fn protocolo_custa_pouco_no_host() {
-        let Some(device) = device() else { return };
+        let Some((_trava, device)) = device() else { return };
         let s = device.new_stream().unwrap();
         let (n, k, fila) = (64usize, 8usize, 4usize);
         let gu = vec![bf16::from_f32(0.0); 2 * I * H];

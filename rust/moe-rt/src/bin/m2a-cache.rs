@@ -10,13 +10,16 @@
 //! `cache_full` é o caminho do cache com slots para todos os experts, preenchido antes das conversas: só acertos, então a
 //! diferença para `resident` é o custo fixo do caminho do cache (leitura do roteador no host, lançamentos por expert).
 //!
+//! `--warmup 0,1,2,3` passa essas conversas pelo cache depois de esvaziá-lo e antes das medidas, sem cronometrar nem
+//! conferir (o aquecimento da comparação do simulador); o cabeçalho ganha `; aquecimento [...]`.
+//!
 //! No fim, as contagens exatas do cache e um hash dos logits de cada configuração (FNV-1a sobre os bits, texto-a e conversas),
 //! para comparar dois binários bit a bit. Com `--admit barreira` a admissão do `lru_cpu` não depende do tempo
 //! ([`AdmitMode::Barrier`]), e as contagens e o hash se repetem entre execuções.
 //!
 //!   m2a-cache --model <dir> --traces <dir> --ref <dir> --sim <sim.json> [--convs 4,5,6,7] [--budgets 0.1,0.25,0.5,0.75]
-//!             [--policies resident,cache_full,lru_sync,lru_cpu] [--threads N] [--backlog N] [--admit evento|barreira]
-//!             [--metrics <arquivo>]
+//!             [--policies resident,cache_full,lru_sync,lru_cpu,lfu_cpu] [--threads N] [--backlog N]
+//!             [--admit evento|barreira] [--warmup 0,1,2,3] [--metrics <arquivo>]
 use cutile::prelude::Device;
 use moe_monitor::snapshot::{self, Event, Publisher, Request, Snapshot, State};
 use moe_rt::cache::{AdmitMode, CacheConfig, Policy};
@@ -36,6 +39,7 @@ struct Args {
     refdir: PathBuf,
     sim: Option<PathBuf>,
     convs: Vec<usize>,
+    warmup: Vec<usize>,
     budgets: Vec<f64>,
     policies: Vec<String>,
     threads: usize,
@@ -52,6 +56,7 @@ fn parse_args() -> Args {
         refdir: PathBuf::new(),
         sim: None,
         convs: vec![4, 5, 6, 7],
+        warmup: Vec::new(),
         budgets: vec![0.1, 0.25, 0.5, 0.75],
         policies: vec!["resident".into(), "cache_full".into(), "lru_sync".into(), "lru_cpu".into()],
         threads: 8,
@@ -67,6 +72,7 @@ fn parse_args() -> Args {
             "--ref" => r.refdir = PathBuf::from(v()),
             "--sim" => r.sim = Some(PathBuf::from(v())),
             "--convs" => r.convs = v().split(',').map(|s| s.trim().parse().expect("--convs")).collect(),
+            "--warmup" => r.warmup = v().split(',').map(|s| s.trim().parse().expect("--warmup")).collect(),
             "--budgets" => r.budgets = v().split(',').map(|s| s.trim().parse().expect("--budgets")).collect(),
             "--policies" => r.policies = v().split(',').map(|s| s.trim().to_string()).collect(),
             "--threads" => r.threads = v().parse().expect("--threads"),
@@ -161,6 +167,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = Config::from_json(&serde_json::from_slice(&std::fs::read(args.model.join("config.json"))?)?)?;
     let host = HostModel::load(&Checkpoint::open(&args.model)?, cfg.clone())?;
     let convs: Vec<Conv> = args.convs.iter().map(|c| load_conv(&args.traces.join(format!("conversa-{c}")))).collect::<Result<_, _>>()?;
+    let warm: Vec<Conv> = args.warmup.iter().map(|c| load_conv(&args.traces.join(format!("conversa-{c}")))).collect::<Result<_, _>>()?;
     let ref_tokens = Npy::read(&args.refdir.join("tokens.npy"))?.i32()?;
     let ref_logits = Npy::read(&args.refdir.join("logits.npy"))?.f32()?;
     let sim: Option<serde_json::Value> = match &args.sim {
@@ -168,17 +175,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => None,
     };
     let total_tokens: usize = convs.iter().map(|c| c.tokens.len()).sum();
-    let longest = convs.iter().map(|c| c.tokens.len()).max().unwrap_or(0).max(ref_tokens.len());
+    let longest = convs.iter().chain(&warm).map(|c| c.tokens.len()).max().unwrap_or(0).max(ref_tokens.len());
     let max_len = (longest + 1).next_multiple_of(ATTN_BN);
     let slots_all = cfg.layers * cfg.experts;
     let expert_mb = host.layers[0].moe.expert_bytes() as f64 / 1e6;
     let name = args.model.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     println!(
-        "M2a: {name}; conversas {:?} ({total_tokens} tokens); {slots_all} experts de {expert_mb:.2} MB; CPU com {} threads; backlog {}; admissão {}",
+        "M2a: {name}; conversas {:?} ({total_tokens} tokens); {slots_all} experts de {expert_mb:.2} MB; CPU com {} threads; backlog {}; admissão {}{}",
         args.convs,
         args.threads,
         args.backlog,
-        if args.admit == AdmitMode::Barrier { "barreira" } else { "evento" }
+        if args.admit == AdmitMode::Barrier { "barreira" } else { "evento" },
+        if args.warmup.is_empty() { String::new() } else { format!("; aquecimento {:?}", args.warmup) }
     );
 
     let publisher = Publisher::new(&args.metrics).map_err(|e| eprintln!("aviso: métricas desligadas: {e}")).ok();
@@ -208,8 +216,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match p.as_str() {
             "resident" => {}
             "cache_full" => configs.push(("cache_full".into(), Some((1.0, Policy::LruSync)))),
-            "lru_sync" | "lru_cpu" => {
-                let pol = if p == "lru_sync" { Policy::LruSync } else { Policy::LruCpu };
+            "lru_sync" | "lru_cpu" | "lfu_cpu" => {
+                let pol = match p.as_str() {
+                    "lru_sync" => Policy::LruSync,
+                    "lru_cpu" => Policy::LruCpu,
+                    _ => Policy::LfuCpu,
+                };
                 for &b in &args.budgets {
                     configs.push((p.clone(), Some((b, pol))));
                 }
@@ -256,6 +268,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if pname == "cache_full" {
                 c.fill()?;
             }
+        }
+        // Aquecimento: só o estado do cache conta; sem cronômetro, conferência ou hash.
+        if matches!(g.experts, Experts::Cached(_)) {
+            for conv in &warm {
+                g.reset();
+                for &tok in &conv.tokens {
+                    g.step(tok as usize)?;
+                }
+            }
+        }
+        if let Experts::Cached(c) = &mut g.experts {
             c.stats = Default::default();
         }
         let reference = pname == "resident";

@@ -1,0 +1,48 @@
+modelo 1b: 24 camadas × 32 experts (k=8), 768 experts; treino 3896 tokens, teste 3451 tokens; parâmetros runtime, protocolo runtime; c_copy 0.157 ms (0.223 com a CPU ocupada), c_cpu 0.0557 ms (0.0481 sem cópia), h 0.0050 ms, g 0.0849 ms, o_layer 0.0367 ms
+  calibração camadas residentes 100%: 334 tok/s simulado (runtime, GPU do m2b 334 tok/s)
+  calibração camadas residentes 50%: 140 tok/s simulado
+  calibração camadas residentes 0%: 89 tok/s simulado
+
+orçamento 10% = 76 slots (0.24 GB)
+  política   tok/s   acerto   CPU   cópias síncronas/token   cópias bg/token   espera ms/token   vs lru_sync
+  camadas       94     8.3%  91.7%                     0.0               0.0              7.60    -74.9%
+  estatica     108    21.6%  78.4%                     0.0               0.0              6.29    -79.2%
+  lru_sync      30     0.0%   0.0%                   192.0               0.0             30.25     +0.0%
+  belady        43    33.2%   0.0%                   128.2               0.0             20.21    -33.2%
+  lru_cpu       81    11.3%  88.7%                     0.0              55.6              9.41    -68.9%
+  lfu_cpu      110    24.9%  75.1%                     0.0               1.5              6.11    -79.8%
+  custo         96    24.6%  71.4%                     7.7              15.1              7.46    -75.4%
+  oraculo      106    34.4%  65.6%                     0.0              27.6              6.46    -78.6%
+
+orçamento 25% = 192 slots (0.60 GB)
+  política   tok/s   acerto   CPU   cópias síncronas/token   cópias bg/token   espera ms/token   vs lru_sync
+  camadas      109    25.0%  75.0%                     0.0               0.0              6.22    -60.4%
+  estatica     139    44.1%  55.9%                     0.0               0.0              4.22    -73.1%
+  lru_sync      53    48.1%   0.0%                    99.6               0.0             15.71     +0.0%
+  belady        76    66.4%   0.0%                    64.5               0.0             10.19    -35.2%
+  lru_cpu      111    43.1%  56.9%                     0.0              40.3              6.01    -61.7%
+  lfu_cpu      147    50.1%  49.9%                     0.0               2.3              3.83    -75.6%
+  custo        133    50.0%  47.7%                     4.5              10.4              4.52    -71.2%
+  oraculo      148    63.3%  36.7%                     0.0              27.7              3.78    -75.9%
+
+orçamento 50% = 384 slots (1.21 GB)
+  política   tok/s   acerto   CPU   cópias síncronas/token   cópias bg/token   espera ms/token   vs lru_sync
+  camadas      140    50.0%  50.0%                     0.0               0.0              4.14    -51.8%
+  estatica     213    72.3%  27.7%                     0.0               0.0              1.72    -80.0%
+  lru_sync      86    71.7%   0.0%                    54.4               0.0              8.59     +0.0%
+  belady       164    89.8%   0.0%                    19.7               0.0              3.12    -63.7%
+  lru_cpu      180    75.4%  24.6%                     0.0              24.6              2.57    -70.1%
+  lfu_cpu      231    78.5%  21.5%                     0.0               1.8              1.34    -84.4%
+  custo        226    78.5%  21.1%                     0.7               3.1              1.44    -83.2%
+  oraculo      245    89.0%  11.0%                     0.0              13.1              1.10    -87.2%
+
+orçamento 75% = 576 slots (1.81 GB)
+  política   tok/s   acerto   CPU   cópias síncronas/token   cópias bg/token   espera ms/token   vs lru_sync
+  camadas      198    75.0%  25.0%                     0.0               0.0              2.07    +11.0%
+  estatica     291    90.4%   9.6%                     0.0               0.0              0.45    -76.0%
+  lru_sync     206    93.9%   0.0%                    11.8               0.0              1.87     +0.0%
+  belady       278    98.0%   0.0%                     3.8               0.0              0.61    -67.5%
+  lru_cpu      277    93.9%   6.1%                     0.0               9.8              0.62    -66.6%
+  lfu_cpu      307    94.4%   5.6%                     0.0               1.0              0.27    -85.7%
+  custo        307    94.4%   5.6%                     0.0               1.1              0.27    -85.5%
+  oraculo      315    98.0%   2.0%                     0.0               3.1              0.19    -89.9%

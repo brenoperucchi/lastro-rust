@@ -1,0 +1,38 @@
+Mutantes do C (lfu_cpu), um de cada vez, com o código restaurado e conferido depois de cada um. Valem: M1, M2, M3, "M4 com o
+teste refeito" (checagem direta da Freq depois do clear) e "ME refeito com tests/portao.rs" (reprova pela Freq, chave 0).
+As entradas "M4" e "M4 de novo" são tentativas de teste que não distinguiam o mutante (o roteador do modelo de teste usa só
+4-5 chaves; na segunda, o próprio teste falhava no código certo), e o primeiro "ME" reprovou pelo prazo do portão, não pela
+Freq. Os mutantes MA-MD (empate pelo maior índice, passo não incrementado, toque depois das decisões, teto não estrito) foram
+rodados pelo rev-2 na rodada 38, numa cópia do crate, e estão no veredito dele.
+
+== M1: victim_min_by sem o teto
+test cache::core::tests::vitima_por_prioridade_recusa_sem_mudar_estado ... FAILED
+test cache_lfu_cpu_segue_o_lfu_de_referencia_e_bate_com_a_cpu ... FAILED
+test cache_lfu_cpu_por_evento_bate_com_a_cpu_e_clear_zera_as_frequencias ... ok
+== M2: sem tocar a frequência
+test cache::core::tests::vitima_por_prioridade_recusa_sem_mudar_estado ... ok
+test cache_lfu_cpu_segue_o_lfu_de_referencia_e_bate_com_a_cpu ... FAILED
+test cache_lfu_cpu_por_evento_bate_com_a_cpu_e_clear_zera_as_frequencias ... ok
+== M3: lfu_cpu com a vítima do LRU
+test cache::core::tests::vitima_por_prioridade_recusa_sem_mudar_estado ... ok
+test cache_lfu_cpu_segue_o_lfu_de_referencia_e_bate_com_a_cpu ... FAILED
+test cache_lfu_cpu_por_evento_bate_com_a_cpu_e_clear_zera_as_frequencias ... ok
+== M4: clear sem zerar as frequências
+test cache_lfu_cpu_por_evento_bate_com_a_cpu_e_clear_zera_as_frequencias ... ok
+test cache_lfu_cpu_segue_o_lfu_de_referencia_e_bate_com_a_cpu ... ok
+== M4 de novo, teste novo
+test cache_lfu_cpu_por_evento_bate_com_a_cpu_e_clear_zera_as_frequencias ... FAILED
+== M4 com o teste refeito
+test cache_lfu_cpu_por_evento_bate_com_a_cpu_e_clear_zera_as_frequencias ... FAILED
+== ME: chave Loading não conta como toque (rodada 38, rev-2)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+test cache_lfu_cpu_por_evento_bate_com_a_cpu_e_clear_zera_as_frequencias ... FAILED
+test result: FAILED. 20 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.78s
+error: test failed, to rerun pass `--test model`
+== ME refeito com tests/portao.rs (o anterior reprovou pelo prazo do portão, não pela Freq)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.83s
+test lfu_cpu_conta_o_toque_do_expert_que_ainda_esta_carregando ... FAILED
+thread 'lfu_cpu_conta_o_toque_do_expert_que_ainda_esta_carregando' (2761333) panicked at tests/portao.rs:48:9:
+assertion `left == right` failed: chave 0
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.77s

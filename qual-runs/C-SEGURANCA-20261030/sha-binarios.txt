@@ -1,0 +1,4 @@
+028f59d00f2c2296592d1ddf0a5f71f025b6cc383b39159c63f3228b3b697055  qual-runs/C-SEGURANCA-20261030/bin/m2a-cache
+32d7bd559b26932f9fd2aaa191e33495462d14050cf00fc3a5341256fe559a00  qual-runs/C-SEGURANCA-20261030/bin/v2/m2a-cache
+028f59d00f2c2296592d1ddf0a5f71f025b6cc383b39159c63f3228b3b697055  rust/moe-rt/target/release/m2a-cache
+fef2708d3ffd05b6e3013a0c4d9ece0338d46ebc75b902011c7affbcab895bf6  qual-runs/B0-SEGURANCA-20261029/bin/final/m2a-cache

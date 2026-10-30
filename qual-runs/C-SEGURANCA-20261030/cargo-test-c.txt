@@ -1,0 +1,142 @@
+   Compiling moe-rt v0.0.1 (/home/brenoperucchi/Devs/strata-opencode/rust/moe-rt)
+    Finished `release` profile [optimized] target(s) in 7.61s
+     Running unittests src/lib.rs (target/release/deps/moe_rt-ee3e24ae44ca5966)
+
+running 7 tests
+test cache::tests::freq_da_as_mesmas_pontuacoes_do_simulador ... ok
+test cache::core::tests::conferencias_em_tempo_de_execucao ... ok
+test cache::core::tests::copia_em_segundo_plano_espera_a_leitura_do_slot ... ok
+test cache::core::tests::slot_carregando_fica_fora_do_mapa_e_ganha_o_uso_da_camada ... ok
+test cache::core::tests::protocolo_custa_pouco_no_host ... ok
+test cache::core::tests::vitima_por_prioridade_recusa_sem_mudar_estado ... ok
+test gpu::tests::enqueue_expert_recusa_a_com_tamanho_errado ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+
+     Running unittests src/bin/m1a-bloco.rs (target/release/deps/m1a_bloco-29311cfaeff8592d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/m1b-gulosa.rs (target/release/deps/m1b_gulosa-1b600c41aba7ffd9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/m1b-modelo.rs (target/release/deps/m1b_modelo-aa7fd8fe12e04870)
+
+running 1 test
+test tests::nan_fora_do_argmax_reprova ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/m2a-cache.rs (target/release/deps/m2a_cache-b1d3685b51c8e55c)
+
+running 1 test
+test tests::nan_fora_do_argmax_reprova ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/m2b-custo-fixo.rs (target/release/deps/m2b_custo_fixo-1429412a97848137)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/m2c-kernels.rs (target/release/deps/m2c_kernels-605fcc3b988123a2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/block.rs (target/release/deps/block-af134ceb88e695ec)
+
+running 16 tests
+test camada_com_formas_trocadas_e_recusada ... ok
+test leitor_de_safetensors_recusa_cabecalho_malformado_sem_entrar_em_panico ... ok
+test leitor_de_safetensors_le_bf16_e_recusa_dtype_ausente_e_offsets_ruins ... ok
+test roteador_escolhe_top_k_em_ordem_e_desempata_pelo_menor_indice ... ok
+test tile_ao_longo_de_k_e_a_maior_potencia_de_dois_que_divide_ate_1024 ... ok
+test produto_escalar_bate_com_f64_em_tamanhos_com_e_sem_sobra_de_32 ... ok
+test down_dos_experts_nao_divide_o_nome_do_gemv ... ok
+test bloco_na_cpu_bate_com_implementacao_ingenua_em_f64 ... ok
+test swiglu_e_silu_da_primeira_metade_vezes_a_segunda ... ok
+test pool_com_panico_de_quem_chama_e_de_uma_thread_no_mesmo_despacho_nao_contamina_o_seguinte ... ok
+test pool_propaga_panico_de_tarefa_e_continua_utilizavel ... ok
+test gemv_da_cpu_bate_com_f64_com_sobra_de_colunas_e_mais_threads_que_linhas ... ok
+test pool_cobre_cada_tarefa_uma_vez_em_muitos_despachos_seguidos ... ok
+test bloco_na_gpu_bate_com_a_cpu ... ok
+test bloco_na_gpu_bate_com_a_cpu_com_hidden_que_nao_e_potencia_de_dois ... ok
+test gemv_swiglu_e_gemv_axpby_batem_com_f64 ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.65s
+
+     Running tests/model.rs (target/release/deps/model-ebbeb0e28541eeed)
+
+running 21 tests
+test configuracao_le_o_granite_e_recusa_variantes_nao_suportadas ... ok
+test leitor_npy_le_f32_e_i32_e_recusa_dtype_errado ... ok
+test leitor_npy_recusa_arquivo_truncado_ou_malformado_sem_entrar_em_panico ... ok
+test rmsnorm_normaliza_pela_raiz_da_media_dos_quadrados ... ok
+test rope_gira_as_metades_de_cada_cabeca_e_posicao_zero_e_identidade ... ok
+test atencao_recusa_part_com_menos_blocos_que_a_grade_pede ... ok
+test modelo_na_gpu_recusa_no_upload_dimensao_de_tile_que_nao_e_potencia_de_dois ... ok
+test atencao_em_duas_passadas_bate_com_a_referencia_em_toda_fronteira_de_fatia ... ok
+test cache_cheio_preenchido_antes_so_tem_acertos_e_bate_com_a_cpu ... ok
+test cache_largado_com_admissoes_em_voo_nao_quebra_o_processo ... ok
+test cache_lru_cpu_descarta_admissao_quando_o_backlog_esta_cheio ... ok
+test passo_com_roteamento_dado_de_fora_calcula_o_mesmo_e_as_variantes_parciais_nao_quebram_o_modelo ... ok
+test passo_com_token_fora_do_vocabulario_ou_cache_kv_cheio_devolve_erro_e_o_modelo_segue_utilizavel ... ok
+test modelo_na_gpu_bate_com_a_cpu_por_mais_de_uma_fatia_da_atencao ... ok
+test cache_lru_cpu_com_barreira_repete_logits_e_contadores ... ok
+test cache_lru_cpu_bate_com_a_cpu_e_admite_em_segundo_plano ... ok
+test cache_lru_sync_nao_despeja_acerto_da_mesma_camada_e_segue_o_lru_de_referencia ... ok
+test cache_lru_sync_bate_com_a_cpu_e_so_copia_quando_falta ... ok
+test cache_lfu_cpu_por_evento_bate_com_a_cpu_e_clear_zera_as_frequencias ... ok
+test cache_lfu_cpu_segue_o_lfu_de_referencia_e_bate_com_a_cpu ... ok
+test modelo_na_gpu_bate_com_a_cpu_com_hidden_que_nao_e_potencia_de_dois ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.81s
+
+     Running tests/portao.rs (target/release/deps/portao-49c73f904f39b296)
+
+running 1 test
+test lfu_cpu_conta_o_toque_do_expert_que_ainda_esta_carregando ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.83s
+
+     Running tests/tipos.rs (target/release/deps/tipos-6f8b166ccb5f5483)
+
+running 2 tests
+test cache_proibe_unsafe_fora_do_nucleo ... ok
+   Compiling moe-rt v0.0.1 (/home/brenoperucchi/Devs/strata-opencode/rust/moe-rt)
+   Compiling moe-rt-tests v0.0.0 (/home/brenoperucchi/Devs/strata-opencode/rust/moe-rt/target/tests/trybuild/moe-rt)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.44s
+
+
+test [0m[1mtests/ui/lanca_slot_carregando.rs[0m [should fail to compile] ... [0m[32mok
+[0mtest [0m[1mtests/ui/slots_sem_par.rs[0m [should fail to compile] ... [0m[32mok
+[0mtest [0m[1mtests/ui/solta_uploads_sem_idle.rs[0m [should fail to compile] ... [0m[32mok
+[0mtest [0m[1mtests/ui/vitima_reusada.rs[0m [should fail to compile] ... [0m[32mok
+[0mtest [0m[1mtests/ui/vitima_sem_idle.rs[0m [should fail to compile] ... [0m[32mok
+[0mtest [0m[1mtests/ui/vitima_sem_pins.rs[0m [should fail to compile] ... [0m[32mok
+[0mtest [0m[1mtests/ui-pass/lanca_slot_carregando.rs[0m [should pass] ... [0m[32mok
+[0mtest [0m[1mtests/ui-pass/slots_sem_par.rs[0m [should pass] ... [0m[32mok
+[0mtest [0m[1mtests/ui-pass/solta_uploads_sem_idle.rs[0m [should pass] ... [0m[32mok
+[0mtest [0m[1mtests/ui-pass/vitima_reusada.rs[0m [should pass] ... [0m[32mok
+[0mtest [0m[1mtests/ui-pass/vitima_sem_idle.rs[0m [should pass] ... [0m[32mok
+[0mtest [0m[1mtests/ui-pass/vitima_sem_pins.rs[0m [should pass] ... [0m[32mok
+[0m
+
+test protocolo_do_cache_recusado_pelo_compilador ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.45s
+
+   Doc-tests moe_rt
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

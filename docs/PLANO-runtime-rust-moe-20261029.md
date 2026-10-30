@@ -1440,3 +1440,321 @@ sustentam. Ressalvas, todas tratadas: o caso de criar `Slots` sem o par não tin
 tinham registro (`mutantes.sh`, `mutantes-nucleo.txt`; os dois revisores); os critérios de tempo foram medidos no `depois`
 e não no `final`, e o residente do 1B marcou 3,41 ms/token na única amostra do final, contra 3,09 e 3,03 do antes (rev-1;
 medida 5); "sem viés" era forte demais para 3 pares (rev-2; texto da medida 3).
+
+## Simulador recalibrado com o runtime (passo 3 da ordem aprovada, 30/10)
+
+O M0.5 usava custos do llama.cpp e um protocolo que o runtime não segue. O passo 3 troca os dois e confere o simulador contra o
+`m2a` medido antes de refazer a comparação das políticas. A primeira versão desta seção concluía que o `custo` acrescentava
+até 4% sobre o `lfu_cpu`. A rodada 35 mostrou que isso dependia de uma escolha de modelagem que a validação não testava, e as
+medidas com backlog 0 decidiram a escolha no sentido contrário (abaixo).
+
+**Mudanças em `tools/moe_sim.py`** (o conjunto antigo continua disponível: `--params llamacpp --protocol m05` reproduz
+`sim-1b.txt` e `sim-3b.txt`, iguais fora do cabeçalho, que ganhou campos):
+
+- **Parâmetros do runtime** (`PARAMS_RUNTIME`, o padrão): `h` = os dois kernels de expert do M2c (1B 4,96 µs, 3B 5,19 µs);
+  `g` = GPU por token do M2b ÷ camadas − 8·`h` (1B 84,9 µs, 3B 109,4 µs).
+- **Protocolo do runtime** (`--protocol runtime`, o padrão): no `lru_cpu`, a chave em voo vai à CPU (o `ExpertCache` devolve
+  `Lookup::Loading`), e a admissão é recusada com `backlog` cópias não assentadas, contadas como no runtime, em vez do tempo de
+  fila do M0.5. O `backlog` virou parâmetro do `Sim` (padrão 4). O `custo` mantém a regra dele de esperar a cópia quando ela
+  termina antes da CPU.
+- **Camada com tráfego de cópia** = começa com cópia em voo (depois do `settle` do começo da camada, como o
+  `loading_count() > 0` do runtime) ou enfileira uma. Contada em `stats["layers_traffic"]`. É ela que separa os três regimes
+  medidos:
+  - **CPU em dois níveis**: por expert, 1B 46,4 µs com tráfego e 40,1 µs sem; 3B 69,4 e 61,0 µs (a CPU e o DMA disputam a
+    memória). Vêm do CPU ms medido por token contra os experts na CPU simulados em cada tipo de camada (`cpu_traffic`,
+    `cpu_quiet`), por mínimos quadrados sem pesos nos 4 `lru_cpu` e nos 4 `lru_cpu` com backlog 0 de cada modelo, iterados até
+    o ponto fixo (as contagens dependem do próprio `c_cpu`; 2 iterações). Resíduo máximo 0,22 e 0,32 ms/token; um custo fixo
+    por camada com CPU, a outra explicação, deixa 0,70 e 0,99.
+  - **`o_layer` = 36,7 µs** só nas camadas com tráfego e algum expert fora da GPU. É uma sobra medida, sem causa isolada:
+    aparece no `lru_sync` e no `lru_cpu` (10–36 µs por camada com tráfego, quase sempre entre 24 e 36) e some no `lru_cpu`
+    com backlog 0. Ajustado só no `lru_sync` do 1B (mínimos quadrados pela origem, 4 orçamentos). O tempo de despachar e
+    juntar as threads da CPU já está no `c_cpu`; a primeira versão do comentário o contava também aqui.
+  - **`pcie_gbs_cpu` = 14,1 GB/s**: com a CPU calculando experts, a cópia vai mais devagar. No `lru_cpu` a 10% do 1B a fila de
+    admissão fica sempre cheia, então a vazão medida é a banda efetiva (10,13 ms/token ÷ 45,3 cópias = 0,224 ms por 3,15 MB).
+    Vale para toda cópia em segundo plano e para a cópia síncrona do `custo` numa camada em que a CPU já trabalha. O 3B, fora
+    do ajuste, dá 14,2 GB/s pela mesma conta.
+- `--validar <saídas do m2a>` simula as condições de cada arquivo (cache vazio, conversas de teste 4–7, sem aquecimento, o
+  backlog do cabeçalho) e compara. O cabeçalho é lido nos dois formatos (com e sem `; admissão X`); cabeçalho sem backlog ou
+  com admissão por barreira é erro, e um arquivo sem nenhuma linha comparável reprova. `--cpu-scale` multiplica os dois custos
+  de CPU, para a sensibilidade.
+
+**Validação** (`qual-runs/TRACOS-20261029/validacao-{1b,3b}-runtime.txt`; critério combinado antes: acerto a ±2 pontos e
+ms/token a ±10%). Dentro do critério nas 24 linhas, 12 por modelo. Desvio de ms/token (e de acerto, no `lru_cpu`):
+
+| modelo | política | 10% | 25% | 50% | 75% |
+|---|---|---|---|---|---|
+| 1B | `lru_sync` | +0,0% | +0,1% | +0,1% | −1,9% |
+| 1B | `lru_cpu` | +3,7% (−0,4 pt) | +2,0% (+0,4 pt) | −1,5% (+0,5 pt) | −2,5% (+0,1 pt) |
+| 1B | `lru_cpu` backlog 0, 2 execuções | | +2,1% / +0,6% | +1,0% / −3,0% | |
+| 3B | `lru_sync` | +1,3% | +0,5% | −0,4% | −1,8% |
+| 3B | `lru_cpu` | +3,8% (+0,3 pt) | +1,2% (+0,2 pt) | 0,0% (+0,3 pt) | −2,9% (0,0 pt) |
+| 3B | `lru_cpu` backlog 0, 2 execuções | | +0,1% / −0,1% | +2,7% / −0,6% | |
+
+O caminho até aqui: só com os parâmetros novos, o tempo saía baixo, de −0,5 a −8% no `lru_sync` e até −16% no `lru_cpu`. O
+`o_layer` em toda camada com CPU fechou as 16 linhas com backlog 4, mas previa +23% (1B) e +20% (3B) no backlog 0, onde não
+há cópia nenhuma; com ele restrito às camadas com tráfego e a CPU em dois níveis, o backlog 0 fecha também. A banda disputada
+fechou o `lru_cpu` a 10%, que saía com acerto baixo (1B: 3,3% contra 15,2%) porque, a 20 GB/s, o simulador assentava cópias
+demais.
+
+**Comparação das políticas** (`sim-{1b,3b}-runtime.{txt,json}`; sensibilidade com a CPU 15% mais rápida e 20% mais lenta em
+`sim-*-runtime-cpu085.*` e `sim-*-runtime-cpu12.*`). Espera em ms/token, como no M0.5, com aquecimento nas conversas 0–3:
+
+| modelo | orçamento | `lru_cpu` | `lfu_cpu` | `custo` | oráculo | `lfu_cpu` × `lru_cpu` | `custo` × `lru_cpu` | `custo` × `lfu_cpu` |
+|---|---|---|---|---|---|---|---|---|
+| 1B | 10% | 7,52 | 4,95 | 6,14 | 5,41 | −34,2% | −18,3% | +24,1% |
+| 1B | 25% | 4,95 | 3,06 | 3,52 | 3,21 | −38,2% | −28,9% | +15,0% |
+| 1B | 50% | 2,12 | 1,02 | 1,06 | 0,92 | −51,7% | −49,7% | +4,2% |
+| 1B | 75% | 0,52 | 0,18 | 0,19 | 0,15 | −64,3% | −63,8% | +1,2% |
+| 3B | 10% | 13,37 | 9,98 | 11,50 | 10,24 | −25,4% | −14,0% | +15,3% |
+| 3B | 25% | 8,66 | 5,92 | 6,38 | 5,38 | −31,6% | −26,3% | +7,8% |
+| 3B | 50% | 3,31 | 1,98 | 2,01 | 1,37 | −40,1% | −39,1% | +1,6% |
+| 3B | 75% | 0,70 | 0,40 | 0,40 | 0,20 | −42,7% | −42,5% | +0,3% |
+
+Fração das camadas com tráfego (contador `layers_traffic`, todas as camadas das conversas 4–7, com aquecimento), de 10% a
+50%: `lru_cpu` 98–100%, `lfu_cpu` 6–12%, `custo` 14–86%, oráculo 68–98%.
+
+- **Portão do passo 3 (`custo` ≥ 5% sobre o `lru_cpu`): passa no texto, mas não serve mais de guia.** O `custo` reduz a
+  espera em 14–50% de 10% a 50%. Só que o `lfu_cpu`, que é o `custo` sem a cópia síncrona, reduz mais: 25–52% (+19 a +32% de
+  tok/s). Com a CPU 15% mais rápida ou 20% mais lenta, a ordem é a mesma (`custo` × `lfu_cpu` de +0,8 a +24%).
+- **Por que o `lfu_cpu` ganha:** acerta mais (1B 10%: 24,9% contra 14,8%; 25%: 50,1% contra 43,7%) e copia muito menos (1,5–3
+  cópias por token contra 23–54 do `lru_cpu` de 10% a 50%), então só 6–12% das camadas têm tráfego. Nas outras, a CPU custa o
+  nível baixo e não há `o_layer`.
+- **Por que o `custo` perde para o `lfu_cpu`:** a cópia síncrona que ele escolhe quando "termina antes da CPU" põe tráfego em
+  14–86% das camadas, e a regra de decisão dele não vê esse custo (a CPU disputada nas camadas seguintes e o `o_layer`).
+- **O que isso sugere para o C:** implementar o despejo e a admissão do `lfu_cpu` (frequência com decaimento, admite só se
+  vence o residente mais fraco), sem modelo de tempo no runtime, e medir contra o `lru_cpu`. A cópia síncrona por custo não
+  entra como está; se voltar, a regra dela precisa contar o tráfego que cria.
+- **O oráculo não é mais limite:** no 1B a 10% e 25% e no 3B a 10%, o `lfu_cpu` fica abaixo dele, porque o oráculo admite
+  pelo futuro e copia muito (tráfego em 68–98% das camadas; o simulador não tem oráculo de colocação que conte o custo do
+  tráfego). A distância até ele deixa de medir o que o prefetch pode ganhar.
+
+**Medida com backlog 1 e 2** (`qual-runs/BACKLOG-INTERMEDIARIO-20261030/`, aprovada pelo Breno em 30/10; `lru_cpu`, backlog
+0, 1, 2 e 4 intercalados, 2 repetições, 10/25/50%, os dois modelos; mesmo binário das referências; análise em `analise.py` e
+`analise.txt`). Previsões e critério estão em `previsao.txt`, gravado às 10:34:17 pelo mtime (o cabeçalho diz 10:34:05, a hora
+em que o script começou). Nesse instante só a 1ª execução de controle, 1B backlog 0, tinha terminado (10:34:09), e eu não a
+tinha lido; a 1ª com backlog 1 terminou às 10:36:04. Os metadados confirmam o registro antes de qualquer resultado com
+backlog 1 ou 2, não antes do primeiro controle. Ela testa a metade da hipótese que a fração de camadas não testa: se uma cópia em voo pesa como quatro.
+
+- **O ambiente mudou desde as referências.** O driver da NVIDIA foi atualizado às 03:22 de 30/10 sem recarregar o módulo
+  (módulo 610.57, `libcuda` 615.78; o CUDA funciona, o NVML não), e a máquina tinha carga de fundo (média de carga ~5 antes da
+  medida). Nesta sessão o residente ficou 6,6–7,6% mais rápido (1B 2,85 contra 3,05 ms/token; 3B 4,49 contra 4,86) e a CPU
+  13–23% mais lenta por expert (1B 45,9 µs sem tráfego e 55,8 com backlog 4, contra 40,1 e 46,4; 3B 69–70 e 85, contra 61 e
+  69). Por isso o critério absoluto ("ms/token mais de 10% abaixo da previsão") não se aplica: tudo ficou acima da previsão.
+  A conta que vale é dentro da sessão, contra os controles 0 e 4.
+- **Pelo critério registrado, o binário não cai.** Nenhum ms/token ficou abaixo da previsão, e o CPU por expert com
+  backlog 1 fica a 61–90% do caminho entre o nível quieto e o nível com tráfego (backlog 2: 87–130%, o que dá uma ideia do
+  ruído com 2 repetições e carga de fundo). Mas o binário não é exato: os 10–39% que a 1ª cópia não traz contam, abaixo.
+- **Custos que o modelo binário não tem.** O `lru_cpu` com backlog 1 ficou 6–10% mais rápido que com backlog 4 (1B 25%:
+  6,3%; as outras 5 células, 9–10%); o simulador previa 0–4%. Da diferença em ms/token (0,57–2,03), 39–66% está no CPU ms
+  (0,26–1,33) e 22–44% na espera do roteador (0,18–0,45), que é parede do host até os logits, não tempo isolado da GPU. Os
+  dois não particionam o total, porque se sobrepõem. A espera do roteador quase não muda de backlog 0 para 1 em 4 das 6
+  células (1B 10%: 0,74 → 0,75; 3B 25%: 1,21 → 1,21) e cresce de 1 para 4. Ela acompanha as cópias simultâneas, não as
+  cópias por token. Uma hipótese, não testada: a leitura dos logits (D2H na stream de cálculo) espera na fila do motor de
+  cópia atrás das H2D em voo.
+- **Efeito na conclusão: a margem do `lfu_cpu` sobre o `custo` diminui, sem virar o sinal.** No simulador, 94–97% das camadas
+  com tráfego do `lfu_cpu` e 93–96% das do `custo` têm uma cópia em voo só. O termo do roteador, que só aparece com várias
+  simultâneas, quase não pega nenhum dos dois. O que pega é a CPU não binária: o modelo cobra o nível cheio numa camada de uma
+  cópia que, medida, custa 61–90% do aumento. O `custo` tem mais camadas assim (tráfego em 14–86% contra 6–12%), então
+  corrigir isso ajuda mais a ele. Cobrando só a fração S do aumento de CPU e do `o_layer` nas camadas de uma cópia (S = 1 é a
+  tabela acima; cobrar S também no `o_layer` é o caso mais favorável ao `custo`, então é um limite), `custo` × `lfu_cpu` fica:
+
+  | S | 1B 10% | 1B 25% | 1B 50% | 1B 75% | 3B 10% | 3B 25% | 3B 50% | 3B 75% |
+  |---|---|---|---|---|---|---|---|---|
+  | 1 | +24,1% | +15,0% | +4,2% | +1,2% | +15,3% | +7,8% | +1,6% | +0,3% |
+  | 0,75 | +17,5% | +11,1% | +3,2% | +1,0% | +10,8% | +5,6% | +1,2% | +0,2% |
+  | 0,6 | +13,6% | +8,9% | +2,6% | +0,8% | +8,7% | +5,3% | +1,3% | +0,2% |
+
+  O `lfu_cpu` × `lru_cpu` fica igual ou melhor (1B 10%: −34,2% → −34,8%). A recomendação do C se mantém porque o sinal
+  aguenta S = 0,6 em toda célula e porque o `lfu_cpu` não precisa de modelo de tempo no runtime. Mas a margem sobre o `custo`
+  nos orçamentos baixos é até ~45% menor que a da tabela (1B 10%: 24,1 → 13,6; 3B 10%: 15,3 → 8,7), e no 3B a 25% (+5,3%) chega perto do erro do modelo nesta medida
+  (backlog 1 ÷ backlog 4 medido 0,90–0,94, previsto 0,96–1,00). A tabela de S saiu de uma cópia instrumentada do simulador
+  feita pelo rev-2 na rodada 37 (contador de cópias em voo por camada e fator S); conferi que ela só acrescenta isso ao
+  `moe_sim.py` atual, rodei de novo e os números batem. Ela não entrou no `moe_sim.py`. A medida do C não decide o
+  S (no `lfu_cpu` frio, S = 1 e S = 0,6 preveem quase o mesmo, ver a seção do C); a margem sobre o `custo` fica com a
+  incerteza desta tabela.
+- A execução 1B backlog 0 n.º 1 teve um ajuste em Python rodando em paralelo por ~1,5 min; ela bate com a n.º 2 (10,89/10,93/
+  11,22 contra 10,81/11,07/11,18 ms/token) e entrou na conta.
+
+**Testes** (`tests/test_moe_sim.py`, 46 passam): o da calibração por camadas usa `c_cpu_quiet` sem `o_layer` no caso sem
+nada residente; dois fixam o protocolo do runtime (chave em voo vai à CPU; admissão recusada pela contagem com a fila vazia
+em tempo), cada um com o `m05` como controle; dois fixam os regimes (camada com e sem tráfego, por backlog 4 e 0; cópia
+síncrona do `custo` com a CPU ociosa e ocupada, com a ociosa de controle); um confere a banda disputada contra a cópia do
+`lru_sync`; quatro fixam o leitor do `m2a` (backlog nos dois formatos de cabeçalho, cabeçalho que o simulador não reproduz é
+erro, validação sem linha reprova, os três reprovando no leitor antigo; e a linha `lfu_cpu` lida, preparação da validação do
+C, com o cabeçalho de aquecimento recusado porque a validação simula o cache vazio); `test_simulador_reproduz_o_m2a` roda a validação nos
+6 arquivos (pula sem os traços). Mutantes, um de cada vez, cada um reprovado: cópia do `custo` sempre com a banda livre;
+`o_layer` sem a condição de tráfego; CPU num nível só.
+
+**Limites:**
+
+- **A maior incerteza é o regime do `lfu_cpu`**: a validação cobre camadas sem tráfego (backlog 0) e quase todas com tráfego
+  (`lru_cpu`, 98–100% de 10% a 50%), e o `lfu_cpu` vive em 6–12%. A medida com backlog 1 e 2 mostrou que, numa camada com
+  uma cópia só, a CPU por expert sobe 61–90% do aumento entre o nível quieto e o de backlog 4, e não 100% (custo
+  `c_cpu_quiet + S · (c_cpu − c_cpu_quiet)`, com S medido de 0,61 a 0,90). Isso estreita a distância para o `custo` (tabela de S)
+  e não muda a do `lru_cpu`. O C mede o `lfu_cpu` de verdade e valida o simulador nesse regime.
+- Os parâmetros são da sessão das referências (29/10). A sessão de 30/10 teve CPU 13–23% mais lenta e residente 6,6–7,6% mais rápido;
+  comparação entre políticas tem de ser feita dentro da mesma sessão, com controles.
+- A validação cobre só `lru_sync` e `lru_cpu`, as políticas que o runtime tinha no passo 3. `lfu_cpu` e `custo` são extrapolação do mesmo
+  modelo de custo.
+- `o_layer` e banda vieram do 1B e o 3B os confere sem reajuste, mas o critério de ±10% distingue pouco o `o_layer` (2–8% do
+  tempo): o ajuste próprio do 3B no `lru_sync` daria 25 µs. A sobra por camada com tráfego varia de 10 a 36 µs entre
+  orçamentos.
+- Uma execução por configuração com backlog 4 nas referências: o `lru_cpu` a 10% do 1B variou de 10,02 a 11,09 ms/token entre
+  as execuções `antes`/`depois`/`final` do B0, dispersão da ordem do critério.
+- Os limites do M0.5 continuam: traços do próprio modelo em greedy, 8 conversas seguidas, prefill fora, experts pequenos.
+
+**Rodada 35** (`.herdr/review/strata-opencode-35/`, só o rev-2: o dispatcher marcou "material mudou" porque um script do
+rev-2 importou o simulador congelado sem `-B` e o Python gravou um `__pycache__` lá; nenhum arquivo congelado mudou de
+conteúdo, e o rev-1 não chegou a ser disparado). Achados do rev-2, todos procedentes e tratados: o `o_layer` incidia em toda
+camada com CPU por hipótese, e os `backlog0` já medidos desmentiam isso, o que invertia a conclusão (P2; CPU em dois níveis,
+`o_layer` só com tráfego, `backlog0` no `--validar`); a sensibilidade só olhava a CPU mais lenta (`--cpu-scale 0.85`); "deixa a
+PCIe livre" não era o mecanismo no modelo antigo (texto refeito com acerto e tráfego); o 3B confere pouco o `o_layer` e o
+"3–15%" do histórico estava errado (limites e caminho); o ramo da banda disputada do `custo` não tinha teste (teste novo e
+mutante).
+
+**Rodada 36** (`.herdr/review/strata-opencode-36/`, completa; nenhum P0/P1; os dois mantêm a recomendação do C). rev-1: dois
+P2 no leitor do `m2a`, o backlog que caía para 4 em silêncio com o cabeçalho atual (`; admissão evento`) e a validação sem
+linhas que aprovava (corrigidos, com testes de regressão que reprovavam antes). Os dois: as frações de tráfego citadas não
+saíam do predicado do simulador (contavam antes do `settle`; agora saem do contador `layers_traffic`), o `c_cpu` do 1B não era
+o ponto fixo do próprio ajuste (0,0472 → 0,0464, e 0,80 → 0,70 na alternativa) e a medida com backlog 1 e 2 testa a
+intensidade, não a fração (texto refeito, previsão registrada antes da medida). rev-2: a célula do oráculo no 1B a 50% estava
+trocada pela de 10%.
+
+**Rodada 37** (`.herdr/review/strata-opencode-37/`, completa; nenhum P0/P1; os dois confirmam as correções da 36 e mantêm a
+recomendação do C). Os dois (P2): a leitura da medida com backlog 1 e 2 estava errada. A diferença não vinha quase toda do
+roteador (22–44%; a CPU dá 39–66%), e a medida não aumenta a vantagem do `lfu_cpu` sobre o `custo`. O rev-1 apontou que ela
+não fora medida, e o rev-2 mostrou que a CPU não binária a estreita (tabela de S, conferida). Texto refeito; o simulador não
+muda antes do C. rev-2 (P3): faixas erradas (6–10%, 0,18–0,45 ms, 13–23%, 6,6–7,6%), o 2º ramo do critério não estava
+escrito, e eram 46 testes, com quatro do leitor. rev-1: o horário da previsão. O arquivo foi gravado às 10:34:17, depois do
+primeiro controle com backlog 0; texto corrigido.
+
+## C (M3) — desenho: despejo e admissão por frequência (`lfu_cpu`) no runtime (30/10)
+
+Aprovado pelo Breno em 30/10 (10:30), depois do passo 3: o C passa a ser o `lfu_cpu` do simulador, sem a cópia síncrona por
+custo, que o simulador recalibrado põe abaixo do `lfu_cpu`.
+
+**Como as referências fazem** (leitura de 30/10):
+
+- **Strata** (`/home/brenoperucchi/Devs/GitHub/strata`): "adaptive tier" em `src/program/generate.cpp:5703-5756` (e
+  `:4167-4222` no `--serve`). Contagem por (camada, expert), +1 por entrada roteada (`src/core/expert_source.cpp:1610-1612`),
+  ×0,7 em todo o vetor a cada chamada, que roda a cada 4 rodadas (`generate.cpp:347`, `:5752`). Candidato só com contagem
+  ≥ 2,0 e troca só se vence o residente mais frio **da mesma camada** por 1,5 (`:5718`, `:5727`); as trocas de todas as camadas
+  são ordenadas pelo ganho e cortadas em 96 por lote, num único lote em voo (`:369`, `:5708`). O cache sai cheio de um perfil
+  offline (`data/expert-profile.bin`, `tools/make_profile.py`), e a contagem começa zerada.
+- **llama.cpp** (`/home/brenoperucchi/Devs/GitHub/llama.cpp`): `--moe-cache-mib`, experimental, `src/llama-moe-cache.cpp`.
+  SLRU por recência (duas listas, `:16-34`, `:82-87`), todo miss admitido e copiado de forma síncrona antes do split
+  (`:109-154`, `:574-589`), sem perfil, sem prefetch. É o nosso `lru_sync` com proteção contra varredura.
+
+**O que copiamos e onde divergimos:**
+
+- Frequência com decaimento e filtro de admissão contra o residente mais fraco: como o Strata.
+- **Slots globais**, não por camada: o orçamento é um só e a vítima pode ser de qualquer camada, como no simulador que
+  validamos. O Strata compete dentro da camada porque a cota dele por camada vem do perfil.
+- **Decisão por falta, não em lote**: a falta já vai à CPU e a cópia entra na fila de admissão (backlog 4) como no `lru_cpu`,
+  que mediu e validou esse protocolo. O lote do Strata existe porque a troca dele roda numa thread entre janelas do decode
+  especulativo.
+- **Pontuação do simulador**, para o runtime e o simulador darem as mesmas escolhas: por chave, log₂ do valor e o passo da
+  última atualização; tocar soma 1 ao valor decaído com meia-vida de 128 tokens (`HALF_LIFE · L` passos de camada); a ordem
+  entre chaves é `log₂ v + passo / (HALF_LIFE · L)`, que não muda com o tempo. Todos os k experts pedidos na camada são
+  tocados antes das decisões. Sem limiar e sem margem na primeira versão: admite se a pontuação vence a da vítima
+  estritamente. A margem do Strata vira uma varredura no simulador (barata) antes de virar parâmetro no runtime.
+- Perfil persistido fica fora do C: a medida aquece com as conversas de treino, como a comparação do simulador.
+
+**Mudanças:**
+
+1. `cache/core.rs`: `victim_min_by(&pins, &idle, prio, teto)` devolve um slot livre se houver; senão o `Resident` de menor
+   prioridade fora dos pinos, e só o reserva se essa prioridade for menor que o teto. Recusar não muda estado nenhum. Empate
+   pelo índice do slot. O `victim` do LRU continua igual (o `lru_cpu` não muda bit a bit no modo barreira).
+2. `cache.rs`: `Policy::LfuCpu`, com a pontuação num tipo pequeno (`Freq`) sem GPU; `Loading` vai à CPU e o backlog é o
+   mesmo do `lru_cpu`.
+3. `m2a-cache`: política `lfu_cpu` e `--warmup <conversas>`, que passa as conversas de treino (0–3) pelo cache antes das
+   medidas, sem cronometrar, para as duas políticas.
+
+**Testes** (feitos; 49 testes Rust passam, sem warnings):
+
+- `freq_da_as_mesmas_pontuacoes_do_simulador` (unidade): a `Freq` dá as pontuações do `moe_sim.py` numa sequência fixa, a
+  1e-12, e o `clear` dela zera.
+- `vitima_por_prioridade_recusa_sem_mudar_estado` (núcleo, GPU): slot livre primeiro, recusa no empate com o teto sem mudar
+  estado nem geração, pino nunca sai, empate pelo menor índice.
+- `cache_lfu_cpu_segue_o_lfu_de_referencia_e_bate_com_a_cpu`: modelo de teste com 16 experts, duas conversas de 48 tokens,
+  modo barreira, 4 configurações de slots e backlog; os cinco contadores iguais aos de uma referência LFU em Rust
+  (`reference_lfu`, a mesma `Freq`), recusas pelo teto > 0, logits contra a CPU.
+- `cache_lfu_cpu_por_evento_bate_com_a_cpu_e_clear_zera_as_frequencias`: por evento, logits contra a CPU e orçamento; o
+  `clear` zera todas as frequências, e B depois de A e do `clear` dá os mesmos contadores que B num cache novo.
+- `lfu_cpu_conta_o_toque_do_expert_que_ainda_esta_carregando` (`tests/portao.rs`): por evento, a frequência do cache igual
+  bit a bit à de uma `Freq` recalculada das rotas devolvidas, com um portão de teste na stream de cópia (`hold_copies`,
+  `#[doc(hidden)]`) que segura as admissões da primeira metade e garante pedidos de chave em `Loading` (contador novo
+  `loading` > 0). Fica num binário só dele e aquece os kernels num modelo descartável antes de fechar o portão: qualquer
+  sincronização do contexto com a stream fechada (a primeira carga de um kernel, ou outro teste da GPU em paralelo) espera
+  o portão até o prazo. Foi o que aconteceu nas duas primeiras versões, e o mutante "chave `Loading` sem toque" chegou a
+  reprovar pelo prazo, não pela `Freq`; refeito, ele reprova pela `Freq`, e o teste certo passou 5 vezes seguidas.
+- Mutantes, um de cada vez, todos reprovados: M1 sem teto, M2 sem o toque, M3 vítima LRU no LFU, M4 `clear` sem zerar a
+  `Freq` (`mutantes-c.txt` no scratchpad da sessão); e, do rev-2 na rodada 38, empate pelo maior índice, passo não
+  incrementado, toque depois das decisões, teto não estrito e chave `Loading` sem toque (este só reprova com o portão).
+- Em barreira (`qual-runs/C-SEGURANCA-20261030/rodar-barreira.sh`): `resident`, `cache_full`, `lru_sync` e `lru_cpu` com
+  contagens exatas e hash dos logits iguais aos do binário final do B0, nos dois modelos; `lfu_cpu` aquecido nas conversas
+  0–3, duas execuções por modelo com contagens e hash iguais.
+
+**Medida (encerra o C):**
+
+- `lru_cpu` contra `lfu_cpu`, aquecidos nas conversas 0–3 e medidos nas 4–7, nos dois modelos, a 10%, 25% e 50%; 5
+  execuções intercaladas por configuração, núcleos fixos (`taskset -c 0-15`) e nada mais pesado na máquina durante a medida.
+  Espera = ms/token − ms/token do residente da mesma execução.
+- **Portão do C:** ≥ 5% de redução da espera do `lfu_cpu` sobre o `lru_cpu` em pelo menos um modelo e um orçamento, com as
+  faixas observadas (mín–máx das 5, não intervalo de confiança) sem sobreposição; ou o resultado negativo e a causa.
+- **Teste do simulador na comparação aquecida**, que o portão não faz (ele passaria com o simulador errando por um fator 5):
+  a redução da espera prevista por célula (hoje 25–52%) é registrada antes de qualquer medida, com os parâmetros atuais do
+  `moe_sim.py` (sha no registro; os reajustados da fase A servem só à validação fria), e o simulador cai para a espera
+  relativa se a redução medida, calculada das médias das 5 execuções (a mesma grandeza do portão), ficar fora de [metade,
+  dobro] da prevista em qualquer célula.
+- **Validação do simulador no regime esparso**, que o passo 3 não cobria: o `lfu_cpu` medido sem aquecimento (cache vazio,
+  conversas 4–7, admissão por evento) contra o `--validar`, pelo mesmo critério (±2 pontos, ±10%). A sessão de 30/10 teve
+  CPU 13–23% mais lenta e residente 6,6–7,6% mais rápido que a das referências, então os parâmetros são reajustados na
+  própria sessão, em duas fases, com o procedimento fixado antes:
+  1. **Fase A:** `lru_cpu` com backlog 0 e 4, sem aquecimento, 10/25/50%, os dois modelos, 3 repetições intercaladas.
+     Reajuste: `c_cpu` e `c_cpu_quiet` pelo mesmo mínimo quadrado sem pesos do passo 3 (ponto fixo, as linhas de backlog 0 e
+     4 da fase A); a GPU pelo residente da sessão, pela mesma calibração por camadas do passo 3; `o_layer` e banda ficam.
+     Os parâmetros reajustados e as previsões do `lfu_cpu` frio, com S = 1 (o modelo atual) e S = 0,6 (a cópia
+     instrumentada da rodada 37, guardada na pasta da medida com o sha), vão para um `previsao.txt` gravado antes da fase B.
+  2. **Fase B:** `lfu_cpu` frio, 3 repetições, cada uma intercalada com um `lru_cpu` backlog 4 frio de controle (deriva da
+     sessão: o controle tem de ficar a ±5% da média da fase A, ou isso é relatado).
+  Regra: a validação passa ou reprova pelo critério comum (±2 pontos, ±10%) com S = 1, o modelo atual. A previsão com
+  S = 0,6 vai junto, mas a medida não decide o S: no `lfu_cpu` frio as duas previsões diferem só 0,6–1,7% de ms/token
+  (testado com os dados da medida com backlog 1 e 2 no lugar da fase A), abaixo da dispersão entre repetições. O S pesa onde
+  há muitas camadas de uma cópia, como no `custo`, que o runtime não tem; ele continua o da medida com backlog 1 e 2
+  (0,61–0,90). A medida testa a extrapolação para o tráfego esparso. Ela não isola o mecanismo do aumento da espera do roteador com cópias
+  simultâneas (hipótese da fila D2H/H2D), que pediria um contador de tempo próprio.
+- Registrar também, como na medida com backlog 1 e 2, `ambiente.txt` (driver, carga média, sha do binário) e os horários.
+  O binário sai de `cargo build --release --bin m2a-cache` e é copiado para a pasta da medida antes de tudo: o `cargo test`
+  troca o `target/release/m2a-cache` por um build do perfil de teste, com outro sha.
+- Antes da medida, pedir ao Breno para aliviar a carga de fundo da máquina (navegador, indexação, AnyDesk), que dividiu a CPU
+  com o caminho dos experts na sessão de 30/10.
+
+**Rodada 38** (`.herdr/review/strata-opencode-38/`, completa; nenhum P0/P1/P2; os dois não acharam defeito funcional no C e
+confirmam as correções da 37). Os dois (P3): a medida do C não "separa o custo na GPU"; texto refeito, e a validação fria
+passa a prever S = 1 e S = 0,6 antes de medir. rev-2 (P3): o mutante "chave `Loading` sem toque" sobrevivia, porque no
+modelo de teste a cópia termina antes de o expert voltar; teste novo com portão na stream de cópia e contador `loading`, num
+binário próprio, e o mutante reprova pela `Freq`. rev-2 (P3): o protocolo do C ganhou o teste do simulador na comparação aquecida ([metade, dobro] da redução
+prevista), o reajuste em duas fases fixado antes e 3 repetições do frio e dos controles; o bloco de testes do C descreve o
+que existe, e o `lfu_cpu` entrou na conferência em barreira (duas execuções). rev-2 mediu também que o desempate diferente
+(índice do slot no runtime, versão do heap no simulador) não muda nenhum resultado do simulador. rev-1 (P3): o limite
+confundia fração do aumento com fração do custo. rev-2 (P3): "~40%" era até ~45%, "as políticas que o runtime tem" e uma
+quebra de linha.
+
+**Rodada 39** (`.herdr/review/strata-opencode-39/`, nível 1 com o rev-2, verificação; os seis achados da 38 resolvidos). O
+teste do portão do C mata o mutante pela `Freq`, falha alto se o portão não segurar (mutante do rev-2) e passou 60 vezes,
+também com outro processo de GPU em paralelo. Achados P3: (1) os dois testes de portão do núcleo, do B0, falhavam em ~1–3%
+das execuções paralelas dos testes de unidade, pelo mesmo mecanismo; agora todo teste de unidade com GPU segura uma trava
+do crate (`gpu_test_lock`, só em `cfg(test)`), e 200 execuções paralelas passaram sem falha; (2) três escolhas do protocolo
+escritas (distância para escolher o S, parâmetros da redução prevista, redução das médias).
+Depois da rodada 39, ao montar os roteiros da medida (`qual-runs/C-MEDIDA-20261030/`), o `ajuste_fase_a.py` testado com os
+dados da medida com backlog 1 e 2 mostrou que S = 1 e S = 0,6 preveem o `lfu_cpu` frio com só 0,6–1,7% de diferença: a
+regra "fica o S mais perto" não teria poder de decisão. Ela saiu; a validação fria usa S = 1, e o S fica em aberto.
+
+**Rodada 40** (`.herdr/review/strata-opencode-40/`, nível 1 com o rev-1, roteiros da medida antes de rodar). Previsão
+aquecida, ajuste da fase A (reproduzido), recalibração da GPU, a decisão sobre o S e a trava dos testes conferem. Dois P2
+no `rodar.sh`, corrigidos: uma execução do `m2a-cache` que falhasse era registrada e o roteiro seguia (agora `set -euo
+pipefail` e `run` devolve o código do binário), e uma nova chamada sobrescreveria a medida e a previsão (agora trava com
+`flock` e recusa se a pasta já tiver resultados ou previsões, sem apagar nada). Testado numa cópia com binário falso: a
+falha na 1ª execução para o roteiro com saída 1; a 2ª chamada recusa sem mudar um byte; a trava ocupada recusa; o caminho
+de sucesso faz as 44 chamadas.

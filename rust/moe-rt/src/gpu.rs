@@ -502,6 +502,7 @@ mod tests {
 
     #[test]
     fn enqueue_expert_recusa_a_com_tamanho_errado() {
+        let _trava = crate::gpu_test_lock();
         let device = match Device::new(0) {
             Ok(d) => d,
             Err(e) => {
