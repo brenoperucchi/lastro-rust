@@ -1,0 +1,27 @@
+M2a: granite-3.1-1b-a400m-instruct; conversas [4, 5, 6, 7] (3451 tokens); 768 experts de 3.15 MB; CPU com 8 threads; backlog 4; admissão evento
+
+política   orçam. slots |  ms/tok mediana   tok/s | acerto    CPU  cóp.s cóp.bg | roteador   CPU ms |   rot.igual |  sim ms/acerto | logits texto-a / conversas
+resident     100%   768 |    2.71    2.66   369.2 | 100.0%   0.0%   0.00   0.00 |      NaN     0.00 | 82824/82824 |                | 5.6e-6 / referência
+lru_cpu       10%    76 |   11.24   10.90    88.9 |  14.1%  85.9%   0.00  48.09 |     0.70     8.66 | 82824/82824 |                | 6.4e-6 / 8.1e-6
+lru_cpu       25%   192 |    8.34    8.11   119.9 |  43.1%  56.9%   0.00  37.87 |     0.71     5.73 | 82824/82824 |                | 8.9e-6 / 5.8e-6
+lru_cpu       50%   384 |    5.59    5.34   178.8 |  74.9%  25.1%   0.00  26.50 |     0.95     2.58 | 82824/82824 |                | 7.8e-6 / 6.1e-6
+
+mediana de ms/token por posição no contexto (tokens na faixa):
+política   orçam. |          0-256        256-512       512-1024          1024+
+resident     100% |    2.63 (1024)    2.65 (1024)    2.69 (1355)    2.73 (  48)
+lru_cpu       10% |   11.07 (1024)   10.86 (1024)   10.80 (1355)   10.80 (  48)
+lru_cpu       25% |    8.08 (1024)    8.00 (1024)    8.22 (1355)    7.87 (  48)
+lru_cpu       50% |    5.57 (1024)    5.16 (1024)    5.26 (1355)    4.65 (  48)
+
+contagens exatas nas conversas e hash dos logits (texto-a e conversas):
+política   orçam. |   acertos     cóp.s    cóp.bg  descart.       CPU | hash
+resident     100% |         –         –         –         –         – | 6da9b225cd59de10
+lru_cpu       10% |     93391         0    165958    403243    569201 | fc8aa16abf116fc9
+lru_cpu       25% |    285391         0    130674    246527    377201 | 49ec38ef1d414c92
+lru_cpu       50% |    496324         0     91462     74806    166268 | 9405d19fca26a303
+
+ms/tok e tok/s: média nas conversas, mediana ao lado; acerto e CPU: fração dos experts pedidos; cóp.s e cóp.bg: cópias por token;
+roteador: espera do host pela leitura dos logits, por token (inclui o cálculo da GPU até ali); CPU ms: experts na CPU por token;
+sim: ms/token e acerto previstos pelo simulador para o mesmo orçamento e política (residente: 1000/tg_gpu do llama.cpp).
+logits: maior erro relativo (L2) contra o transformers no texto-a e, nas conversas, contra a passada residente; limite 1e-4, argmax igual;
+resultado: logits dentro da tolerância em todas as configurações

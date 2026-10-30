@@ -1758,3 +1758,45 @@ pipefail` e `run` devolve o código do binário), e uma nova chamada sobrescreve
 `flock` e recusa se a pasta já tiver resultados ou previsões, sem apagar nada). Testado numa cópia com binário falso: a
 falha na 1ª execução para o roteiro com saída 1; a 2ª chamada recusa sem mudar um byte; a trava ocupada recusa; o caminho
 de sucesso faz as 44 chamadas.
+
+**Resultado da medida do C** (`qual-runs/C-MEDIDA-20261030/`, 30/10, 13:33–16:15; 44 execuções, todas com código 0;
+`analise.py` → `analise.txt`; previsões em `previsao.txt`, gravado às 13:34 antes da primeira execução, e
+`previsao-fase-b.txt`, gravado às 15:45:40 antes da fase B). **O C passa.**
+
+- **Comparação aquecida** (espera = ms/token − residente da mesma execução, médias das 5):
+
+  | modelo | orçamento | espera `lru_cpu` (mín–máx) | espera `lfu_cpu` (mín–máx) | redução | prevista | tok/s `lru_cpu` → `lfu_cpu` |
+  |---|---|---|---|---|---|---|
+  | 1B | 10% | 9,48 (9,00–9,94) | 6,09 (5,45–6,96) | 35,8% | 34,2% | 81 → 112 (+38%) |
+  | 1B | 25% | 5,90 (5,34–6,56) | 4,15 (3,92–4,62) | 29,7% | 38,2% | 114 → 143 (+26%) |
+  | 1B | 50% | 2,81 (2,36–3,31) | 1,64 (1,50–1,84) | 41,7% | 51,7% | 176 → 223 (+27%) |
+  | 3B | 10% | 16,28 (14,32–19,20) | 12,08 (11,03–13,45) | 25,8% | 25,4% | 48 → 61 (+26%) |
+  | 3B | 25% | 10,25 (9,43–11,21) | 7,37 (6,65–7,97) | 28,1% | 31,6% | 68 → 85 (+25%) |
+  | 3B | 50% | 4,45 (4,02–4,99) | 2,68 (2,47–2,96) | 39,8% | 40,1% | 112 → 141 (+26%) |
+
+  Portão: passa nas 6 células (redução ≥ 5% e faixas sem sobreposição). Teste do simulador: passa (toda redução dentro de
+  [metade, dobro] da prevista; no 3B a até 3,5 pontos, no 1B a 25% e 50% abaixo da prevista por 8,5 e 10 pontos). O
+  `lfu_cpu` acerta mais (1B 24,9 / 50,1 / 78,5% contra 12,5 / 42,9 / 75,0%) e copia 1,5–3,0 experts por token contra 27–59 do
+  `lru_cpu`. O tok/s sai do bloco final do `analise.txt` (1000 ÷ média do ms/token das 5 aquecidas); o residente das
+  execuções aquecidas dá 349 tok/s no 1B e 225 no 3B.
+- **Validação fria do `lfu_cpu`** (médias das 3, previsão com os parâmetros reajustados na fase A, S = 1): passa. O acerto
+  bate a 0,1 ponto em todas as células, porque a regra de admissão do simulador é a do runtime. O ms/token medido fica de
+  +0,7% a +7,5% acima do previsto, sempre acima: um viés de ~5%, dentro do critério. No 1B a deriva média dos controles da fase B (+1,8 a +2,8%) é da
+  mesma ordem, então os dados não separam o modelo da sessão; no 3B a deriva não o explica (a 25% o controle caiu 2,9%). A
+  previsão com S = 0,6 fica mais longe nas 6 células, mas a diferença (~1%) é menor que o viés; o S continua em aberto.
+  Parâmetros reajustados: 1B `c_cpu` 0,0524 e `c_cpu_quiet` 0,0447 (13% e 11% acima dos de 29/10), 3B 0,0802 e 0,0662 (16% e 9%
+  acima); residente da fase A (2,69 e 4,23 ms) 12% (1B) e 13% (3B) mais rápido que nas referências.
+- **Deriva:** os 6 controles `lru_cpu` frios (18 células) da fase B ficaram de −4,2% a +5,3% da média da fase A; dois passaram de ±5%
+  (1B 25%: +5,1%; 1B 50%: +5,3%). A carga média da máquina variou de 10,2 a 17,4 durante a medida (o `m2a-cache` usa 8 threads),
+  contra 5,2 no `ambiente.txt` logo antes. O alívio da carga de fundo foi pedido ao Breno antes da medida, mas nenhum
+  registro diz quais processos rodavam durante ela: carga de fundo não identificada. O portão passa nas 6 células e
+  bastava uma; a folga mais estreita entre as faixas é de 0,5 ms (1B 50%), da ordem de uma deriva de 5%.
+- **Limites:** uma sessão só, com carga de fundo; 5 repetições aquecidas e 3 frias; os modelos são pequenos (experts de 3–5
+  MB) e o contexto vai até ~1.100 posições. O residente ficou ~6% mais rápido entre a parte aquecida e a fria (1B 2,86 →
+  2,69 ms; 3B 4,45 → 4,23 ms), deriva dentro da sessão. O viés frio de ~5% e o S ficam para a próxima recalibração.
+
+**Próximos passos (Breno, 30/10):** comparar o runtime com o llama.cpp nos Granite 1B e 3B, com os mesmos parâmetros:
+mesmas conversas regeneradas em greedy pelo `llama-server` (seed 1, como os traços), o `--moe-cache-mib` com o mesmo
+orçamento de VRAM dos nossos slots junto de `--cpu-moe` (e o `-ncmoe` como segunda linha), GGUF BF16, 8 threads,
+`taskset -c 0-15`, execuções intercaladas e previsão registrada antes. A comparação com o Strata fica para depois, com um
+modelo menor: hoje o Strata só roda o Qwen3.8-Flash-Next (125B, GGUF IQ2/IQ3), e o runtime só os Granite em BF16.

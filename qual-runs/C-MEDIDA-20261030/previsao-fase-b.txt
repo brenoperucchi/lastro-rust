@@ -1,0 +1,29 @@
+Parâmetros reajustados e previsões do lfu_cpu frio, gravados em 30/10 15:45:40, antes da fase B.
+simulador: af33336a6dc646cd2ea44cb73af7f15b1d43046e8400b1ab826eab9224396207  cópia instrumentada: cc13b7b1f34310db656e2ff196c657deed77a018206e8bebbaba1126321ede8c
+
+1b: residente da sessão 2.692 ms/token (referência 3.05); GPU por token 2.639; g 0.07027
+  iteração 0: c_cpu 0.05337 c_cpu_quiet 0.04470 resíduo máx 0.097 ms
+  iteração 1: c_cpu 0.05224 c_cpu_quiet 0.04470 resíduo máx 0.098 ms
+  iteração 2: c_cpu 0.05245 c_cpu_quiet 0.04470 resíduo máx 0.097 ms
+  iteração 3: c_cpu 0.05239 c_cpu_quiet 0.04470 resíduo máx 0.097 ms
+  iteração 4: c_cpu 0.05241 c_cpu_quiet 0.04470 resíduo máx 0.097 ms
+  parâmetros reajustados: c_cpu 0.0524 c_cpu_quiet 0.0447 g 0.07027 h 0.00496 o_layer 0.0367 pcie_gbs_cpu 14.1
+  previsão do lfu_cpu frio | S = 1: ms/token acerto CPU ms | S = 0,6: ms/token acerto
+     10%                  |     8.27  24.9%   6.52 |     8.22  24.9%
+     25%                  |     6.17  50.3%   4.36 |     6.10  50.3%
+     50%                  |     3.87  78.7%   1.88 |     3.82  78.7%
+
+3b: residente da sessão 4.225 ms/token (referência 4.86); GPU por token 4.199; g 0.08970
+  iteração 0: c_cpu 0.08068 c_cpu_quiet 0.06625 resíduo máx 0.173 ms
+  iteração 1: c_cpu 0.08016 c_cpu_quiet 0.06625 resíduo máx 0.173 ms
+  iteração 2: c_cpu 0.08019 c_cpu_quiet 0.06625 resíduo máx 0.173 ms
+  iteração 3: c_cpu 0.08019 c_cpu_quiet 0.06625 resíduo máx 0.173 ms
+  iteração 4: c_cpu 0.08019 c_cpu_quiet 0.06625 resíduo máx 0.173 ms
+  iteração 5: c_cpu 0.08019 c_cpu_quiet 0.06625 resíduo máx 0.173 ms
+  iteração 6: c_cpu 0.08019 c_cpu_quiet 0.06625 resíduo máx 0.173 ms
+  iteração 7: c_cpu 0.08019 c_cpu_quiet 0.06625 resíduo máx 0.173 ms
+  parâmetros reajustados: c_cpu 0.0802 c_cpu_quiet 0.0662 g 0.08970 h 0.00519 o_layer 0.0367 pcie_gbs_cpu 14.1
+  previsão do lfu_cpu frio | S = 1: ms/token acerto CPU ms | S = 0,6: ms/token acerto
+     10%                  |    15.19  29.1%  12.23 |    15.08  29.1%
+     25%                  |    10.79  55.5%   7.75 |    10.67  55.5%
+     50%                  |     6.48  82.6%   3.08 |     6.39  82.6%

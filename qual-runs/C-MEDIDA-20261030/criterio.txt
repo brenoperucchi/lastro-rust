@@ -1,0 +1,13 @@
+Medida do C (docs/PLANO-runtime-rust-moe-20261029.md, seção "## C (M3)", bloco "Medida (encerra o C)", rodadas 38 e 39).
+Comparação aquecida: lru_cpu contra lfu_cpu, aquecidos nas conversas 0-3 e medidos nas 4-7, backlog 4, admissão por evento,
+10/25/50%, 1B e 3B, 5 execuções intercaladas (ordem das políticas alternada a cada repetição), taskset -c 0-15.
+Espera = ms/token da política − ms/token do residente da mesma execução; a redução usa as médias das 5 execuções.
+- Portão do C: redução ≥ 5% da espera do lfu_cpu sobre o lru_cpu em pelo menos um modelo e um orçamento, com as faixas
+  observadas (mín–máx das 5) sem sobreposição; senão, o resultado negativo e a causa.
+- Teste do simulador (parâmetros atuais, sha abaixo): ele cai para a espera relativa se a redução medida ficar fora de
+  [metade, dobro] da prevista em qualquer célula.
+Validação fria, depois: fase A (lru_cpu backlog 0 e 4 sem aquecimento, 3 repetições) → ajuste_fase_a.py reajusta c_cpu,
+c_cpu_quiet e g e grava previsao-fase-b.txt (S = 1 e S = 0,6) antes da fase B; fase B (lfu_cpu frio, 3 repetições, cada
+uma com um lru_cpu backlog 4 frio de controle, que tem de ficar a ±5% da média da fase A). A validação passa ou reprova
+pelo critério comum (±2 pontos de acerto, ±10% de ms/token, médias das 3) com S = 1. A previsão com S = 0,6 vai junto só
+como registro: no lfu_cpu frio as duas diferem 0,6–1,7%, abaixo da dispersão, então a medida não decide o S.
