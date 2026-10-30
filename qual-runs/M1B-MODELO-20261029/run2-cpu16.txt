@@ -1,0 +1,5 @@
+M1b: granite-3.1-1b-a400m-instruct, 277 tokens, caminhos ["cpu"], métricas em /run/user/1000/moe-rt/metrics.json
+pesos lidos em 2.4 s
+cpu  argmax igual 277/277 (empates 0, divergências 0) | erro rel. logits máx 6.00e-6 médio 1.20e-6 | |Δ| máx 6.48e-5 | roteamento igual 6648/6648 | 14.45 ms/token (mediana) | OK
+
+resultado: dentro da tolerância

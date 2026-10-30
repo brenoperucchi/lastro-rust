@@ -1,0 +1,14 @@
+
+== Qwen3-30B (expert 9.4 MB; GEMV 768x2048 BM=4 BK=1024) ==
+cópia paginável: 605 µs/expert (15.6 GB/s); CPU presa na chamada 604 µs/expert
+cópia pinned: 474 µs/expert (19.9 GB/s); CPU presa na chamada 1 µs/expert
+GEMV sozinho: 5.63 µs; 84 GEMVs por cópia de expert equilibram os dois lados
+juntos, origem paginável: total 47.52 ms (em série seriam 69.02 ms; o maior sozinho 38.73 ms) → sobreposição 71%; GEMV +56% e cópia +22% mais lentos que sozinhos
+juntos, origem pinned: total 33.95 ms (em série seriam 60.62 ms; o maior sozinho 30.33 ms) → sobreposição 88%; GEMV +11% e cópia +4% mais lentos que sozinhos
+
+== OLMoE (expert 12.6 MB; GEMV 1024x2048 BM=2 BK=1024) ==
+cópia paginável: 771 µs/expert (16.3 GB/s); CPU presa na chamada 770 µs/expert
+cópia pinned: 638 µs/expert (19.7 GB/s); CPU presa na chamada 1 µs/expert
+GEMV sozinho: 6.81 µs; 94 GEMVs por cópia de expert equilibram os dois lados
+juntos, origem paginável: total 57.03 ms (em série seriam 90.32 ms; o maior sozinho 49.35 ms) → sobreposição 81%; GEMV +39% e cópia +15% mais lentos que sozinhos
+juntos, origem pinned: total 45.15 ms (em série seriam 81.77 ms; o maior sozinho 40.97 ms) → sobreposição 90%; GEMV +10% e cópia +0% mais lentos que sozinhos

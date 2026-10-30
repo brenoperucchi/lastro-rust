@@ -1,0 +1,104 @@
+<|start_of_role|>system<|end_of_role|>Knowledge Cutoff Date: April 2024.
+Today's Date: October 29, 2026.
+You are Granite, developed by IBM. You are a helpful AI assistant.<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>Explique em português como funciona um cache LRU, quando ele é uma boa escolha e quando não é. Depois escreva uma implementação em Rust com testes.<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>Um cache LRU (Last-In, First-Out) é um tipo de cache que mantém os elementos mais recorrentes na frente e os mais antigos na frente. Ele é frequentemente usado em aplicativos de alto desempenho para armazenar dados temporariamente, como dados de cache em um servidor web ou cache de memória em um processador.
+
+Um cache LRU funciona de forma que, quando um novo elemento é inserido, ele ocupa a posição mais antiga na lista de cache. Quando um elemento é solicitado, o cache LRU retorna o elemento mais recorrentemente solicitado, o que ajuda a evitar a reordenamento inesperada dos dados.
+
+### Funcionamento de um cache LRU:
+
+1. **Inserção:** Um novo elemento é inserido na lista de cache.
+2. **Verificação:** O cache LRU verifica se o elemento já está na frente da lista.
+3. **Retorno:** Se o elemento já estiver na frente, ele é retornado. Se não, ele é adicionado à frente da lista.
+4. **Remoção:** Se um elemento for solicitado, o cache LRU retorna o elemento mais recorrentemente solicitado.
+
+### Boa escolha:
+
+Um cache LRU é uma boa escolha quando:
+
+- O desempenho é crítico.
+- O tempo de resposta para consultas é crítico.
+- O tamanho da cache é limitado.
+- O desempenho é crítico.
+
+### Quando não é uma boa escolha:
+
+- Se o desempenho não é crítico.
+- Se o tamanho da cache é grande.
+- Se o tempo de resposta para consultas não é crítico.
+
+### Implementação em Rust com testes:
+
+Aqui está um exemplo de implementação de um cache LRU em Rust, junto com testes para verificar a funcionalidade.
+
+```rust
+use std::collections::HashMap;
+use std::hash::Hash;
+
+#[derive(Debug, PartialEq, Eq)]
+struct CacheEntry {
+    key: String,
+    value: String,
+    timestamp: u64,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Cache<K, V> {
+    entries: HashMap<K, CacheEntry>,
+    max_size: usize,
+}
+
+impl<K, V> Cache<K, V> {
+    fn new(max_size: usize) -> Self {
+        Cache {
+            entries: HashMap::with_capacity(max_size),
+            max_size,
+        }
+    }
+
+    fn insert(&mut self, key: K, value: V) {
+        if self.entries.len() >= self.max_size {
+            self.remove_expired_entries();
+        }
+        self.entries.insert(key, CacheEntry {
+            key,
+            value,
+            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+        });
+    }
+
+    fn remove_expired_entries(&mut self) {
+        let mut expired_entries = self.entries.drain_filter(
+            |entry| entry.timestamp < std::time::UNIX_EPOCH.timestamp(),
+        );
+        self.entries.retain(|_, entry| entry.timestamp < std::time::UNIX_EPOCH.timestamp());
+        expired_entries.into_iter().for_each(|entry| self.entries.remove(&entry.key));
+    }
+
+    fn get(&self, key: &K) -> Option<&V> {
+        self.entries.get(key).cloned()
+    }
+
+    fn size(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cache_lru() {
+        let mut cache = Cache::new(3);
+
+        assert_eq!(cache.get(&"key1".to_string()), Some(&"value1".to_string()));
+        assert_eq!(cache.get(&"key2".to_string()), None);
+
+        cache.insert("key3", "value3");
+        assert_eq!(cache.get(&"key3".to_string()), Some(&"value3".to_string()));
+        assert_eq!(cache.get(&"key4".to_string()), None);
+
+        cache.insert("key5", "value5");
+        assert_eq!(cache.get(&"key5".to_string()), Some(&"value5".to_string()));<|end_of_text|>

@@ -1,0 +1,17 @@
+[package]
+name = "p1-posse"
+version = "0.0.1"
+edition = "2021"
+publish = false
+description = "Spike M0/P1: o compilador recusa evictar ou sobrescrever um slot de expert que um kernel ainda usa?"
+
+# cuda-rust clonado em /home/brenoperucchi/Devs/GitHub/cuda-rust, commit 5759cb3 (29/10).
+[dependencies]
+cutile = { path = "../../../GitHub/cuda-rust/cutile-rs/cutile" }
+cuda-core = { path = "../../../GitHub/cuda-rust/cuda-core" }
+cuda-async = { path = "../../../GitHub/cuda-rust/cuda-async" }
+
+[dev-dependencies]
+trybuild = "1.0.49"
+
+[workspace]

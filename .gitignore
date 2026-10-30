@@ -6,3 +6,15 @@
 /.herdr/handoff/
 /.herdr/migration.lock
 /.herdr/migration-state.json
+
+# Ambiente Python local da referência de correção do runtime Rust (torch CPU + transformers).
+/tools/.venv-ref/
+
+# Runtime Rust: build e binários medidos (os sha256 ficam em qual-runs/*/bin/SHA256SUMS e FONTES-*.sha256).
+/rust/*/target/
+/qual-runs/**/bin/*
+!/qual-runs/**/bin/SHA256SUMS
+!/qual-runs/**/bin/FONTES-*.sha256
+# Logits de referência do texto-a (52 MB cada; regenerados por tools/ref_logits.py).
+/qual-runs/REF-granite-*-texto-a/logits.npy
+__pycache__/

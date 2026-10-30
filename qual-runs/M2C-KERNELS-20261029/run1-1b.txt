@@ -1,0 +1,28 @@
+m2c-kernels: granite-3.1-1b-a400m-instruct; H = 1024, I = 512, 16 cabeças de Q e 8 de KV (d = 64), E = 32; 500 lançamentos por kernel, grafo reproduzido 5×
+
+kernel                   | blocos |   fila µs  grafo µs diferença |   host µs          |  piso µs     GB/s
+axpby 1 bloco (mínimo)   |      1 |      1.52      0.89      0.63 |      1.28          |     0.00        3
+rmsnorm                  |      1 |      2.12      1.54      0.59 |      1.27          |     0.01        8
+gemv q                   |    512 |      2.75      2.16      0.59 |      1.28          |     2.34      976
+gemv k (ou v)            |    256 |      2.49      1.83      0.66 |      1.28          |     1.17      576
+rope q                   |     16 |      1.47      0.85      0.62 |      1.31          |     0.01       14
+cópia para o KV          |      0 |      1.43      1.01      0.41 |      1.28          |     0.00        4
+atenção len=256          |     16 |     26.89     26.61      0.28 |      1.31          |     1.17       39
+atenção len=1024         |     16 |    102.75     94.27      8.49 |      1.33          |     4.66       44
+atenção len=4096         |     16 |    369.77    372.44     -2.66 |      1.30          |    18.64       45
+gemv o                   |    512 |      2.50      1.93      0.58 |      1.31          |     2.34     1092
+axpby residual           |      4 |      1.42      0.84      0.59 |      1.20          |     0.01       15
+gemv roteador            |     16 |      1.78      1.20      0.58 |      1.24          |     0.08       58
+gemv gate_up             |    512 |      2.58      1.99      0.60 |      1.24          |     2.34     1060
+swiglu                   |      4 |      1.52      0.94      0.57 |      1.18          |     0.01        7
+gemv down                |    512 |      2.18      1.57      0.61 |      1.27          |     1.17      672
+axpby expert             |      4 |      1.43      0.84      0.59 |      1.20          |     0.01       15
+gemv cabeça              |  24578 |    109.21    110.09     -0.88 |      1.19          |   112.08      916
+
+fila: GPU por lançamento com lançamentos um a um; grafo: o mesmo capturado num CudaGraph; diferença: o que o grafo tira;
+host: custo de enfileirar um lançamento; piso: bytes lidos e escritos a 900 GB/s; GB/s: banda efetiva no grafo.
+(atenção: K e V das len posições, sem contar a releitura das cabeças de Q que dividem a mesma cabeça de KV.)
+
+custo de enfileirar no host (µs por lançamento): escalar fixo contra escalar que muda a cada lançamento
+  atenção, len:          1.31     4.75
+  axpby, g (f32):        1.18     1.16

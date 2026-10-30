@@ -1,0 +1,12 @@
+cache: LruCpu, 76 slots (10% dos experts), backlog 4
+gpu   caso 0: prompt 103 tokens em 6157 ms; 64 gerados em 241 ms (265.5 tok/s) | 64/64 iguais
+gpu   caso 1: prompt 101 tokens em 355 ms; 64 gerados em 241 ms (266.0 tok/s) | 64/64 iguais
+gpu   caso 2: prompt 143 tokens em 513 ms; 64 gerados em 254 ms (252.0 tok/s) | 64/64 iguais
+cpu   caso 0: prompt 103 tokens em 1550 ms; 64 gerados em 996 ms (64.3 tok/s) | 64/64 iguais
+cpu   caso 1: prompt 101 tokens em 1439 ms; 64 gerados em 881 ms (72.6 tok/s) | 64/64 iguais
+cpu   caso 2: prompt 143 tokens em 2030 ms; 64 gerados em 1015 ms (63.0 tok/s) | 64/64 iguais
+cache caso 0: prompt 103 tokens em 1321 ms; 64 gerados em 837 ms (76.4 tok/s) | 64/64 iguais
+cache caso 1: prompt 101 tokens em 1326 ms; 64 gerados em 869 ms (73.6 tok/s) | 64/64 iguais
+cache caso 2: prompt 143 tokens em 1844 ms; 64 gerados em 829 ms (77.2 tok/s) | 64/64 iguais
+
+resultado: geração igual à do transformers

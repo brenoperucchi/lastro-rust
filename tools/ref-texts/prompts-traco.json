@@ -1,0 +1,10 @@
+[
+  "Write a Python function that reads a CSV file of stock trades (date, symbol, side, quantity, price) and computes the daily profit and loss per symbol. Include type hints, error handling and pytest tests.",
+  "Explique em português como funciona um cache LRU, quando ele é uma boa escolha e quando não é. Depois escreva uma implementação em Rust com testes.",
+  "Refactor the following JavaScript into modern, readable code and explain each change:\n\nfunction f(a){var r=[];for(var i=0;i<a.length;i++){if(a[i]%2==0){r.push(a[i]*2)}else{if(a[i]>10){r.push(a[i])}}}return r}",
+  "Explain how TCP congestion control works, covering slow start, congestion avoidance, fast retransmit and fast recovery, and compare Reno, CUBIC and BBR.",
+  "Escreva um e-mail formal para um cliente explicando que a entrega do projeto vai atrasar duas semanas por causa de uma falha no fornecedor, propondo um plano de compensação.",
+  "Design a SQL schema for an online bookstore with authors, books, customers, orders and reviews. Then write queries for: best-selling books last month, customers with no orders, and average rating per author.",
+  "Write a bash script that backs up a directory to a tarball with a timestamp, keeps only the last 7 backups, logs to a file and exits with a useful error code on failure. Explain the script line by line.",
+  "Resuma as principais causas da crise financeira de 2008 e o que mudou na regulação bancária depois dela."
+]

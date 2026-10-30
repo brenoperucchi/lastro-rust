@@ -1,0 +1,25 @@
+{
+  "model": "/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct",
+  "architectures": [
+    "GraniteMoeForCausalLM"
+  ],
+  "files_sha256": {
+    "added_tokens.json": "081bdeaf76fc5463cc2e20fbadf17ad9eb569bb5343b120cc64b98840754f96c",
+    "config.json": "f1b64813debfabeb9cc20f1a13ed8248da6774fe54e532d19912d4b3f2ab335d",
+    "generation_config.json": "df006c64ad35b18712527cb5130a7a13a4d8a7c5c23653feea59be88e2e2a4ca",
+    "special_tokens_map.json": "596d752bf46f5cace1f6826b52ed7d913347a4eea0ecce8ab2f869471ca40369",
+    "tokenizer.json": "ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654",
+    "tokenizer_config.json": "ab17e0d532ecf47e9d8451939dd81f25dd98c5fba4b6742584549bbf9c1f06b9",
+    "vocab.json": "80ab859339a2525fdfbda14bc39df02dffb824aefdaf86426217bbb146d17e01"
+  },
+  "text_file": "/home/brenoperucchi/Devs/strata-opencode/qual-runs/TRACOS-20261029/granite-3.1-1b-a400m-instruct/textos/conversa-3.txt",
+  "text_sha256": "424c54ebfbab29478179f9df4cd0e6f5eab547ef02acaf6cadce2f832a9d728a",
+  "tokens": 954,
+  "vocab": 49155,
+  "moe_layers": 24,
+  "experts_per_tok": 8,
+  "dtype": "float32 (pesos BF16 convertidos)",
+  "torch": "2.15.0+cpu",
+  "transformers": "5.22.0",
+  "forward_seconds": 2.31
+}

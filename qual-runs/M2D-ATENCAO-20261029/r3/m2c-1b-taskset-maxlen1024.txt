@@ -1,0 +1,50 @@
+m2c-kernels: granite-3.1-1b-a400m-instruct; H = 1024, I = 512, 16 cabeças de Q e 8 de KV (d = 64), E = 32; max_len 1024; 500 lançamentos por kernel, 3 repetições, grafo reproduzido 5×
+
+kernel                   | blocos |   fila µs  fila mín–máx  grafo µs diferença |   host µs |  piso µs     GB/s
+axpby 1 bloco (mínimo)   |      1 |      1.50     1.50–1.50      0.87      0.63 |      1.26 |     0.00        4
+rmsnorm                  |      1 |      2.14     2.14–2.14      1.54      0.61 |      1.32 |     0.01        8
+gemv q                   |    512 |      2.78     2.78–2.78      2.15      0.63 |      1.27 |     2.34      979
+gemv k (ou v)            |    256 |      2.48     2.48–2.48      1.82      0.66 |      1.25 |     1.17      579
+rope q                   |     16 |      1.45     1.45–1.45      0.84      0.62 |      1.28 |     0.01       15
+cópia para o KV          |      0 |      1.42     1.42–1.42      0.99      0.43 |      1.30 |     0.00        4
+atenção 1ª len=1         |   1024 |     13.81   13.79–13.81     13.32      0.49 |      1.50 |     0.00        0
+atenção 2ª len=1         |     16 |      1.83     1.83–1.83      1.24      0.59 |      1.29 |     0.01        7
+atenção 1ª len=64        |   1024 |     12.64   12.64–12.67     12.94     -0.29 |      1.44 |     0.29       20
+atenção 2ª len=64        |     16 |      1.83     1.83–1.83      1.24      0.59 |      1.27 |     0.01        7
+atenção 1ª len=256       |   1024 |     13.92   13.91–13.96     13.25      0.67 |      1.44 |     1.17       79
+atenção 2ª len=256       |     16 |      2.06     2.05–2.06      1.45      0.61 |      1.27 |     0.04       23
+atenção 1ª len=1024      |   1024 |     20.55   20.54–21.11     20.28      0.27 |      1.44 |     4.66      207
+atenção 2ª len=1024      |     16 |      2.84     2.84–2.84      2.25      0.59 |      1.27 |     0.15       58
+atenção 1ª ns=8 len=1    |    128 |      8.20     8.20–8.20      7.59      0.61 |      1.46 |     0.00        1
+atenção 1ª ns=8 len=256  |    128 |      8.38     8.38–9.27      7.79      0.60 |      1.46 |     1.17      135
+atenção 1ª ns=16 len=1   |    256 |     10.86   10.86–10.87     10.26      0.60 |      1.44 |     0.00        0
+atenção 1ª ns=16 len=256 |    256 |     11.14   11.14–11.15     10.53      0.61 |      1.48 |     1.17      100
+atenção 1ª ns=32 len=1   |    512 |     10.47   10.44–10.52      9.70      0.77 |      1.43 |     0.00        0
+atenção 1ª ns=32 len=256 |    512 |     11.42   11.41–11.43     10.92      0.50 |      1.44 |     1.17       96
+atenção 1ª ns=64 len=1   |   1024 |     12.63   12.62–12.65     12.20      0.43 |      1.48 |     0.00        0
+atenção 1ª ns=64 len=256 |   1024 |     13.73   13.69–13.75     13.24      0.49 |      1.45 |     1.17       79
+gemv o                   |    512 |      2.49     2.49–2.49      1.94      0.55 |      1.32 |     2.34     1086
+axpby residual           |      4 |      1.43     1.43–1.43      0.83      0.59 |      1.21 |     0.01       15
+gemv roteador            |     16 |      1.77     1.76–1.82      1.19      0.58 |      1.27 |     0.08       59
+gemv gate_up             |    512 |      2.57     2.57–2.57      1.96      0.62 |      1.26 |     2.34     1076
+swiglu                   |      4 |      1.52     1.52–1.53      0.94      0.58 |      1.21 |     0.01        7
+gemv down                |    512 |      2.17     2.17–2.17      1.58      0.59 |      1.26 |     1.17      667
+axpby expert             |      4 |      1.43     1.43–1.43      0.84      0.59 |      1.21 |     0.01       15
+gemv cabeça              |  24578 |    109.27 109.26–109.30    108.38      0.89 |      1.22 |   112.08      931
+
+fila: GPU por lançamento com lançamentos um a um (mediana e faixa das repetições); grafo: o mesmo capturado num CudaGraph;
+diferença: o que o grafo tira (só limpa onde a GPU limita: nos kernels pequenos a fila fica perto do host);
+host: custo de enfileirar um lançamento; piso: bytes lidos e escritos a 900 GB/s; GB/s: banda efetiva no grafo.
+(atenção: K e V das len posições, sem contar a releitura das cabeças de Q que dividem a mesma cabeça de KV.)
+
+custo de enfileirar no host (µs por lançamento): escalar fixo contra escalar que muda a cada lançamento
+  (a atenção lê len de um tensor da GPU desde o M2d; até o M2c, o len escalar custava 4,75 µs contra 1,31 fixo)
+  axpby, g (f32):        1.21     1.19
+
+custo de enfileirar no host, por lançamento, nos 4 lançamentos de um expert (125 experts, mediana de 3):
+  partições próprias, como em GpuLayer::run:         2.60
+  partições emprestadas (ordem de hoje):             2.55
+  emprestadas, down com o mesmo K do gate_up:        1.26
+  emprestadas, down por uma cópia do gemv:           1.26
+  emprestadas, agrupado por kernel (8 por vez):      1.64
+  referência: só o gemv gate_up, repetido:           1.26

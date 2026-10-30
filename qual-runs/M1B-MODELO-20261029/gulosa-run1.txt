@@ -1,0 +1,8 @@
+gpu  caso 0: prompt 103 tokens em 6031 ms; 64 gerados em 241 ms (265.4 tok/s) | DIVERGE no passo 0 (gap da referência 0.332): 705 vs 10921
+gpu  caso 1: prompt 101 tokens em 350 ms; 64 gerados em 233 ms (275.2 tok/s) | DIVERGE no passo 8 (gap da referência 1.052): 30 vs 31
+gpu  caso 2: prompt 143 tokens em 506 ms; 64 gerados em 247 ms (259.3 tok/s) | DIVERGE no passo 0 (gap da referência 0.357): 1318 vs 10921
+cpu  caso 0: prompt 103 tokens em 7031 ms; 64 gerados em 4201 ms (15.2 tok/s) | DIVERGE no passo 0 (gap da referência 0.332): 705 vs 10921
+cpu  caso 1: prompt 101 tokens em 6961 ms; 64 gerados em 4498 ms (14.2 tok/s) | DIVERGE no passo 8 (gap da referência 1.052): 30 vs 31
+cpu  caso 2: prompt 143 tokens em 9901 ms; 64 gerados em 4525 ms (14.1 tok/s) | DIVERGE no passo 0 (gap da referência 0.357): 1318 vs 10921
+
+resultado: FALHOU

@@ -1,0 +1,5 @@
+gpu   caso 0: prompt 103 tokens em 2470 ms; 64 gerados em 354 ms (180.6 tok/s) | 64/64 iguais
+gpu   caso 1: prompt 101 tokens em 550 ms; 64 gerados em 357 ms (179.1 tok/s) | 64/64 iguais
+gpu   caso 2: prompt 143 tokens em 782 ms; 64 gerados em 356 ms (179.6 tok/s) | 64/64 iguais
+
+resultado: geração igual à do transformers

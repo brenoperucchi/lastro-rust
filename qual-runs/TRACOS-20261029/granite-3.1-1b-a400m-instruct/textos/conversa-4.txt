@@ -1,0 +1,34 @@
+<|start_of_role|>system<|end_of_role|>Knowledge Cutoff Date: April 2024.
+Today's Date: October 29, 2026.
+You are Granite, developed by IBM. You are a helpful AI assistant.<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>Escreva um e-mail formal para um cliente explicando que a entrega do projeto vai atrasar duas semanas por causa de uma falha no fornecedor, propondo um plano de compensação.<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>Assunto: Atualização sobre Projeto de Desenvolvimento de Software
+
+Objetivo:
+
+Estou escrevendo para informar-lhe sobre o atual estado do projeto de desenvolvimento de software que você enviou para nós. Embora o projeto tenha sido entregue, houve uma falha no fornecedor que exigiu uma revisão e uma adição de alguns itens.
+
+Situação:
+
+A falha no fornecedor levou a uma revisão e ajustes nos itens do projeto. Isso resultou na necessidade de adicionar alguns itens ao projeto, o que, por sua vez, levou a uma redução na data de entrega.
+
+Proposta de Compensação:
+
+Como resultado da falha no fornecedor, o projeto vai ser entregue em duas semanas mais tarde do que o plano inicial. No entanto, nós estamos comprometidos em fornecer o projeto de alta qualidade e estamos dispostos a compensar o cliente por essa redução na data de entrega.
+
+Compensação:
+
+Nós estamos dispostos a oferecer um compensação de 10% do custo total do projeto para compensar o atraso. Este compensamento será aplicado diretamente sobre o custo total do projeto e será devolvido ao cliente após a entrega do projeto.
+
+Conclusão:
+
+Embora o projeto tenha sido entregue em uma data diferente do esperado, nós estamos comprometidos em fornecer o projeto de alta qualidade e estamos dispostos a compensar o cliente por essa redução na data de entrega. Nós esperamos que você possa entender a situação e aceitarmos a nossa proposta de compensação.
+
+Se você tiver alguma dúvida ou precisar de mais informações, por favor, não hesite em contatar-nos. Estamos aqui para ajudar e resolver qualquer preocupação que você possa ter.
+
+Atenciosamente,
+
+[Seu Nome]
+[Seu Position]
+[Seu E-mail]
+[Seu Telefone]<|end_of_text|>

@@ -1,0 +1,17 @@
+[package]
+name = "m0-gemv"
+version = "0.0.1"
+edition = "2021"
+publish = false
+description = "M0: GEMV BF16 de um expert em batch 1, kernel Tile do cutile-rs contra cuBLAS, na RTX 4090."
+
+# cuda-rust clonado em /home/brenoperucchi/Devs/GitHub/cuda-rust, commit 5759cb3 (29/10).
+[dependencies]
+cutile = { path = "../../../GitHub/cuda-rust/cutile-rs/cutile" }
+cuda-core = { path = "../../../GitHub/cuda-rust/cuda-core" }
+cuda-async = { path = "../../../GitHub/cuda-rust/cuda-async" }
+
+[profile.release]
+debug = false
+
+[workspace]

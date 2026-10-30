@@ -1,0 +1,21 @@
+m2b-custo-fixo: granite-3.1-3b-a800m-instruct; 32 camadas, k = 8; 1108 tokens (277 do texto-a × 4); 3 rodadas por variante (mediana de todas)
+
+variante    |     total      host       GPU |    tok/s |   ops syncs | logits contra o normal
+normal      |     6.603     6.385     6.556 |    151.5 |  1509    67 | ok (0.0e0)
+sem_sync    |     6.118     3.333     6.069 |    163.4 |  1445     3 | ok (0.0e0)
+so_atencao  |     3.026     0.555     2.979 |    330.5 |   389     3 | –
+so_moe      |     3.298     2.794     3.252 |    303.2 |  1061     3 | –
+base        |     0.216     0.015     0.177 |   4623.2 |     5     3 | –
+
+total: parede do passo; host: parede até o último lançamento voltar (antes da leitura dos logits);
+GPU: entre eventos no começo do passo e antes da leitura dos logits (inclui a GPU parada à espera do host). ms, medianas.
+ops: operações enfileiradas (kernels e cópias) por token; syncs: esperas do host pela GPU por token.
+
+GPU por faixa de posição (ms, mediana):
+variante    |     0-256   256-512  512-1024     1024+
+normal      |     5.375     6.117     7.258     8.061
+sem_sync    |     4.908     5.657     6.788     7.566
+so_atencao  |     1.835     2.591     3.724     4.475
+so_moe      |     3.253     3.252     3.253     3.252
+base        |     0.177     0.177     0.177     0.177
+resultado: sem_sync calcula o mesmo que o normal

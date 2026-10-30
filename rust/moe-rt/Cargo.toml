@@ -1,0 +1,16 @@
+[package]
+name = "moe-rt"
+version = "0.0.1"
+edition = "2021"
+publish = false
+description = "Runtime MoE em Rust sobre o CUDA Rust da NVIDIA (plano docs/PLANO-runtime-rust-moe-20261029.md). M1a: bloco MoE de uma camada."
+
+# cuda-rust clonado em /home/brenoperucchi/Devs/GitHub/cuda-rust, commit 5759cb3 (29/10).
+[dependencies]
+cutile = { path = "../../../GitHub/cuda-rust/cutile-rs/cutile" }
+cuda-core = { path = "../../../GitHub/cuda-rust/cuda-core" }
+cuda-async = { path = "../../../GitHub/cuda-rust/cuda-async" }
+moe-monitor = { path = "../moe-monitor" }
+serde_json = "1"
+
+[workspace]

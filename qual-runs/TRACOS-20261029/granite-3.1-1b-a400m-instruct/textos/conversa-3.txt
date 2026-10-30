@@ -1,0 +1,31 @@
+<|start_of_role|>system<|end_of_role|>Knowledge Cutoff Date: April 2024.
+Today's Date: October 29, 2026.
+You are Granite, developed by IBM. You are a helpful AI assistant.<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>Explain how TCP congestion control works, covering slow start, congestion avoidance, fast retransmit and fast recovery, and compare Reno, CUBIC and BBR.<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>TCP (Transmission Control Protocol) congestion control is a critical mechanism that ensures efficient and reliable data transmission over the internet. It manages the rate at which data is sent to prevent network congestion and ensure fairness among multiple connections. Here's an explanation of how TCP congestion control works, focusing on slow start, congestion avoidance, fast retransmit and fast recovery, and comparing Reno, CUBIC, and BBR.
+
+1. Slow Start:
+
+Slow Start is the initial phase of TCP congestion control. When a new connection is established, TCP initializes the connection with a slow start phase. During this phase, TCP sends a small segment (typically 10-15 bytes) and waits for an acknowledgment (ACK) from the receiver. If the ACK is not received within a predefined time (RTO - Retransmission Timeout), TCP assumes the connection is congested and increases the sending rate exponentially. This exponential growth continues until the receiver sends an ACK, marking the connection as congested.
+
+2. Congestion Avoidance:
+
+Once the connection is established and congestion is detected, TCP enters the congestion avoidance phase. In this phase, TCP maintains a stable sending rate, typically around 1000-6000 bytes per second (bps), to avoid overwhelming the network. The sending rate is doubled every 3-4 RTOs, and the ACK window is increased by half each time. This phase allows the connection to adapt to network conditions and avoid congestion.
+
+3. Fast Retransmit and Fast Recovery:
+
+If a segment is lost or corrupted during transmission, TCP enters fast retransmit and fast recovery phases. In fast retransmit, TCP retransmits the lost segment immediately, without waiting for an ACK. This rapid retransmission helps quickly identify and recover from congestion-induced packet loss. Fast recovery, on the other hand, involves retransmitting the lost segment and then adjusting the sending rate based on the observed network conditions.
+
+4. Reno Algorithm:
+
+The Reno algorithm is a simple and fast congestion control mechanism that combines slow start and congestion avoidance. It starts with slow start and then enters congestion avoidance after a few RTOs. Reno uses a fixed-size window (typically 1000-6000 bps) and a congestion window (CW) that doubles every RTO. The CW is adjusted based on the observed network conditions, with a higher CW for congestion and a lower CW for network conditions improving.
+
+5. CUBIC Algorithm:
+
+CUBIC (Congestion Avoidance Using Binary Exponential Smoothing) is a more sophisticated congestion control algorithm that combines slow start and congestion avoidance with a smoothing factor to reduce packet loss and improve efficiency. CUBIC uses a binary exponential smoothing function to estimate the current network conditions and adjusts the CW accordingly. It also employs a sliding window to limit the amount of data sent at any given time.
+
+6. BBR (Bottleneck Bandwidth and Round-trip propagation time) Algorithm:
+
+BBR is a modern, adaptive congestion control algorithm that combines slow start, congestion avoidance, and fast retransmit phases. It uses a sliding window and a congestion window that doubles every 3-4 RTOs. BBR also employs a congestion window adjustment based on the observed round-trip propagation time (RTT), allowing it to adapt to varying network conditions. BBR further incorporates a congestion avoidance mechanism that reduces the sending rate when the network is congested, preventing further packet loss.
+
+In summary, TCP congestion control mechanisms like Reno, CUBIC, and BBR adapt to network conditions by adjusting the sending rate based on the observed network conditions. These algorithms balance the need for efficient data transmission with fairness among multiple connections, ensuring optimal network performance and preventing network congestion.<|end_of_text|>

@@ -1,0 +1,2 @@
+Loading weights:   0%|          | 0/290 [00:00<?, ?it/s]Loading weights:  22%|██▏       | 65/290 [00:00<00:00, 625.13it/s]Loading weights:  44%|████▍     | 128/290 [00:00<00:00, 605.64it/s]Loading weights:  65%|██████▌   | 189/290 [00:00<00:00, 445.92it/s]Loading weights:  82%|████████▏ | 238/290 [00:00<00:00, 365.06it/s]Loading weights:  96%|█████████▌| 278/290 [00:00<00:00, 316.94it/s]Loading weights: 100%|██████████| 290/290 [00:00<00:00, 379.55it/s]
+{"tokens": 277, "vocab": 49155, "moe_layers": 32, "experts_per_tok": 8, "forward_seconds": 1.91}

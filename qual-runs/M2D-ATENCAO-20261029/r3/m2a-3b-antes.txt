@@ -1,0 +1,32 @@
+M2a: granite-3.1-3b-a800m-instruct; conversas [4, 5, 6, 7] (3814 tokens); 1280 experts de 4.72 MB; CPU com 8 threads; backlog 4
+
+política   orçam. slots |  ms/tok mediana   tok/s | acerto    CPU  cóp.s cóp.bg | roteador   CPU ms |   rot.igual |  sim ms/acerto | logits texto-a / conversas
+resident     100%  1280 |    5.72    5.71   174.8 | 100.0%   0.0%   0.00   0.00 |      NaN     0.00 | 122047/122048 |    3.45   100% | 2.9e-6 / referência
+cache_full   100%  1280 |    5.69    5.68   175.8 | 100.0%   0.0%   0.00   0.00 |     1.71     0.00 | 122047/122048 |                | 2.9e-6 / 0.0e0
+lru_sync      10%   128 |   65.19   64.89    15.3 |   0.0%   0.0% 256.00   0.00 |    58.69     0.00 | 122047/122048 |   61.17     0% | 2.9e-6 / 0.0e0
+lru_sync      25%   320 |   37.13   36.88    26.9 |  47.7%   0.0% 133.88   0.00 |    31.60     0.00 | 122047/122048 |   32.40    48% | 2.9e-6 / 0.0e0
+lru_sync      50%   640 |   17.87   16.37    56.0 |  79.7%   0.0%  51.96   0.00 |    13.16     0.00 | 122047/122048 |   13.66    80% | 2.9e-6 / 0.0e0
+lru_sync      75%   960 |    8.26    7.56   121.0 |  95.8%   0.0%  10.70   0.00 |     4.02     0.00 | 122047/122048 |    5.25    96% | 2.9e-6 / 0.0e0
+lru_cpu       10%   128 |   18.61   18.39    53.7 |  23.3%  76.7%   0.00  55.88 |     1.62    13.88 | 122047/122048 |   33.87     0% | 2.9e-6 / 6.3e-6
+lru_cpu       25%   320 |   14.61   14.44    68.4 |  49.9%  50.1%   0.00  46.67 |     1.59     9.17 | 122047/122048 |   17.48    49% | 3.2e-6 / 6.4e-6
+lru_cpu       50%   640 |    9.63    9.42   103.8 |  80.3%  19.7%   0.00  31.53 |     1.66     3.59 | 122047/122048 |    7.68    81% | 3.8e-6 / 6.2e-6
+lru_cpu       75%   960 |    6.88    6.58   145.3 |  95.7%   4.3%   0.00  10.03 |     1.57     0.88 | 122046/122048 |    4.05    96% | 3.8e-6 / 6.6e-6
+
+mediana de ms/token por posição no contexto (tokens na faixa):
+política   orçam. |          0-256        256-512       512-1024          1024+
+resident     100% |    5.50 (1024)    5.65 (1024)    5.76 (1611)    5.84 ( 155)
+cache_full   100% |    5.51 (1024)    5.63 (1024)    5.72 (1611)    5.82 ( 155)
+lru_sync      10% |   64.67 (1024)   64.89 (1024)   65.01 (1611)   65.15 ( 155)
+lru_sync      25% |   38.02 (1024)   37.48 (1024)   35.94 (1611)   35.08 ( 155)
+lru_sync      50% |   17.20 (1024)   15.06 (1024)   16.68 (1611)   17.48 ( 155)
+lru_sync      75% |    7.74 (1024)    7.11 (1024)    7.63 (1611)    8.18 ( 155)
+lru_cpu       10% |   18.31 (1024)   18.51 (1024)   18.34 (1611)   18.45 ( 155)
+lru_cpu       25% |   14.40 (1024)   14.50 (1024)   14.38 (1611)   14.61 ( 155)
+lru_cpu       50% |    9.48 (1024)    9.12 (1024)    9.55 (1611)    9.75 ( 155)
+lru_cpu       75% |    6.51 (1024)    6.41 (1024)    6.72 (1611)    6.79 ( 155)
+
+ms/tok e tok/s: média nas conversas, mediana ao lado; acerto e CPU: fração dos experts pedidos; cóp.s e cóp.bg: cópias por token;
+roteador: espera do host pela leitura dos logits, por token (inclui o cálculo da GPU até ali); CPU ms: experts na CPU por token;
+sim: ms/token e acerto previstos pelo simulador para o mesmo orçamento e política (residente: 1000/tg_gpu do llama.cpp).
+logits: maior erro relativo (L2) contra o transformers no texto-a e, nas conversas, contra a passada residente; limite 1e-4, argmax igual;
+resultado: logits dentro da tolerância em todas as configurações

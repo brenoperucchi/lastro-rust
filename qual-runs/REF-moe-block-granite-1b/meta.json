@@ -1,0 +1,17 @@
+{
+  "model": "/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct",
+  "text_file": "/home/brenoperucchi/Devs/strata-opencode/tools/ref-texts/texto-a.txt",
+  "tokens": 277,
+  "hidden": 1024,
+  "intermediate": 512,
+  "experts": 32,
+  "k": 8,
+  "layers": [
+    0,
+    11,
+    23
+  ],
+  "dtype": "float32 (pesos BF16 convertidos)",
+  "torch": "2.15.0+cpu",
+  "transformers": "5.22.0"
+}

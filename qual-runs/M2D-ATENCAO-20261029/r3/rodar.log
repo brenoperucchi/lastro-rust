@@ -1,0 +1,22 @@
+m2c 1b 0
+m2b 1b antes 1 0
+gulosa 1b antes 1 0
+m2b 1b depois 1 0
+gulosa 1b depois 1 0
+m2b 1b antes 2 0
+gulosa 1b antes 2 0
+m2b 1b depois 2 0
+gulosa 1b depois 2 0
+m1b 1b 0
+m2a 1b 0
+m2c 3b 0
+m2b 3b antes 1 0
+gulosa 3b antes 1 0
+m2b 3b depois 1 0
+gulosa 3b depois 1 0
+m2b 3b antes 2 0
+gulosa 3b antes 2 0
+m2b 3b depois 2 0
+gulosa 3b depois 2 0
+m1b 3b 0
+m2a 3b 0

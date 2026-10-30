@@ -1,0 +1,18 @@
+M2a: granite-3.1-1b-a400m-instruct; conversas [4, 5, 6, 7] (3451 tokens); 768 experts de 3.15 MB; CPU com 8 threads; backlog 4
+
+política   orçam. slots |  ms/tok mediana   tok/s | acerto    CPU  cóp.s cóp.bg | roteador   CPU ms |   rot.igual |  sim ms/acerto | logits texto-a / conversas
+resident     100%   768 |    3.11    3.07   321.7 | 100.0%   0.0%   0.00   0.00 |      NaN     0.00 | 82824/82824 |                | 5.6e-6 / referência
+lru_cpu       25%   192 |    8.38    8.20   119.3 |  43.1%  56.9%   0.00  38.75 |     0.97     5.51 | 82824/82824 |                | 5.5e-6 / 5.7e-6
+lru_cpu       50%   384 |    5.33    5.12   187.5 |  75.0%  25.0%   0.00  26.18 |     1.13     2.36 | 82824/82824 |                | 5.2e-6 / 6.1e-6
+
+mediana de ms/token por posição no contexto (tokens na faixa):
+política   orçam. |          0-256        256-512       512-1024          1024+
+resident     100% |    2.99 (1024)    3.06 (1024)    3.11 (1355)    3.21 (  48)
+lru_cpu       25% |    8.17 (1024)    7.96 (1024)    8.48 (1355)    8.81 (  48)
+lru_cpu       50% |    5.22 (1024)    4.95 (1024)    5.19 (1355)    4.82 (  48)
+
+ms/tok e tok/s: média nas conversas, mediana ao lado; acerto e CPU: fração dos experts pedidos; cóp.s e cóp.bg: cópias por token;
+roteador: espera do host pela leitura dos logits, por token (inclui o cálculo da GPU até ali); CPU ms: experts na CPU por token;
+sim: ms/token e acerto previstos pelo simulador para o mesmo orçamento e política (residente: 1000/tg_gpu do llama.cpp).
+logits: maior erro relativo (L2) contra o transformers no texto-a e, nas conversas, contra a passada residente; limite 1e-4, argmax igual;
+resultado: logits dentro da tolerância em todas as configurações

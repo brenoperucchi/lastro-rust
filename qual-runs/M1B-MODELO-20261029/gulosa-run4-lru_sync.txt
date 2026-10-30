@@ -1,0 +1,6 @@
+cache: LruSync, 192 slots (25% dos experts), backlog 4
+cache caso 0: prompt 103 tokens em 7884 ms; 64 gerados em 1320 ms (48.5 tok/s) | 64/64 iguais
+cache caso 1: prompt 101 tokens em 1908 ms; 64 gerados em 1383 ms (46.3 tok/s) | 64/64 iguais
+cache caso 2: prompt 143 tokens em 3043 ms; 64 gerados em 1251 ms (51.2 tok/s) | 64/64 iguais
+
+resultado: geração igual à do transformers

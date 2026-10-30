@@ -1,0 +1,89 @@
+<|start_of_role|>system<|end_of_role|>Knowledge Cutoff Date: April 2024.
+Today's Date: October 29, 2026.
+You are Granite, developed by IBM. You are a helpful AI assistant.<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>Explique em português como funciona um cache LRU, quando ele é uma boa escolha e quando não é. Depois escreva uma implementação em Rust com testes.<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>O cache Least Recently Used (LRU) é um tipo de cache que remove os elementos mais antigos do cache quando o espaço disponível se esgota. Essa abordagem garante que o cache mantenha os elementos mais frequentemente utilizados, pois eles são os que mais recentemente foram acessados.
+
+Um cache LRU é uma boa escolha em situações onde:
+
+1. **O acesso a dados é predominantemente ordenado pelo tempo de acesso**: Quando os dados são acessados de forma cronológica, o cache LRU pode otimizar o desempenho, pois os elementos mais recentes são sempre armazenados no topo do cache.
+
+2. **O sistema tem um alto grau de paralelismo**: O LRU permite que o sistema execute várias solicitações simultaneamente, pois ele não depende da ordem cronológica dos dados para gerar resultados.
+
+3. **O espaço de cache é limitado**: O LRU é eficiente em usar o espaço de cache limitado, removendo os elementos menos utilizados quando necessário.
+
+No entanto, o LRU não é a melhor escolha em situações onde:
+
+1. **O acesso a dados é predominantemente aleatório**: Em casos onde os dados são acessados de forma aleatória, o LRU pode não ser tão eficiente, pois os elementos mais recentes podem não ser os mais frequentemente acessados.
+
+2. **O sistema tem um baixo grau de paralelismo**: O LRU pode ser menos eficiente em sistemas com baixo grau de paralelismo, pois ele depende da ordem cronológica dos dados para gerar resultados.
+
+3. **O espaço de cache é abundante**: Se o espaço de cache for muito grande, o LRU pode ser menos eficiente, pois ele precisará remover muitos elementos para liberar espaço.
+
+Aqui está uma implementação em Rust para um cache LRU, com testes para validar a funcionalidade:
+
+```rust
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::time::Instant;
+
+struct LRUCache<K, V> {
+    capacity: usize,
+    cache: HashMap<K, (HashSet<K>, Instant)>,
+    order: HashSet<K>,
+}
+
+impl<K, V> LRUCache<K, V>
+where
+    K: Eq + Hash,
+{
+    fn new(capacity: usize) -> Self {
+        LRUCache {
+            capacity,
+            cache: HashMap::new(),
+            order: HashSet::new(),
+        }
+    }
+
+    fn get(&mut self, key: K) -> Option<&V> {
+        if let Some((mut set, _)) = self.cache.get_mut(&key) {
+            if !self.order.contains(&key) {
+                self.order.insert(key);
+            }
+            set.insert(key);
+            Some(&self.cache[&key].0)
+        } else {
+            None
+        }
+    }
+
+    fn put(&mut self, key: K, value: V) {
+        if self.cache.len() >= self.capacity {
+            let (_, _) = self.cache.remove(&self.order.pop().unwrap());
+        }
+
+        self.cache.insert(key, (HashSet::new(), Instant::now()));
+        self.order.insert(key);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lru_cache() {
+        let mut cache = LRUCache::new(2);
+
+        cache.put(1, "one".to_string());
+        cache.put(2, "two".to_string());
+        cache.put(3, "three".to_string());
+
+        assert_eq!(cache.get(1), Some(&"one".to_string()));
+        assert_eq!(cache.get(2), Some(&"two".to_string()));
+        assert_eq!(cache.get(3), Some(&"three".to_string()));
+
+        cache.put(4, "four".to_string());
+        assert_eq!(cache.get(1), Some(&"one".to_string()));
+        assert_eq!(cache.get(2), Some(&"two".to_string()));
+        assert_eq!(cache.get(3), Some(&"<|end_of_text|>

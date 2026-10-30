@@ -1,0 +1,10 @@
+error[E0502]: cannot borrow `cache` as immutable because it is also borrowed as mutable
+  --> tests/ui/kernel_reads_while_upload_pending.rs:12:28
+   |
+10 |     let upload = cache.upload(0, &e);
+   |                  ----- mutable borrow occurs here
+11 |     let y = api::zeros::<f32>(&[1024]).sync_on(&stream).unwrap().partition([128]);
+12 |     let _ = read_expert(y, cache.lease(0)).first().unpartition().to_host_vec().sync_on(&stream); // lê antes da cópia
+   |                            ^^^^^ immutable borrow occurs here
+13 |     let _ = upload.sync_on(&stream);
+   |             ------ mutable borrow later used here

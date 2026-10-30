@@ -1,0 +1,94 @@
+<|start_of_role|>system<|end_of_role|>Knowledge Cutoff Date: April 2024.
+Today's Date: October 29, 2026.
+You are Granite, developed by IBM. You are a helpful AI assistant.<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>Design a SQL schema for an online bookstore with authors, books, customers, orders and reviews. Then write queries for: best-selling books last month, customers with no orders, and average rating per author.<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>To design a SQL schema for an online bookstore, we'll need to create several tables: `Authors`, `Books`, `Customers`, `Orders`, and `Reviews`. Here's a basic structure:
+
+1. `Authors` table:
+   - `author_id` (Primary Key)
+   - `first_name`
+   - `last_name`
+   - `bio`
+
+2. `Books` table:
+   - `book_id` (Primary Key)
+   - `title`
+   - `author_id` (Foreign Key referencing `Authors.author_id`)
+   - `publication_year`
+   - `genre`
+
+3. `Customers` table:
+   - `customer_id` (Primary Key)
+   - `first_name`
+   - `last_name`
+   - `email`
+   - `address`
+
+4. `Orders` table:
+   - `order_id` (Primary Key)
+   - `customer_id` (Foreign Key referencing `Customers.customer_id`)
+   - `order_date`
+   - `total_amount`
+
+5. `Reviews` table:
+   - `review_id` (Primary Key)
+   - `order_id` (Foreign Key referencing `Orders.order_id`)
+   - `book_id` (Foreign Key referencing `Books.book_id`)
+   - `rating`
+   - `review_text`
+
+Now, let's write queries for the requested functionalities:
+
+1. Best-selling books last month:
+
+```sql
+SELECT 
+    b.title,
+    COUNT(o.order_id) AS order_count,
+    SUM(o.total_amount) AS total_revenue
+FROM 
+    Orders o
+JOIN 
+    Books b ON o.book_id = b.book_id
+WHERE 
+    o.order_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)
+GROUP BY 
+    b.title
+ORDER BY 
+    total_revenue DESC;
+```
+
+2. Customers with no orders:
+
+```sql
+SELECT 
+    c.customer_id,
+    c.first_name,
+    c.last_name,
+    COUNT(o.order_id) AS no_orders_count
+FROM 
+    Customers c
+LEFT JOIN 
+    Orders o ON c.customer_id = o.customer_id
+GROUP BY 
+    c.customer_id, c.first_name, c.last_name
+HAVING 
+    COUNT(o.order_id) = 0;
+```
+
+3. Average rating per author:
+
+```sql
+SELECT 
+    a.first_name,
+    a.last_name,
+    AVG(r.rating) AS avg_rating
+FROM 
+    Authors a
+JOIN 
+    Reviews r ON a.author_id = r.author_id
+GROUP BY 
+    a.author_id, a.first_name, a.last_name;
+```
+
+Please note that the actual data types and column names might need adjustments based on your specific database schema. Also, the `Reviews` table should have a `rating` column to store the ratings.<|end_of_text|>

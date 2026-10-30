@@ -1,0 +1,8 @@
+M1b: granite-3.1-3b-a800m-instruct, 277 tokens, caminhos ["gpu", "cpu"], métricas em /run/user/1000/moe-rt/metrics.json
+pesos lidos em 6.4 s
+pesos na VRAM: 6597 MB em 1.2 s
+aquecimento da GPU (compilação dos kernels): 1.8 s
+gpu  argmax igual 277/277 (empates 0, divergências 0) | erro rel. logits máx 2.70e-6 médio 7.83e-7 | |Δ| máx 3.81e-5 | roteamento igual 8864/8864 | 6.01 ms/token (mediana) | OK
+cpu  argmax igual 277/277 (empates 0, divergências 0) | erro rel. logits máx 6.05e-6 médio 1.27e-6 | |Δ| máx 8.77e-5 | roteamento igual 8864/8864 | 33.73 ms/token (mediana) | OK
+
+resultado: dentro da tolerância

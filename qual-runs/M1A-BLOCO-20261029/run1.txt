@@ -1,0 +1,18 @@
+M1a: granite-3.1-1b-a400m-instruct, 277 tokens, camadas [0, 11, 23], métricas em /run/user/1000/moe-rt/metrics.json
+
+== camada 0: 32 experts de 3.15 MB; leitura 104 ms, envio à VRAM 101 MB em 89 ms ==
+aquecimento da GPU (compilação dos kernels): 337 ms
+gpu  top-k igual 277/277 | erro rel. máx 8.72e-7 médio 3.84e-7 | Δpeso máx 8.0e-7 | 0.108 ms/token (mediana) | OK
+cpu  top-k igual 277/277 | erro rel. máx 1.52e-6 médio 4.69e-7 | Δpeso máx 1.5e-6 | 2.045 ms/token (mediana) | OK
+
+== camada 11: 32 experts de 3.15 MB; leitura 62 ms, envio à VRAM 101 MB em 13 ms ==
+aquecimento da GPU (compilação dos kernels): 0 ms
+gpu  top-k igual 277/277 | erro rel. máx 7.35e-7 médio 4.99e-7 | Δpeso máx 2.4e-7 | 0.108 ms/token (mediana) | OK
+cpu  top-k igual 277/277 | erro rel. máx 9.13e-7 médio 6.36e-7 | Δpeso máx 2.1e-7 | 2.287 ms/token (mediana) | OK
+
+== camada 23: 32 experts de 3.15 MB; leitura 56 ms, envio à VRAM 101 MB em 13 ms ==
+aquecimento da GPU (compilação dos kernels): 0 ms
+gpu  top-k igual 277/277 | erro rel. máx 7.01e-7 médio 2.96e-7 | Δpeso máx 2.4e-7 | 0.106 ms/token (mediana) | OK
+cpu  top-k igual 277/277 | erro rel. máx 8.24e-7 médio 3.65e-7 | Δpeso máx 2.7e-7 | 2.224 ms/token (mediana) | OK
+
+resultado: todas as camadas dentro da tolerância

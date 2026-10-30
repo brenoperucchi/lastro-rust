@@ -1,0 +1,25 @@
+<|start_of_role|>system<|end_of_role|>Knowledge Cutoff Date: April 2024.
+Today's Date: October 29, 2026.
+You are Granite, developed by IBM. You are a helpful AI assistant.<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>Resuma as principais causas da crise financeira de 2008 e o que mudou na regulação bancária depois dela.<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>A crise financeira global de 2008, também conhecida como crise de subprime, foi um evento complexo e multifacetado que teve inúmeras causas interconectadas. Aqui estão as principais causas principais:
+
+1. **Desregulamentação financeira**: A redução rigorosa de regulamentações nos anos anteriores ao colapso, particularmente nos Estados Unidos, permitiu que bancos e outras instituições financeiras tomassem maior risco. Isso incluiu o aumento do uso de derivativos e outros instrumentos financeiros complexos, que muitas vezes não eram adequadamente compreendidos ou supervisionados.
+
+2. **Subprime e crédito imobiliário**: A expansão do crédito imobiliário para indivíduos com histórico de crédito deficitário, conhecido como subprime, levou a um aumento no número de empréstimos hipotecários e a um aumento na demanda por imóveis. No entanto, muitos desses empréstimos foram feitos sem condições adequadas, levando a altos níveis de inadimplência.
+
+3. **Desenvolvimento de instrumentos financeiros complexos**: A crise foi acentuada pela criação e venda de instrumentos financeiros complexos, como títulos de dívida baseados em hipotecas (MBS) e derivativos, como opções e contratos a termo futuros sobre esses títulos. Essas instrumentos tornaram as instituições financeiras muito mais vulneráveis a perdas financeiras.
+
+4. **Liberalização do comércio internacional**: A liberalização do comércio internacional permitiu que bancos e instituições financeiras operassem em diferentes países, aumentando a interconexão financeira global. Isso facilitou a disseminação da crise, pois as perdas financeiras em um país poderiam rapidamente se espalhar para outros.
+
+5. **Falta de transparência e supervisão**: A falta de transparência e supervisão adequada nas operações financeiras contribuiu para a crise. Bancos e instituições financeiras não divulgavam informações completas sobre seus riscos e posições financeiras, dificultando a identificação e mitigação de potenciais problemas.
+
+Após a crise de 2008, houve mudanças significativas na regulação bancária para prevenir futuras crises financeiras. Algumas das principais mudanças incluem:
+
+1. **Dodd-Frank Act (EUA)**: A lei foi aprovada em 2010 e visa estabelecer um quadro regulatório mais forte para o setor financeiro. Ela inclui restrições às práticas de marketing de produtos financeiros, requisitos mais rigorosos para instituições financeiras, e a criação de um Fundo de Garantia de Depósitos mais forte.
+
+2. **Basel III**: Tratado assinado em 2010 por bancos de todo o mundo, Basel III estabelece novos padrões de capital e liquidez para instituições financeiras. Ele também exige que as instituições mantenham uma taxa mínima de capital de 8% para crédito de alto risco e 2,5% para crédito de baixo risco.
+
+3. **Volcker Rule**: Implementada pela Dodd-Frank Act, a regra proíbe as instituições financeiras de fazer ou participar em transações comerciais que não sejam relacionadas a serviços financeiros tradicionais, como bancos comerciais.
+
+4. **Federal Reserve's Systemic Risk Council**: Criado em 2009, essa entidade monitora e avalia o risco sistêmico para a economia americana<|end_of_text|>

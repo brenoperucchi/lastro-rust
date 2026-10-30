@@ -1,0 +1,25 @@
+<|start_of_role|>system<|end_of_role|>Knowledge Cutoff Date: April 2024.
+Today's Date: October 29, 2026.
+You are Granite, developed by IBM. You are a helpful AI assistant.<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>Explain how TCP congestion control works, covering slow start, congestion avoidance, fast retransmit and fast recovery, and compare Reno, CUBIC and BBR.<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>TCP (Transmission Control Protocol) employs a sophisticated congestion control mechanism to ensure efficient data transmission, prevent network congestion, and maintain system stability. The primary goal of TCP congestion control is to regulate the rate at which data is sent to avoid network overloading and packet loss. Here's an explanation of the key components:
+
+1. **Slow Start (SS)**: Upon establishing a connection, TCP enters a slow start phase. The sender starts with a small initial window size (usually 1-10 segments) and doubles the number of segments in each subsequent acknowledgement (ACK) received. This phase aims to quickly fill the receiver's buffer and establish a reliable connection. The slow start threshold (SS_thresh) is set to 1 segment, meaning the sender will send only one segment before entering the congestion avoidance phase.
+
+2. **Congestion Avoidance (CA)**: Once the slow start phase is over, TCP transitions to the congestion avoidance phase. The sender now increases the window size by a constant amount (e.g., 1 segment) for each ACK received, rather than doubling. This phase aims to maintain a steady data transmission rate while avoiding congestion. The congestion avoidance rate (CA_rate) is proportional to the square root of the acknowledged bytes (ACK_bytes), following the formula: CA_rate = CA_init * (1 - (ACK_bytes / (RWND * RWND))), where RWND is the round-trip window size.
+
+3. **Fast Retransmit (FR) and Fast Recovery (FR)**: In case of packet loss, TCP uses two mechanisms to quickly recover and retransmit lost segments:
+
+   - **Fast Retransmit (FR)**: If the sender receives two duplicate ACKs for consecutive segments, it assumes a packet loss and retransmits the missing segment without waiting for the slow start threshold. This mechanism reduces the delay in detecting and recovering from packet loss.
+
+   - **Fast Recovery (FR)**: After retransmitting a segment, the sender enters the congestion avoidance phase with a new initial window size (initially half of the slow start threshold). This phase aims to quickly re-establish the connection without overwhelming the network. The new window size is calculated as: new_init_window = old_init_window * (1 - (ACK_bytes / (RWND * RWND))).
+
+Now, let's compare Reno, CUBIC, and BBR (Bottleneck Bandwidth and Round-trip propagation time):
+
+- **Reno (Rapid Retransmit)**: Reno is a simple and historic congestion control algorithm. It uses a single threshold (slow start threshold) and a fixed retransmission timer. Reno performs well in low-loss networks but struggles in high-loss environments due to its slow recovery mechanism.
+
+- **CUBIC**: CUBIC is an improvement over Reno, offering better performance in high-loss networks. It introduces a cubic function for the congestion avoidance rate, which increases more rapidly than Reno's square-root function. CUBIC also uses a larger initial window size and a more aggressive retransmission timer, leading to faster recovery from packet loss.
+
+- **BBR (Bottleneck Bandwidth and Round-trip propagation time)**: BBR is a more recent congestion control algorithm designed for high-speed networks. It considers both the bottleneck bandwidth and round-trip propagation time to determine the optimal congestion window size. BBR's cubic function for the congestion avoidance rate is more aggressive than CUBIC's, leading to faster recovery from packet loss. BBR also incorporates a feedback mechanism to adjust its parameters based on observed network conditions, making it adaptive to various network environments.
+
+In summary, TCP congestion control algorithms like Reno, CUBIC, and BBR aim to balance network efficiency, stability, and fairness. While Reno is simple and historic, CUBIC and BBR offer improved performance in high-loss and high-speed networks, respectively.<|end_of_text|>

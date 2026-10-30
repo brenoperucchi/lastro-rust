@@ -1,0 +1,9 @@
+error[E0502]: cannot borrow `cache` as mutable because it is also borrowed as immutable
+  --> tests/ui/evict_while_kernel_reads.rs:11:5
+   |
+10 |     let op = read_expert(y, cache.lease(0));
+   |                             ----- immutable borrow occurs here
+11 |     cache.evict(0); // o kernel ainda segura o slot
+   |     ^^^^^^^^^^^^^^ mutable borrow occurs here
+12 |     let _ = op.first().unpartition().to_host_vec().sync_on(&stream);
+   |             -- immutable borrow later used here

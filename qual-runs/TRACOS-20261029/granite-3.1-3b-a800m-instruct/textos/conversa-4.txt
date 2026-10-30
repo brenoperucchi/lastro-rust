@@ -1,0 +1,31 @@
+<|start_of_role|>system<|end_of_role|>Knowledge Cutoff Date: April 2024.
+Today's Date: October 29, 2026.
+You are Granite, developed by IBM. You are a helpful AI assistant.<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>Escreva um e-mail formal para um cliente explicando que a entrega do projeto vai atrasar duas semanas por causa de uma falha no fornecedor, propondo um plano de compensação.<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>Assunto: Atualização Respectiva sobre Entrega do Projeto e Plano de Compensação
+
+Estimado Sr. [Nome do Cliente],
+
+Espero que este e-mail o encontre em boa saúde. Foi com grande preocupação que nos comunicamos sobre a situação atual envolvendo a entrega do projeto que estamos desenvolvendo em conjunto.
+
+Devido a um incidente inesperado no fornecedor, a entrega do projeto original, prevista para o dia 15 de setembro, será adiada para o dia 29 de setembro. Esta mudança foi tomada com o máximo de cuidado e consideração, pois compreendemos a importância do nosso trabalho estar concluído no prazo estabelecido.
+
+Para minimizar o impacto desta interrupção, estamos desenvolvendo um plano de compensação que inclui os seguintes passos:
+
+1. **Prazo de Entrega Adicional**: O projeto original agora terá um prazo de entrega adicional de 14 dias, começando a partir do novo cronograma de 29 de setembro.
+
+2. **Comunicação Transparente**: Nós mantemos uma linha de comunicação aberta com você, garantindo que você esteja sempre informado sobre o progresso do projeto e qualquer alteração no cronograma.
+
+3. **Revisão e Ajuste**: Temos a intenção de realizar uma revisão exaustiva do projeto para identificar quaisquer áreas que possam ter sido afetadas pela falha do fornecedor. Com base nesses resultados, estamos planejando realizar ajustes e melhorias adicionais para garantir a qualidade e a eficiência do projeto final.
+
+4. **Treinamento e Suporte**: O nosso time de suporte estará disponível para fornecer qualquer assistência necessária durante a período de revisão e ajuste, garantindo que você possa continuar a receber o apoio que precisa.
+
+Agradecemos sua compreensão e paciência neste momento. Estamos comprometidos em manter a confiança e a satisfação do cliente, e acreditamos que este plano de compensação reflete nosso compromisso com a qualidade e a transparência.
+
+Se você tiver alguma preocupação ou sugestão adicional, por favor, não hesite em nos contactar. Estamos aqui para trabalhar juntos para garantir o sucesso do projeto.
+
+Atenciosamente,
+
+[Seu Nome]
+[Seu Emprego]
+[Suas Informações de Contato]<|end_of_text|>

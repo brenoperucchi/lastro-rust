@@ -1,0 +1,42 @@
+m2c-kernels: granite-3.1-1b-a400m-instruct; H = 1024, I = 512, 16 cabeças de Q e 8 de KV (d = 64), E = 32; max_len 16384; 500 lançamentos por kernel, 3 repetições, grafo reproduzido 5×
+
+kernel                   | blocos |   fila µs  fila mín–máx  grafo µs diferença |   host µs |  piso µs     GB/s
+axpby 1 bloco (mínimo)   |      1 |      1.55     1.52–1.55      0.89      0.66 |      1.25 |     0.00        3
+rmsnorm                  |      1 |      2.12     2.12–2.12      1.52      0.60 |      1.29 |     0.01        8
+gemv q                   |    512 |      2.79     2.79–2.79      2.14      0.64 |      1.30 |     2.34      983
+gemv k (ou v)            |    256 |      2.46     2.45–2.46      1.83      0.62 |      1.25 |     1.17      575
+rope q                   |     16 |      2.79     2.66–2.81      0.84      1.95 |      2.79 |     0.01       15
+cópia para o KV          |      0 |      1.43     1.42–1.43      1.01      0.42 |      1.33 |     0.00        4
+atenção 1ª len=1         |   1024 |     13.78   13.75–14.45     13.19      0.59 |      1.43 |     0.00        0
+atenção 2ª len=1         |     16 |      1.83     1.83–1.83      1.25      0.58 |      1.29 |     0.01        7
+atenção 1ª len=64        |   1024 |     12.59   12.59–12.65     12.12      0.47 |      1.45 |     0.29       22
+atenção 2ª len=64        |     16 |      1.83     1.83–1.84      1.25      0.58 |      1.25 |     0.01        7
+atenção 1ª len=256       |   1024 |     13.81   13.80–13.83     13.25      0.55 |      1.39 |     1.17       79
+atenção 2ª len=256       |     16 |      2.06     2.06–2.06      1.46      0.60 |      1.27 |     0.04       23
+atenção 1ª len=1024      |   1024 |     20.50   20.50–20.52     19.86      0.64 |      1.42 |     4.66      211
+atenção 2ª len=1024      |     16 |      2.85     2.85–2.85      2.26      0.59 |      1.26 |     0.15       58
+atenção 1ª len=4096      |   1024 |     44.40   44.39–44.41     43.73      0.68 |      1.43 |    18.64      384
+atenção 2ª len=4096      |     16 |      5.93     5.93–5.93      5.32      0.61 |      1.24 |     0.58       99
+atenção 1ª len=16384     |   1024 |    144.12 144.10–144.90    143.93      0.19 |      1.43 |    74.57      466
+atenção 2ª len=16384     |     16 |      5.93     5.93–5.93      5.33      0.60 |      1.22 |     0.58       98
+gemv o                   |    512 |      2.49     2.49–2.49      1.93      0.56 |      1.29 |     2.34     1092
+axpby residual           |      4 |      1.43     1.43–1.44      0.84      0.59 |      1.19 |     0.01       15
+gemv roteador            |     16 |      1.77     1.77–1.77      1.20      0.57 |      1.26 |     0.08       58
+gemv gate_up             |    512 |      2.59     2.59–2.59      1.95      0.64 |      1.23 |     2.34     1079
+swiglu                   |      4 |      1.52     1.51–1.66      0.94      0.58 |      1.24 |     0.01        7
+gemv down                |    512 |      2.19     2.18–2.19      1.58      0.60 |      1.26 |     1.17      666
+axpby expert             |      4 |      1.43     1.43–1.43      0.84      0.59 |      1.19 |     0.01       15
+gemv cabeça              |  24578 |    109.25 109.25–109.27    108.39      0.87 |      1.19 |   112.08      931
+
+fila: GPU por lançamento com lançamentos um a um (mediana e faixa das repetições); grafo: o mesmo capturado num CudaGraph;
+diferença: o que o grafo tira (só limpa onde a GPU limita: nos kernels pequenos a fila fica perto do host);
+host: custo de enfileirar um lançamento; piso: bytes lidos e escritos a 900 GB/s; GB/s: banda efetiva no grafo.
+(atenção: K e V das len posições, sem contar a releitura das cabeças de Q que dividem a mesma cabeça de KV.)
+
+custo de enfileirar no host (µs por lançamento): escalar fixo contra escalar que muda a cada lançamento
+  (a atenção lê len de um tensor da GPU desde o M2d; até o M2c, o len escalar custava 4,75 µs contra 1,31 fixo)
+  axpby, g (f32):        1.18     1.18
+
+custo de enfileirar no host, por lançamento, nos 4 lançamentos de um expert (125 experts, mediana de 3):
+  partições próprias, como em GpuLayer::run:    2.62
+  partições emprestadas:                        2.49

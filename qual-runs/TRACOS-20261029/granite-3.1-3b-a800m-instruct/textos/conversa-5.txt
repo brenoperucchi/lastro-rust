@@ -1,0 +1,97 @@
+<|start_of_role|>system<|end_of_role|>Knowledge Cutoff Date: April 2024.
+Today's Date: October 29, 2026.
+You are Granite, developed by IBM. You are a helpful AI assistant.<|end_of_text|>
+<|start_of_role|>user<|end_of_role|>Design a SQL schema for an online bookstore with authors, books, customers, orders and reviews. Then write queries for: best-selling books last month, customers with no orders, and average rating per author.<|end_of_text|>
+<|start_of_role|>assistant<|end_of_role|>Schema Design:
+
+1. Authors Table:
+   - AuthorID (Primary Key, INT, Auto Increment)
+   - FirstName (VARCHAR)
+   - LastName (VARCHAR)
+   - BirthDate (DATE)
+   - Bio (TEXT)
+
+2. Books Table:
+   - BookID (Primary Key, INT, Auto Increment)
+   - Title (VARCHAR)
+   - AuthorID (Foreign Key, INT, references Authors(AuthorID))
+   - PublicationYear (INT)
+   - Genre (VARCHAR)
+
+3. Customers Table:
+   - CustomerID (Primary Key, INT, Auto Increment)
+   - FirstName (VARCHAR)
+   - LastName (VARCHAR)
+   - Email (VARCHAR, Unique)
+   - Phone (VARCHAR)
+   - Address (TEXT)
+
+4. Orders Table:
+   - OrderID (Primary Key, INT, Auto Increment)
+   - CustomerID (Foreign Key, INT, references Customers(CustomerID))
+   - OrderDate (DATE)
+   - TotalAmount (DECIMAL)
+
+5. OrderDetails Table (Junction Table for Orders and Books)
+   - OrderDetailID (Primary Key, INT, Auto Increment)
+   - OrderID (Foreign Key, INT, references Orders(OrderID))
+   - BookID (Foreign Key, INT, references Books(BookID))
+   - Quantity (INT)
+
+6. Reviews Table:
+   - ReviewID (Primary Key, INT, Auto Increment)
+   - OrderID (Foreign Key, INT, references Orders(OrderID))
+   - BookID (Foreign Key, INT, references Books(BookID))
+   - CustomerID (Foreign Key, INT, references Customers(CustomerID))
+   - Rating (INT)
+   - ReviewText (TEXT)
+
+Queries:
+
+1. Best-selling books last month:
+
+```sql
+SELECT B.Title, COUNT(O.OrderID) AS OrderCount
+FROM Books B
+JOIN Orders O ON B.BookID = O.BookID
+WHERE O.OrderDate >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)
+GROUP BY B.Title
+ORDER BY OrderCount DESC
+LIMIT 10;
+```
+
+2. Customers with no orders:
+
+```sql
+SELECT C.CustomerID, C.FirstName, C.LastName
+FROM Customers C
+WHERE C.CustomerID NOT IN (
+    SELECT O.CustomerID
+    FROM Orders O
+);
+```
+
+3. Average rating per author:
+
+```sql
+SELECT A.FirstName, A.LastName, AVG(R.Rating) AS AverageRating
+FROM Authors A
+JOIN Books B ON A.AuthorID = B.AuthorID
+JOIN Reviews R ON B.BookID = R.BookID
+GROUP BY A.AuthorID, A.FirstName, A.LastName;
+```
+
+Note:
+- The above queries assume that the database uses MySQL. The date functions (DATE_SUB, CURDATE) and the way to get the current date might differ based on the SQL dialect used.
+- The 'Rating' column in the Reviews table is assumed to be an integer between 1 and 5.
+- The 'CustomerID' in the Orders table is assumed to be a foreign key referencing the 'CustomerID' in the Customers table.
+- The 'BookID' in the Reviews table is assumed to be a foreign key referencing the 'BookID' in the Books table.
+- The 'OrderDetailID' in the OrderDetails table is assumed to be a foreign key referencing the 'OrderID' in the Orders table.
+- The 'ReviewID' in the Reviews table is assumed to be a primary key.
+- The 'OrderID' in the Reviews table is assumed to be a foreign key referencing the 'OrderID' in the Orders table.
+- The 'BookID' in the Reviews table is assumed to be a foreign key referencing the 'BookID' in the Books table.
+- The 'CustomerID' in the Orders table is assumed to be a foreign key referencing the 'CustomerID' in the Customers table.
+- The 'BookID' in the Orders table is assumed to be a foreign key referencing the 'BookID' in the Books table.
+- The 'OrderDetailID' in the OrderDetails table is assumed to be a foreign key referencing the 'OrderID' in the Orders table.
+- The 'ReviewID' in the Reviews table is assumed to be a primary key.
+- The 'Rating' column in the Reviews table is assumed to be an integer between 1 and 5.<|end_of_text|>
