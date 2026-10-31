@@ -23,8 +23,8 @@ strata-opencode e mudou para cá em 31/10/2026 (seção "Mudança para o lastro-
   `timeout 60`, começando pelos dirigidos; faltam mutantes do backend falso, cenários loom, trybuild e a seção do plano.
 - Depois: A1.2 (peças de GPU), A1.3 (motor D1), A1.4 (medida final contra lfu_cpu e llama.cpp, mesmas 6 células; a
   janela longa só com o aval do Breno). O plano termina no A1.4.
-- Sem commit, para o Breno decidir: `qual-runs/PCIE-X8-20261031/` (análise x8/x8 contra x16/x4: ficar em x8/x8) e
-  `qual-runs/FONTE-2GPU-20261031/` (teste da fonte com as duas GPUs: seguro com a 3080 Ti em 300 W).
+- Fora do plano, feitos em 31/10 (commit a4faca6): `qual-runs/PCIE-X8-20261031/` (análise x8/x8 contra x16/x4: ficar
+  em x8/x8) e `qual-runs/FONTE-2GPU-20261031/` (teste da fonte com as duas GPUs: seguro com a 3080 Ti em 300 W).
 
 ## Máquina (depois do reboot de 31/10)
 
