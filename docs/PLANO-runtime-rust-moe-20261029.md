@@ -2696,3 +2696,19 @@ têm a parada, então um GEQ sem sinal ou sem ciclo daria erro garantido (rev-2,
 - O lado GPU → host só é conferido pelas saídas lidas depois do `done`, sem controle negativo próprio (a v2 não aceita
   `NO_MEMORY_BARRIER`).
 - Uma GPU, sem disputa de CPU.
+
+## Mudança para o lastro-rust (31/10)
+
+A pedido do Breno, o runtime saiu do strata-opencode (o projeto que liga o OpenCode ao Strata, onde ele nasceu) para um
+repositório e um space próprios: `/home/brenoperucchi/Devs/lastro-rust`, space `lastro-rust` no Herdr.
+- O histórico veio junto, filtrado aos caminhos do runtime (`git filter-branch`): os 8 commits de 3eb221f a 3bacc1e no
+  strata-opencode viraram 9dda2df a ff639fd aqui, com as mesmas datas e mensagens (mais o primeiro commit do
+  strata-opencode, que só traz o começo do `.gitignore`). As árvores de `rust/`, `qual-runs/`, `tools/`, `tests/`, `docs/`
+  e o `.gitignore` conferem byte a byte com o 3bacc1e. Os hashes citados neste plano são os do strata-opencode.
+- A estrutura de pastas é a mesma, na mesma profundidade: os caminhos relativos deste plano e os do `Cargo.toml` para o
+  cuda-rust (`../../../GitHub/cuda-rust`) seguem valendo.
+- Os registros das `qual-runs` ficam como foram gravados, com os caminhos absolutos antigos, porque os critérios têm sha
+  citados nos resultados. Para executar de novo, troque `/home/brenoperucchi/Devs/strata-opencode` por este repositório.
+- As rodadas de revisão e de consulta citadas acima (`.herdr/review/strata-opencode-N`, `.herdr/ask/strata-opencode-N`)
+  continuam em `/home/brenoperucchi/Devs/strata-opencode/.herdr/`. As novas são `lastro-rust-N`, neste repositório.
+- Ficou no strata-opencode a parte do OpenCode e todo o material da Fase 0A.
