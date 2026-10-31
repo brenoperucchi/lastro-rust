@@ -2548,8 +2548,12 @@ desenho do A1.** O protocolo `token` espera **menos** que o de hoje em todas as 
   simulador. O A2 saiu com a A0a, então não há linha de busca.
   - A previsão do `token` é uma faixa, e não um ponto: vai da cobrança da rodada 51 (`moe_sim-rodada51.py`, a cópia
     correndo com a CPU da camada) à de agora, por exemplo 1,001–0,984 ms de espera por token no 1B e 1,955–1,937 ms no 3B
-    a 50%. A medida diz qual das duas cobranças fica mais perto do motor real, e esse é o controle da parte do ganho que
-    depende da granularidade do modelo (sugestão do rev-2 na rodada 52).
+    a 50%. A faixa fica como previsão gravada antes (sugestão do rev-2 na rodada 52).
+  - A medida só aponta uma das duas cobranças se o intervalo das 5 intercaladas da diferença medida (motor novo menos o
+    `lfu_cpu` de hoje) excluir a outra diferença prevista: −0,021 contra −0,038 ms no 1B e −0,027 contra −0,045 ms no 3B,
+    a 50%. Se cobrir as duas, o resultado é inconclusivo, e vale o limite sobre a granularidade escrito na A0c. Com o
+    ruído registrado (até 2,7% entre execuções do mesmo binário, de 6 a 20 vezes a distância entre as pontas), o mais
+    provável é inconclusivo, coerente com a regra do empate dentro do ruído (achado do rev-2 na rodada 53).
 - **Condição de reabertura da busca antecipada** (achados do rev-2 nas rodadas 50 e 51). A medida de tempo do A1 refaz os
   três parâmetros com execuções que o motor novo consegue rodar (ele só tem a admissão do `lfu_cpu`):
   - `c_cpu` e `c_cpu_quiet`: mínimos quadrados do ms de CPU por token contra os experts na CPU em camadas com e sem
