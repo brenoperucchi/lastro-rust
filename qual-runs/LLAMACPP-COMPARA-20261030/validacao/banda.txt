@@ -1,0 +1,4 @@
+1.00 MiB: pageable 0.0778 ms (13.5 GB/s), pinned 0.0481 ms (21.8 GB/s)
+1.50 MiB: pageable 0.1075 ms (14.6 GB/s), pinned 0.0819 ms (19.2 GB/s)
+3.00 MiB: pageable 0.1962 ms (16.0 GB/s), pinned 0.1587 ms (19.8 GB/s)
+4.50 MiB: pageable 0.2834 ms (16.7 GB/s), pinned 0.2393 ms (19.7 GB/s)

@@ -1,0 +1,30 @@
+Sat Oct 31 01:10:10 AM -03 2026
+NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  610.57.04  Release Build  (root@omarchy)  
+lrwxrwxrwx 1 root root 20 Oct  8 11:41 /usr/lib/libcuda.so.1 -> libcuda.so.615.78.08
+ 01:10:10 up 11 days,  8:42,  1 user,  load average: 0.74, 1.97, 2.13
+llama.cpp: 0893ec98f5eafad36a43a72cd1c3723d72b0d03a 0 arquivos alterados
+3b2f6653be4ef376ecb6c7f2449a2f909309d9da36d50982b2f000f60daec047  /home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libllama.so.0.8.0
+84e8652c8b01c3c65a54a36e54390f4295c1d4d3fe9a940a9f7946f79292f243  /home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libllama-common.so.0.8.0
+a2c1bd7af54446ae28bed2ce4ac225f8ef72647f288012df5043748502718fd4  /home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libggml-base.so.0.28.0
+44d4b2d22e7421f4d062697343c503adf7ae1994be94cf8748e65391b574d244  /home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libggml-cpu.so.0.28.0
+21d832346f8592a1b630c96c6c29d7da84a4d0891b8d5c3cb7625ebeef2bab14  /home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libggml-cuda.so.0.28.0
+a8a0b788ba98bbb7daf28e0d609c27009ac7902e26a4985d6fb856947b655285  /home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libggml.so.0.28.0
+08024b090fe253ec3a13616df7915cb6ea0c8b9932d7ccb89d77fa0866ad1e86  /home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/llama-server
+a79883a3d71d50e3ed508083cc26e75b34d20f7e86ca3b0b02de3793f9511d3f  /home/brenoperucchi/models/gguf/granite-3.1-1b-a400m-instruct-bf16.gguf
+11fced7a00e64ad77c9414c2b0c97c0af7fc951fb3615e9604c6b14a7142a310  /home/brenoperucchi/models/gguf/granite-3.1-3b-a800m-instruct-bf16.gguf
+af33336a6dc646cd2ea44cb73af7f15b1d43046e8400b1ab826eab9224396207  tools/moe_sim.py
+processos acima de 5% de CPU no começo:
+    PID %CPU COMMAND
+ 361612 18.9 quickshell
+  70762 18.4 localsearch-3
+1929916 18.3 main
+1931532 15.3 python3
+ 210066  7.2 main
+2133077  6.0 main
+processos acima de 5% de CPU no fim:
+    PID %CPU COMMAND
+3091658  100 ps
+ 361612 18.8 quickshell
+  70762 18.3 localsearch-3
+2185410  7.8 chrome
+ 210066  6.7 main

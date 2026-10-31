@@ -1,0 +1,101 @@
+Validação da comparação com o llama.cpp, 30/10 18:49 (forcado sha 5f6571fbd0e5e635, llama.cpp 0893ec9).
+
+1. Tokenizador do GGUF contra os tokens dos traços (forcado --tokeniza):
+  1b tokeniza conversa-0: gguf 967, traço 971, DIFEREM (primeira diferença na posição 142)
+  1b tokeniza conversa-1: gguf 1126, traço 1127, DIFEREM (primeira diferença na posição 275)
+  1b tokeniza conversa-2: gguf 833, traço 844, DIFEREM (primeira diferença na posição 167)
+  1b tokeniza conversa-3: gguf 948, traço 954, DIFEREM (primeira diferença na posição 186)
+  1b tokeniza conversa-4: gguf 638, traço 638, iguais
+  1b tokeniza conversa-5: gguf 770, traço 778, DIFEREM (primeira diferença na posição 144)
+  1b tokeniza conversa-6: gguf 958, traço 963, DIFEREM (primeira diferença na posição 638)
+  1b tokeniza conversa-7: gguf 1063, traço 1072, DIFEREM (primeira diferença na posição 161)
+  1b tokenizador: DIFERENTE
+  diferenças (difflib, HF → GGUF): 'Ċ Ċ' → 'ĊĊ': 44
+  3b tokeniza conversa-0: gguf 884, traço 884, iguais
+  3b tokeniza conversa-1: gguf 1121, traço 1127, DIFEREM (primeira diferença na posição 197)
+  3b tokeniza conversa-2: gguf 616, traço 624, DIFEREM (primeira diferença na posição 313)
+  3b tokeniza conversa-3: gguf 966, traço 969, DIFEREM (primeira diferença na posição 168)
+  3b tokeniza conversa-4: gguf 762, traço 766, DIFEREM (primeira diferença na posição 335)
+  3b tokeniza conversa-5: gguf 1071, traço 1080, DIFEREM (primeira diferença na posição 106)
+  3b tokeniza conversa-6: gguf 838, traço 845, DIFEREM (primeira diferença na posição 532)
+  3b tokeniza conversa-7: gguf 1114, traço 1123, DIFEREM (primeira diferença na posição 162)
+  3b tokenizador: DIFERENTE
+  diferenças (difflib, HF → GGUF): 'Ċ Ċ' → 'ĊĊ': 46
+  O forcado passa os ids dos traços: os dois motores recebem a mesma entrada.
+
+2. Portão: logits do forcado tudo na GPU (KV F32, FA desligado) contra o transformers (confere_logits.py).
+  1b, texto-a (toda posição com margem > 0,1):
+    total: 277 posições; erro relativo L2 mediano 3.18e-03, p99 3.59e-02, máx 6.00e-02 (conversa 0, posição 167)
+    erro L2 mediano por faixa de posição: 0-256: 3.45e-03 (256)  256-512: 1.67e-03 (21)
+    divergências de argmax: 1; margem do transformers nelas: 0.028
+    posições com margem do transformers > 0.1: 266; argmax igual em 266 (100.00%)
+    portão (≥ 100%): PASSA
+  1b, conversas 4 a 7 (≥ 99% das posições com margem > 0,1):
+    conversa 4: 638 posições, argmax igual 632/638, erro L2 mediano 1.98e-02, máx 1.83e-01 (posição 29)
+    conversa 5: 778 posições, argmax igual 775/778, erro L2 mediano 2.66e-02, máx 2.58e-01 (posição 101)
+    conversa 6: 963 posições, argmax igual 955/963, erro L2 mediano 1.85e-02, máx 3.09e-01 (posição 485)
+    conversa 7: 1072 posições, argmax igual 1066/1072, erro L2 mediano 1.77e-02, máx 1.83e-01 (posição 29)
+    total: 3451 posições; erro relativo L2 mediano 2.02e-02, p99 1.26e-01, máx 3.09e-01 (conversa 6, posição 485)
+    erro L2 mediano por faixa de posição: 0-256: 2.39e-02 (1024)  256-512: 1.95e-02 (1024)  512-1024: 1.87e-02 (1355)  1024+: 1.43e-02 (48)
+    divergências de argmax: 23; margem do transformers nelas: 1.916, 0.112, 0.190, 0.162, 0.001, 0.008, 1.916, 0.163, 0.128, 1.916, 0.055, 0.122, 0.082, 0.081, 0.022, 0.069, 0.007, 1.916, 0.146, 0.021, 0.124, 0.059, 0.012
+    posições com margem do transformers > 0.1: 3358; argmax igual em 3346 (99.64%)
+    portão (≥ 99%): PASSA
+  3b, texto-a (toda posição com margem > 0,1):
+    total: 277 posições; erro relativo L2 mediano 2.46e-03, p99 6.59e-02, máx 1.06e-01 (conversa 0, posição 108)
+    erro L2 mediano por faixa de posição: 0-256: 2.23e-03 (256)  256-512: 9.03e-03 (21)
+    divergências de argmax: 0; margem do transformers nelas: 
+    posições com margem do transformers > 0.1: 264; argmax igual em 264 (100.00%)
+    portão (≥ 100%): PASSA
+  3b, conversas 4 a 7 (≥ 99% das posições com margem > 0,1):
+    conversa 4: 766 posições, argmax igual 759/766, erro L2 mediano 9.08e-03, máx 2.48e-01 (posição 449)
+    conversa 5: 1080 posições, argmax igual 1077/1080, erro L2 mediano 6.25e-03, máx 2.67e-01 (posição 343)
+    conversa 6: 845 posições, argmax igual 841/845, erro L2 mediano 7.76e-03, máx 2.30e-01 (posição 37)
+    conversa 7: 1123 posições, argmax igual 1120/1123, erro L2 mediano 4.70e-03, máx 2.30e-01 (posição 37)
+    total: 3814 posições; erro relativo L2 mediano 6.53e-03, p99 9.53e-02, máx 2.67e-01 (conversa 5, posição 343)
+    erro L2 mediano por faixa de posição: 0-256: 7.85e-03 (1024)  256-512: 5.89e-03 (1024)  512-1024: 6.21e-03 (1611)  1024+: 6.62e-03 (155)
+    divergências de argmax: 17; margem do transformers nelas: 0.161, 0.165, 0.160, 0.231, 0.000, 0.025, 0.008, 0.984, 0.055, 0.079, 0.005, 0.064, 0.059, 0.051, 0.126, 0.055, 0.138
+    posições com margem do transformers > 0.1: 3743; argmax igual em 3736 (99.81%)
+    portão (≥ 99%): PASSA
+
+3. Registro: argmax contra o próximo token do traço (o portão de antes da rodada 43, que reprovou no 1B):
+  qual-runs/LLAMACPP-COMPARA-20261030/validacao/argmax-1b-gpu32.txt: 3002/3025 posições da resposta concordam com o traço (99.24%); divergências 23, com margem ≥ 0,5: 1
+    divergências por retokenização: 3 (com margem ≥ 0,5: 1); quase-empates: 20 (com margem ≥ 0,5: 0); concordância contando a retokenização: 99.34%
+  portão: NÃO PASSA
+  qual-runs/LLAMACPP-COMPARA-20261030/validacao/argmax-3b-gpu32.txt: 3366/3388 posições da resposta concordam com o traço (99.35%); divergências 22, com margem ≥ 0,5: 1
+    divergências por retokenização: 3 (com margem ≥ 0,5: 0); quase-empates: 19 (com margem ≥ 0,5: 1); concordância contando a retokenização: 99.44%
+  portão: NÃO PASSA
+
+4. Portão entre configurações nos pilotos (argmax contra a passada tudo na GPU F32, todas as posições, ≥ 99%):
+  qual-runs/LLAMACPP-COMPARA-20261030/validacao/argmax-1b-gpu16.txt: argmax igual ao da referência em 3353/3356 posições com margem da referência > 0,1 (99.91%); em todas: 3431/3451; divergências com margem da referência ≥ 0,5: 0
+  portão entre configurações (≥ 99.0%): PASSA
+  qual-runs/LLAMACPP-COMPARA-20261030/validacao/argmax-1b-cpumoe.txt: argmax igual ao da referência em 3334/3356 posições com margem da referência > 0,1 (99.34%); em todas: 3411/3451; divergências com margem da referência ≥ 0,5: 8
+  portão entre configurações (≥ 99.0%): PASSA
+  qual-runs/LLAMACPP-COMPARA-20261030/validacao/argmax-3b-gpu16.txt: argmax igual ao da referência em 3740/3746 posições com margem da referência > 0,1 (99.84%); em todas: 3788/3814; divergências com margem da referência ≥ 0,5: 1
+  portão entre configurações (≥ 99.0%): PASSA
+  qual-runs/LLAMACPP-COMPARA-20261030/validacao/argmax-3b-cpumoe.txt: argmax igual ao da referência em 3736/3746 posições com margem da referência > 0,1 (99.73%); em todas: 3784/3814; divergências com margem da referência ≥ 0,5: 1
+  portão entre configurações (≥ 99.0%): PASSA
+
+5. Tempos dos pilotos (ms/token nas conversas 4 a 7, aquecimento na 3):
+  1b gpu32: total: 3451 tokens, ms/tok 1.943, mediana 1.915, tok/s 514.7
+  1b gpu16: total: 3451 tokens, ms/tok 1.760, mediana 1.695, tok/s 568.1
+  1b cpumoe: total: 3451 tokens, ms/tok 12.022, mediana 11.729, tok/s 83.2
+  3b gpu32: total: 3814 tokens, ms/tok 3.584, mediana 3.551, tok/s 279.0
+  3b gpu16: total: 3814 tokens, ms/tok 3.272, mediana 3.170, tok/s 305.7
+  3b cpumoe: total: 3814 tokens, ms/tok 22.121, mediana 21.954, tok/s 45.2
+  log da passada F32: llama_context: flash_attn            = disabled; K (f32):   96.00 MiB, V (f32):   96.00 MiB
+
+6. Calibração do --moe-cache-mib (forcado sem decode, --cpu-moe, linha de log do cache):
+  1b 231 MiB: CUDA0 MoE cache size =   231.00 MiB for 2304.00 MiB of host experts 24 layers, bf16:    76 slots (9.9%) 
+  1b 579 MiB: CUDA0 MoE cache size =   579.00 MiB for 2304.00 MiB of host experts 24 layers, bf16:   192 slots (25.0%) 
+  1b 1155 MiB: CUDA0 MoE cache size =  1155.00 MiB for 2304.00 MiB of host experts 24 layers, bf16:   384 slots (50.0%) 
+  1b 2307 MiB: CUDA0 MoE cache size =  2307.00 MiB for 2304.00 MiB of host experts 24 layers, bf16:   768 slots (100.0%) 
+  3b 581 MiB: CUDA0 MoE cache size =   580.50 MiB for 5760.00 MiB of host experts 32 layers, bf16:   128 slots (10.0%) 
+  3b 1445 MiB: CUDA0 MoE cache size =  1444.50 MiB for 5760.00 MiB of host experts 32 layers, bf16:   320 slots (25.0%) 
+  3b 2885 MiB: CUDA0 MoE cache size =  2884.50 MiB for 5760.00 MiB of host experts 32 layers, bf16:   640 slots (50.0%) 
+  3b 5765 MiB: CUDA0 MoE cache size =  5764.50 MiB for 5760.00 MiB of host experts 32 layers, bf16:  1280 slots (100.0%) 
+
+7. Banda H2D de uma cópia síncrona (banda.cu, mediana de 200):
+  1.00 MiB: pageable 0.0778 ms (13.5 GB/s), pinned 0.0481 ms (21.8 GB/s)
+  1.50 MiB: pageable 0.1075 ms (14.6 GB/s), pinned 0.0819 ms (19.2 GB/s)
+  3.00 MiB: pageable 0.1962 ms (16.0 GB/s), pinned 0.1587 ms (19.8 GB/s)
+  4.50 MiB: pageable 0.2834 ms (16.7 GB/s), pinned 0.2393 ms (19.7 GB/s)

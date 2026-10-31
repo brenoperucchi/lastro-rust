@@ -1800,3 +1800,283 @@ mesmas conversas regeneradas em greedy pelo `llama-server` (seed 1, como os tra�
 orçamento de VRAM dos nossos slots junto de `--cpu-moe` (e o `-ncmoe` como segunda linha), GGUF BF16, 8 threads,
 `taskset -c 0-15`, execuções intercaladas e previsão registrada antes. A comparação com o Strata fica para depois, com um
 modelo menor: hoje o Strata só roda o Qwen3.8-Flash-Next (125B, GGUF IQ2/IQ3), e o runtime só os Granite em BF16.
+
+## Comparação com o llama.cpp nos Granite 1B e 3B (desenho, 30/10, revisto nas rodadas 42 e 43)
+
+**Pergunta:** com o mesmo modelo, os mesmos tokens, o mesmo número de experts na VRAM, a mesma precisão de KV e a mesma
+CPU, quanto tempo por token o nosso runtime leva contra o llama.cpp (`0893ec9`, build local de 29/10)? Nenhuma decisão do
+runtime depende desta medida. É uma comparação, e cada afirmação de "mais rápido" só vale numa célula com faixas mín–máx sem
+sobreposição.
+
+**Problema de método.** O `m2a-cache` não gera texto. Ele passa as conversas já prontas (`tokens.npy` dos traços), um token
+por vez em batch 1, contando os tokens do prompt (3.451 no 1B e 3.814 no 3B, nas conversas 4 a 7), e o cache persiste entre
+as conversas. O tempo de cada token é o `g.step` inteiro, com a leitura dos logits no host; as conferências ficam fora do
+cronômetro (`src/bin/m2a-cache.rs:293-307`). O `llama-server` processa o prompt num batch e gera a resposta. Se a resposta
+divergir do traço, o texto, o roteamento e o acerto do cache mudam. Comparar o ms/token do servidor com o nosso misturaria
+motor e método.
+
+**Linha principal: harness de decode forçado no llama.cpp** (`tools/llama-forcado/forcado.cpp`, compilado com `g++`
+contra `build/bin/libllama.so` e `libllama-common.so` do build existente; o repositório do llama.cpp não muda).
+- Inicializa por `common_params_parse` e `common_init_from_params`, o único caminho que leva o `--moe-cache-mib` ao contexto;
+  um contexto montado à mão rodaria sem cache e sem erro (rodada 42).
+- Flags fixos em todas as linhas: `-c 2048` (as conversas vão até 1.127 tokens), `--fit off`, `--no-warmup` (o cache começa
+  vazio, como o nosso), `-t 8`, `-ctk f32 -ctv f32 -fa off` (o nosso KV é F32, `gpu_model.rs:189`; o padrão do llama.cpp é
+  F16). O flash attention fica desligado nas linhas F32 porque, com `-fa on`, o CUDA aceita K/V em F32 mas converte para F16
+  antes de calcular (`ggml-cuda/fattn.cu:452-453, 759-773`): a linha "F32" faria a conta do F16 com uma conversão a mais
+  (rodada 43; os arquivos de argmax F32 com FA e F16 saíram idênticos byte a byte).
+- Lê os tokens de cada conversa, exportados dos `tokens.npy` para texto. Limpa o KV (`llama_memory_clear`) no começo de cada
+  conversa e chama `llama_decode` com um token por vez, pedindo os logits e conferindo o retorno. O cache MoE persiste entre
+  as conversas, como o nosso.
+- Aquecimento só na conversa 3, sem cronometrar (Breno, 30/10, para encurtar a medida); medida nas 4 a 7. O nosso
+  `m2a-cache` roda com `--warmup 3`. Por isso o resultado não se compara direto com o da medida do C, que aqueceu nas 0 a 3:
+  o `lfu_cpu` chega com menos histórico.
+- O tempo de cada token é `llama_decode` + `llama_get_logits_ith(-1)`, que sincroniza e entrega a linha inteira do
+  vocabulário no host, o mesmo volume do `g.step`. O argmax e as conferências ficam fora do cronômetro. O harness imprime a
+  média e a mediana do ms/token por conversa e no total, nas mesmas faixas de posição do `m2a-cache`, e grava o argmax e a
+  margem top-1 − top-2 de cada posição para a conferência.
+
+**Validação antes da medida** (`validacao.txt`):
+- Portão de correção (Breno, 30/10, depois da rodada 43): com tudo na GPU F32, o argmax do harness é igual ao do
+  transformers (float32, teacher forcing nos mesmos ids, `tools/llama-forcado/confere_logits.py`) em toda posição do
+  `texto-a` com margem do transformers > 0,1 logit, e em ≥ 99% das posições com margem > 0,1 nas conversas 4 a 7, prompt
+  incluído. O erro relativo L2 por posição é relatado (mediana, p99, máximo e onde).
+- Portão por configuração, na medida: o argmax de cada linha do llama.cpp é igual ao da passada tudo na GPU F32 do mesmo
+  harness (1ª repetição) em ≥ 99% das posições cronometradas com margem da referência > 0,1. O nosso `m2a-cache` passa pela
+  conferência própria (logits contra o transformers no `texto-a` e contra a passada residente nas conversas, limite 1e-4).
+  Uma configuração que não passa fica suspensa, e as afirmações que dependem dela não são confirmadas nem refutadas. O 99% é
+  um detector de defeito do harness (que derrubaria muito mais que 1%), e não do ruído de BF16 nem da conta dos experts na
+  CPU, que no piloto do `--cpu-moe` deu 99,34% (1B) e 99,73% (3B).
+- O portão registrado antes, argmax contra o próximo token do traço (≥ 99% e margem < 0,5), reprovou no 1B (abaixo) e foi
+  trocado: o traço é o texto do servidor tokenizado de novo pelo HF, então o prefixo forçado não é o que o servidor viu ao
+  gerar, e o próximo token dele não é referência do argmax. A igualdade do tokenizador também deixou de ser condição, porque
+  os dois motores recebem os mesmos ids. As duas conferências continuam relatadas.
+- Cache ativo e flags efetivos: o `analise.py` lê o log de cada execução do llama.cpp e confere FA desligado nas linhas F32,
+  o tipo do KV, `MoE cache size = …` com um grupo só (`24 layers` / `32 layers`) e o N de slots igual ao nosso, e o hit rate
+  do destrutor diferente de zero a 25%, 50% e no cache cheio; o que não bate sai como `FALHA`.
+
+**Validação feita** (30/10, `qual-runs/LLAMACPP-COMPARA-20261030/validacao.txt`, gravado por `validacao.sh`; harness em
+`tools/llama-forcado/`): passa nos portões registrados.
+- **Logits contra o transformers, tudo na GPU F32 sem FA:** no `texto-a`, argmax igual em 266/266 (1B) e 264/264 (3B)
+  posições com margem > 0,1; erro relativo L2 mediano 3,2e-3 e 2,5e-3, máximo 6,0e-2 e 1,1e-1. Nas conversas 4 a 7, argmax
+  igual em 99,64% (3.346/3.358) e 99,81% (3.736/3.743); erro L2 mediano 2,0e-2 e 6,5e-3, máximo 3,1e-1 e 2,7e-1. A maior
+  divergência (margem 1,9 no 1B) é a posição 51, a mesma nas quatro conversas, porque o prompt de sistema é igual: depois de
+  `<|end_of_text|>\n<|start_of_role|>`, onde o modelo adivinha o nome do papel ("2" no transformers, "I" no llama.cpp; o
+  certo é "user"). O resto são quase-empates. O nosso runtime fica em ~6e-6 contra a mesma referência no `texto-a`; o
+  llama.cpp calcula com ativações em precisão reduzida.
+- **Erro L2 por faixa de posição** (conversas 4 a 7, mediana nas faixas 0–256, 256–512, 512–1024 e 1024+; rodada 44): 1B
+  2,4e-2 / 2,0e-2 / 1,9e-2 / 1,4e-2 e 3B 7,9e-3 / 5,9e-3 / 6,2e-3 / 6,6e-3. O erro fica estável e não cresce com a posição;
+  a faixa 1024+ tem só 48 e 155 posições.
+- **Entre configurações** (argmax contra a passada tudo na GPU F32, todas as posições): F16 com FA 99,91% e 99,84%;
+  `--cpu-moe` 99,34% e 99,73% (8 e 1 divergências com margem ≥ 0,5, da conta dos experts na CPU).
+- **Registro do portão antigo** (argmax contra o próximo token do traço): reprova no 1B (99,24%, uma divergência de
+  retokenização com margem ≥ 0,5) e, sem FA, também no 3B (99,35%, um quase-empate com margem ≥ 0,5).
+- **Tokenizador:** difere do HF em 14 dos 16 textos, sempre no mesmo caso: o HF corta `\n\n` em dois `Ċ` e o GGUF usa um
+  token só, `ĊĊ` (44 vezes no 1B, 46 no 3B). O `validacao.sh` conta os casos com o difflib e grava a lista no
+  `validacao.txt`.
+- **Calibração do MiB:** 231 / 579 / 1.155 / 2.307 MiB no 1B e 581 / 1.445 / 2.885 / 5.765 no 3B dão exatamente 76 / 192 /
+  384 / 768 e 128 / 320 / 640 / 1.280 slots, com um grupo só. Os experts têm 3 MiB e 4,5 MiB.
+- **Banda H2D síncrona** (`banda.cu`): pageable 13,5 GB/s por tensor de 1 MiB e 14,6 GB/s por tensor de 1,5 MiB; pinned
+  19–22 GB/s. Uma falta do cache do llama.cpp custa ~0,23 ms no 1B e ~0,32 ms no 3B (três tensores por expert).
+- **Pilotos de tempo:** tudo na GPU F32 1,88–2,00 ms (1B) e 3,53–3,75 ms (3B), variando ~6% entre passadas; F16 1,71–1,80 e
+  3,21–3,51; `--cpu-moe` 12,0–13,4 e 22,1–25,4, variando ~11–15% entre passadas. A previsão usa a passada gravada no
+  `validacao.txt` (1,94 / 3,58; 1,76 / 3,27; 12,02 / 22,12), lida pelo `previsao.py`, que grava o sha do arquivo (rodada 44).
+
+**Linha secundária: `llama-server` em uso normal**, uma vez por configuração do núcleo. Regenera as conversas 4 a 7 em greedy
+(temperatura 0, seed 1, max_tokens 1024, mesmo template de `tools/gen_trace_texts.py`, mesmos flags de KV e contexto),
+confere os tokens contra os traços, registra a primeira divergência e grava o `timings.predicted_per_token_ms`, só da
+resposta. É "uso real", sem comparação célula a célula com o nosso, porque o método é outro.
+
+**Configurações** (por modelo; o orçamento é a fração dos experts na VRAM, igual à dos nossos slots):
+
+| linha | 1B (768 experts de 3,15 MB, 24 camadas) | 3B (1.280 de 4,72 MB, 32 camadas) | repetições |
+|---|---|---|---|
+| llama.cpp tudo na GPU, KV F32 | 1 | 1 | 3 |
+| llama.cpp `--cpu-moe --moe-cache-mib`, 10/25/50% | 76 / 192 / 384 slots | 128 / 320 / 640 slots | 3 |
+| nosso `m2a-cache --policies resident,lru_cpu,lfu_cpu` | 10/25/50% | 10/25/50% | 3 |
+| llama.cpp tudo na GPU, KV F16 (padrão do produto) | 1 | 1 | 1 |
+| llama.cpp `--cpu-moe` sem cache | 1 | 1 | 1 |
+| llama.cpp `-ncmoe`, mesma fração de camadas ou menos na GPU | 22 / 18 / 12 (8,3% / 25% / 50%) | 29 / 24 / 16 (9,4% / 25% / 50%) | 1 |
+| llama.cpp cache cheio (`--moe-cache-mib` com 768 / 1.280 slots) | 1 | 1 | 1 |
+| nosso `lru_sync` (mesmo protocolo síncrono do cache do llama.cpp) e `cache_full` | 10/25/50% e 100% | 10/25/50% e 100% | 1 |
+
+- O núcleo repete 3 vezes, e as linhas de base, que são lentas e previsíveis, rodam uma vez (Breno, 30/10). As diferenças
+  esperadas entre o núcleo e as linhas de base são de 2 a 5 vezes.
+- O cache do llama.cpp (`src/llama-moe-cache.cpp`) tem slots globais por grupo de camadas com o mesmo layout, como os nossos.
+  É um SLRU com o protegido limitado à metade, admite toda falta e copia de forma síncrona na stream de cálculo: é o
+  protocolo do nosso `lru_sync`, com outra política. Ele lê os ids e sincroniza em toda camada com cache, com ou sem falta.
+- O MiB de cada célula sai de uma calibração antes da medida: subir o harness com MiB crescentes e ler a linha de log
+  `N slots (x%)` até N ser igual ao nosso número de slots. O banco reserva um slot extra por tensor (o MMQ pode ler além do
+  último expert) e alinha cada tensor, então o llama.cpp fica com a mesma capacidade útil e um pouco mais de VRAM física, a
+  favor dele. O MiB de cada célula fica no `rodar.sh`; a linha de slots e o tamanho dos bancos ficam no log de cada execução.
+- `-ncmoe` põe camadas inteiras na CPU. A 10% não existe número inteiro de camadas que dê a mesma fração: 22 camadas no 1B
+  deixam 8,3% dos experts na GPU, e 29 no 3B deixam 9,4%.
+- O cache do llama.cpp copia de memória pageable (o mmap do GGUF, com `--cpu-moe`), e o nosso copia de memória pinned. É o
+  comportamento real dele, então a medida fica assim, e a diferença vai para os limites.
+
+**Roteiro** (`qual-runs/LLAMACPP-COMPARA-20261030/rodar.sh`, no molde do C: `set -euo pipefail`, `flock`, recusa se já
+houver resultados, `carga.log` por execução, e um `ambiente.txt` com:
+- o commit do llama.cpp e o número de arquivos alterados na árvore dele;
+- os sha das `libllama*`, das `libggml*`, do `llama-server`, dos GGUF e do simulador (os do harness e do `m2a-cache` vão para
+  o `sha-binarios.txt`, conferidos contra o `bin/SHA256SUMS` antes de começar);
+- o driver, a `libcuda` e a carga média;
+- a lista dos processos acima de 5% de CPU no começo e no fim.)
+- Os flags efetivos e as linhas de log dos buffers e do cache não vão para o `ambiente.txt`: ficam no `.log` de cada execução,
+  e o `analise.py` confere em cada um o FA, o tipo do KV, o grupo único com o número de slots da célula e o hit rate (rodada
+  44).
+
+- Em cada repetição do núcleo, por modelo, as linhas do llama.cpp numa ordem que gira a cada repetição e uma execução do
+  `m2a-cache`; os modelos alternam. Depois, as linhas de base, uma vez cada; por fim, a linha do servidor.
+- Tudo com `taskset -c 0-15` e 8 threads. Nada compila durante a medida, e o Python roda só nos E-cores.
+- Duração estimada pela previsão de cada linha (tokens de aquecimento e medida × ms/token previsto, mais 8 s de carga):
+  2,14 h, mais ~15 min da linha do servidor. A conta por linha vai para o `previsao.txt`. A linha mais longa é o cache do
+  llama.cpp a 10% no 3B (~87 ms/token, ~21 min nas 3 repetições).
+- Antes: pedir ao Breno para aliviar a carga de fundo.
+- O servidor não herda a trava e é encerrado pelo PID exato também em falha ou interrupção (`trap`); a porta é conferida no
+  começo e antes de cada servidor, e um servidor que morre antes de ficar pronto falha a linha sem medir (rodada 43). Testado
+  com binários falsos em sete casos: sucesso (36 + 8 + 8 chamadas, argmax em 20), falha que para, segunda chamada e trava que
+  recusam, porta ocupada (recusa sem tocar no serviço alheio), servidor que morre e interrupção durante uma requisição
+  (servidor encerrado, trava livre).
+
+**Previsão** (gravada em `previsao.txt` antes da primeira execução):
+- Tudo na GPU e `--cpu-moe`: os pilotos do harness, lidos do `validacao.txt`, e não mais os tg128 do `llama-bench` de 29/10.
+  Com os P-cores (`taskset -c 0-15`), o `--cpu-moe` leva 12,0 ms (1B) e 22,1 ms (3B), contra 20 e 37 ms no `llama-bench`, que
+  rodou sem prender os núcleos. A cópia por tensor sai do `validacao/banda.txt`.
+- `-ncmoe`: interpolação linear pelas camadas na CPU entre tudo na GPU F32 e o `--cpu-moe`. O tg128 com metade na CPU
+  ficava 3% abaixo dessa reta no 1B e ~7% no 3B.
+- Cache do llama.cpp: tudo na GPU + faltas por token × bytes do expert ÷ banda H2D a partir de memória pageable (medida antes,
+  com uma cópia de 3–5 MB de memória comum) + camadas × custo de sincronização por camada (fixo, com ou sem falta). O acerto
+  sai de uma réplica do SLRU do llama.cpp sobre os traços (script guardado na pasta, com sha), aquecida na conversa 3. Com o
+  aquecimento nas 0 a 3, a réplica da rodada 42 deu 0% / 16,5% / 74,4% no 1B e 0% / 26,7% / 81,1% no 3B: com 76 slots
+  globais e 192 experts pedidos por token, o SLRU despeja cada expert antes de o token seguinte voltar à mesma camada, e a
+  10% nunca acerta.
+- Com o aquecimento só na conversa 3, a réplica dá os mesmos acertos (0% / 16,5% / 74,4% no 1B e 0% / 26,7% / 81,1% no
+  3B), e o simulador também, para as nossas políticas: com o SLRU e o LRU o estado final depende só dos acessos mais
+  recentes, e com o LFU as conversas 0 a 2 já decaíram para menos de 1% do peso. A ressalva de comparação com o C fica fraca.
+- Números previstos (`previsao.py`, com SYNC = 20 µs por camada, estimado): cache do llama.cpp 47,2 / 39,8 / 13,9 ms no 1B e
+  86,8 / 64,8 / 19,8 no 3B; `--cpu-moe` 12,0 e 22,1; `-ncmoe` 11,2 / 9,5 / 7,0 e 20,4 / 17,5 / 12,9; o nosso `lfu_cpu`
+  7,9 / 6,0 / 4,0 e 14,8 / 10,8 / 6,8; o `lru_sync` 33,2 / 18,7 / 11,6 e 65,2 / 36,4 / 17,1.
+- A previsão conta três cópias por falta. O llama.cpp junta faltas com expert e slot consecutivos; pela réplica do rev-2
+  (rodada 43), isso economiza ~5% no 1B a 10%, sem mudar nenhuma afirmação. Fica como viés conhecido da previsão.
+- O contador `hit rate` do destrutor soma o aquecimento, então a réplica é comparada somando a conversa 3.
+- O nosso: o simulador, com o mesmo aquecimento, para `lru_cpu`, `lfu_cpu` e `lru_sync`.
+- Afirmações registradas antes:
+  - (a) o nosso residente é mais lento que o llama.cpp tudo na GPU com KV F32 (o custo fixo já conhecido: ~1,6× no 1B e
+    ~1,3× no 3B contra os tg128 F16);
+  - (b) o nosso `lfu_cpu` é mais rápido que o cache do llama.cpp nas 6 células do núcleo;
+  - (c) o cache do llama.cpp é mais lento que o `--cpu-moe` sem cache a 10% e a 25%; a 50% a previsão fica ~16% acima do
+    `--cpu-moe` no 1B e ~11% abaixo no 3B; o `--cpu-moe` variou 11–15% entre as passadas da validação, e a célula é só
+    relatada;
+  - (d) com o mesmo protocolo, o nosso `lru_sync` contra o cache do llama.cpp: a diferença acompanha a do acerto das duas
+    políticas na réplica (a 25%, o LRU acerta mais que o SLRU) e, a 10%, onde os dois acertam 0%, mede só o motor.
+
+**Critério e análise** (`criterio.txt` gravado antes; `analise.py` → `analise.txt`, reproduzível byte a byte):
+- Por célula: média, mediana e faixa mín–máx do ms/token, tok/s = 1000 ÷ média e a razão nosso ÷ llama.cpp.
+- No núcleo, "mais rápido" só com faixas sem sobreposição; com sobreposição, "empate dentro do ruído".
+- Com uma linha de base (uma execução): o valor único é "mais lento" acima de 1,1 × o máximo da faixa do núcleo e "mais
+  rápido" abaixo de mínimo ÷ 1,1; no resto, "sem diferença decidida". Entre duas linhas de base, diferença acima de 10%. Os
+  10% são uma margem operacional escolhida (o dobro da deriva tolerada), e não uma incerteza medida, porque a dispersão de
+  uma linha que roda uma vez não é observada (rodada 43; o texto anterior falava em 2 vezes e o critério em 10%).
+- Cada afirmação (a)–(d) é relatada como confirmada, não confirmada (alguma célula contra) ou não decidida (alguma célula
+  suspensa e nenhuma contra; rodada 44). A previsão numérica é relatada com o erro por célula, sem portão.
+- Deriva: a linha tudo-na-GPU do llama.cpp e o residente do nosso, por repetição; relatar quem passar de ±5% da média.
+
+**Limites já conhecidos:**
+- O decode forçado do prompt não é o uso normal do llama.cpp; a linha do servidor cobre esse lado.
+- O cache do llama.cpp é experimental, e não ajustei flags além dos equivalentes aos nossos.
+- O cache do llama.cpp copia de memória pageable, o nosso de pinned.
+- Batch 1, contexto até ~1.100 posições, uma sessão com carga de fundo.
+- O aquecimento numa conversa só não se compara com o do C.
+- A amostragem do servidor não é igualada no harness, que só lê os logits.
+
+## Comparação com o llama.cpp: resultados (31/10)
+
+Medida de 01h10 a 03h27 de 31/10 (`qual-runs/LLAMACPP-COMPARA-20261030/rodar.sh`), com as 52 execuções saindo com código 0
+(`rodar.log`, a saída do roteiro). O `analise.py` reproduz o `analise.txt` byte a byte. O `criterio.txt` foi gravado
+em 30/10 às 18h55 e o `previsao.txt`, que leva uma cópia dele, às 01h11min02s, antes do laço de execuções (a primeira
+terminou às 01h11min12s), depois das rodadas 42 a 46. Carga de fundo: a
+carga de 1 min estava em 0,74 no começo. No começo e no fim, o `ps` (média de CPU desde o início de cada processo, não o uso
+durante a medida) mostrava `quickshell` e `localsearch-3` perto de 19% e outros processos entre 6% e 18% (`ambiente.txt`).
+Entre execuções, a carga de 1 min ficou entre 1,5 e 10,7 (`carga.log`), com os picos logo depois das execuções que
+calculam na CPU.
+
+**Correção.** Nenhuma configuração foi suspensa. As 36 execuções do llama.cpp passam na conferência do log (FA, tipos de K e
+V, grupo único com os slots da célula, hit rate), e todas as configurações passam no portão de 99% contra a passada tudo na
+GPU F32: o cache fica em 99,40% (1B) e 99,68% (3B) nas três células, com as mesmas argmax nas três, porque o cálculo na GPU
+não muda com o acerto; o `--cpu-moe` e o `-ncmoe` ficam entre 99,31% e 99,79%. O nosso `m2a-cache` passa na própria
+conferência de logits (limite 1e-4). O hit rate do log do llama.cpp é igual ao da réplica do SLRU em cinco das seis células;
+no 3B a 25% dá 26,67% contra 27,45%. A deriva da linha tudo na GPU e do residente ficou dentro de ±0,2%.
+
+**Núcleo** (ms/token, média das 3 repetições, faixa mín–máx; tok/s = 1000 ÷ média):
+
+| modelo | orçamento | llama.cpp cache | nosso `lru_cpu` | nosso `lfu_cpu` | llama.cpp ÷ `lfu_cpu` |
+|---|---|---|---|---|---|
+| 1B | 10% | 39,20 (38,91–39,42), 25,5 tok/s | 9,75 (9,59–9,97) | 7,76 (7,69–7,88), 128,9 tok/s | 5,05× |
+| 1B | 25% | 33,41 (33,19–33,59), 29,9 tok/s | 7,44 (7,31–7,56) | 5,93 (5,89–5,99), 168,7 tok/s | 5,64× |
+| 1B | 50% | 12,59 (12,57–12,62), 79,4 tok/s | 4,83 (4,79–4,89) | 3,92 (3,89–3,94), 255,1 tok/s | 3,21× |
+| 3B | 10% | 89,94 (89,32–90,69), 11,1 tok/s | 17,27 (16,82–17,73) | 14,23 (14,17–14,30), 70,3 tok/s | 6,32× |
+| 3B | 25% | 72,36 (72,02–72,93), 13,8 tok/s | 12,61 (12,40–12,74) | 10,38 (10,12–10,59), 96,3 tok/s | 6,97× |
+| 3B | 50% | 22,16 (22,06–22,33), 45,1 tok/s | 7,50 (7,44–7,59) | 6,34 (6,27–6,38), 157,6 tok/s | 3,49× |
+
+Tudo na GPU com KV F32: llama.cpp 1,89 ms (1B) e 3,52 ms (3B); o nosso residente 2,68 e 4,21 (1,42× e 1,20× mais lento).
+
+**Linhas de base** (uma execução, ms/token): llama.cpp GPU F16 1,71 e 3,19; `--cpu-moe` 11,36 e 21,38; `-ncmoe` a 10% (8,3% e
+9,4% dos experts na GPU) / 25% / 50%: 10,67 / 9,04 / 6,70 no 1B e 19,75 / 17,01 / 12,64 no 3B; cache cheio 2,54 e 4,78. O
+nosso `lru_sync` 33,16 / 18,46 / 11,34 e 63,95 / 35,51 / 16,52.
+
+**Afirmações registradas antes:**
+- (a) **confirmada**: o nosso residente é mais lento que o llama.cpp tudo na GPU F32 nos dois modelos (1,42× e 1,20×; contra
+  o F16, 1,57× e 1,32×).
+- (b) **confirmada**: o nosso `lfu_cpu` é mais rápido que o cache do llama.cpp nas 6 células, de 3,2× a 7,0×.
+- (c) **confirmada** a 10% e 25%: o cache do llama.cpp é mais lento que o `--cpu-moe` sem cache. A 50%, só relatada: mais
+  lento no 1B (12,59 contra 11,36, acima da margem de 10%) e sem diferença decidida no 3B (22,16 contra 21,38).
+- (d) **confirmada** a 10%: com o mesmo protocolo síncrono e 0% de acerto nas duas políticas, o nosso `lru_sync` é 1,18× (1B)
+  e 1,41× (3B) mais rápido. O custo incremental efetivo por falta, inferido pela diferença dos tempos totais a 10% (não medido
+  por componente), é (33,16 − 2,68) ÷ 192 = 0,159 ms no 1B e (63,95 − 4,21) ÷ 256 = 0,233 ms no 3B no nosso, compatível com
+  uma cópia pinned do expert inteiro (0,159 e 0,239 ms no `banda.txt`); no llama.cpp, a mesma conta dá 0,194 e 0,338 ms.
+  A 25% o LRU acerta mais (48,1% e 47,7% contra 16,4% e 26,7%) e a diferença cresce para 1,81× e 2,04×; a 50%, com acertos
+  parecidos (71,6% contra 73,3% no 1B), fica em 1,11× e 1,34×.
+
+**Relatado, sem afirmação registrada antes:** a melhor linha do llama.cpp em cada orçamento é o `-ncmoe`, e não o cache.
+Contra ela, pela regra das linhas de base (valor único acima de 1,1 × o máximo da faixa do núcleo), o nosso `lfu_cpu` é
+mais rápido nas 6 células: 1,38× / 1,52× / 1,71× no 1B e 1,39× / 1,64× / 1,99× no 3B. A 10% o `-ncmoe` usa um pouco menos
+VRAM (8,3% e 9,4%), a favor do nosso.
+
+**Previsão contra o medido.** As nossas linhas ficaram de 0,2% a 7,9% abaixo da previsão. O cache do llama.cpp errou mais:
+−17% / −16% / −9,5% no 1B e +3,6% / +11,7% / +12,0% no 3B. Nada abaixo foi isolado por medida; são contas sobre os tempos
+totais (`analise.txt`, `previsao.txt`, `banda.txt`), na mesma base para os dois modelos (cópias mais a sincronização por
+camada):
+- A 10%, o custo incremental por falta é 0,194 ms contra 0,236 previstos no 1B (−18%) e 0,338 contra 0,325 no 3B (+4%). No
+  1B, a junção de cópias consecutivas explicava ~5% pela réplica do rev-2 (rodada 43), e o resto não está explicado.
+- O cache cheio mede a sobrecarga por camada sem falta: 2,54 − 1,89 = 0,65 ms no 1B (0,027 ms por camada) e 4,78 − 3,52 =
+  1,26 ms no 3B (0,039 ms por camada), contra os 0,020 ms por camada estimados. É o erro de +5,0% e +13,3% dessa linha.
+- Descontada essa sobrecarga e usado o hit rate do log, o custo por falta fica em 0,191 / 0,192 / 0,196 ms no 1B e sobe de
+  0,333 a 10% para 0,360 a 25% e 0,346 a 50% no 3B. Isso é coerente com a réplica da rodada 43, em que o llama.cpp junta
+  cópias a 10% (0,83 cópia por tensor) e não junta a 25% e 50%, mas não prova a causa. O hit rate do log inclui o
+  aquecimento, e os tempos são só da medida. Sem os contadores separados por fase, não dá para saber o valor nem a direção
+  dessa correção no custo por falta: na réplica do 3B a 25%, o aquecimento acerta mais que a medida (30,6% contra 26,7%;
+  rodada 48).
+
+As linhas de base do llama.cpp ficaram de 1,6% a 5,5% abaixo da previsão, exceto o cache cheio.
+
+**Linha do servidor** (`llama-server`, greedy, temperatura 0, seed 1, max_tokens 1024; ms/token só da resposta): tudo na GPU
+1,96 e 3,59; cache a 10% / 25% / 50%: 38,90 / 36,80 / 12,75 no 1B e 90,16 / 63,17 / 21,68 no 3B. Ficam a até 13% do
+decode forçado (1B a 25% +10%, 3B a 25% −13%), com outros textos e outra sequência de experts. As quatro conversas divergem
+do texto do traço em todas as configurações; o caractere da primeira divergência fica no `servidor-*.txt` (tudo na GPU no 1B:
+295, 1.873, 220 e 227). Os textos dos traços também saíram do `llama-server` (M0.5, `tools/gen_trace_texts.py`, por
+`/v1/chat/completions`), e a conversa foi retokenizada pelo HF; esta linha manda os ids do prompt do traço para
+`/completion`. Os dados não isolam a causa da divergência: a diferença de ids depois da retokenização, a configuração do
+servidor e o cálculo numérico são possibilidades, e a margem no ponto de divergência não foi medida.
+
+**Limites:**
+- Método: decode forçado, um token por chamada, com o prompt incluído e cronometrado como decode nos dois motores. O
+  prefill em lote do llama.cpp não foi medido; a linha do servidor mede só a resposta.
+- Precisão: KV F32 e FA desligado no núcleo, para igualar ao nosso. O padrão do llama.cpp (KV F16 com FA) é 9–10% mais
+  rápido tudo na GPU (1,71 e 3,19 ms), e essa vantagem não entra nas células com cache.
+- Amostragem: o harness só lê o argmax dos logits; a linha do servidor usa o amostrador do llama.cpp em greedy, sem
+  igualar ao nosso, e a divergência contra os traços é registrada pelo caractere, não pela posição do token.
+- O cache do llama.cpp (commit 0893ec9) é experimental, copia de memória pageable (o nosso, de pinned) e não teve flags
+  ajustados além dos equivalentes aos nossos.
+- As linhas de base rodaram uma vez; o `--cpu-moe` variou 11–15% entre as passadas da validação (12,0–13,4 e 22,1–25,4 ms) e
+  saiu 11,36 e 21,38 na medida, abaixo de todas elas. A margem de 10% é operacional, e não uma incerteza medida.
+- Batch 1, contexto até ~1.100 posições, aquecimento só na conversa 3, uma sessão com carga de fundo.
+- A comparação com o Strata ficou fora deste escopo.

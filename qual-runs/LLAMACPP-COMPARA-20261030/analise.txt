@@ -1,0 +1,141 @@
+== Núcleo (3 repetições): ms/token médio (mín–máx), mediana das 3, tok/s; erro contra a previsão
+
+1b:
+linha                     orçam. |  média (mín–máx)            mediana   tok/s | prevista  erro
+llama.cpp GPU F32           100% |    1.89 (   1.88–   1.89)      1.89   529.8 |     1.94  -2.7%
+llama.cpp cache 10%          10% |   39.20 (  38.91–  39.42)     39.25    25.5 |    47.24 -17.0%
+llama.cpp cache 25%          25% |   33.41 (  33.19–  33.59)     33.46    29.9 |    39.83 -16.1%
+llama.cpp cache 50%          50% |   12.59 (  12.57–  12.62)     12.59    79.4 |    13.91  -9.5%
+nosso resident              100% |    2.68 (   2.68–   2.68)      2.68   373.1 |     2.86  -6.3%
+nosso lru_cpu                10% |    9.75 (   9.59–   9.97)      9.70   102.5 |    10.51  -7.2%
+nosso lru_cpu                25% |    7.44 (   7.31–   7.56)      7.45   134.4 |     7.94  -6.3%
+nosso lru_cpu                50% |    4.83 (   4.79–   4.89)      4.80   207.2 |     5.11  -5.5%
+nosso lfu_cpu                10% |    7.76 (   7.69–   7.88)      7.70   128.9 |     7.94  -2.3%
+nosso lfu_cpu                25% |    5.93 (   5.89–   5.99)      5.90   168.7 |     6.05  -2.0%
+nosso lfu_cpu                50% |    3.92 (   3.89–   3.94)      3.93   255.1 |     4.01  -2.2%
+
+3b:
+linha                     orçam. |  média (mín–máx)            mediana   tok/s | prevista  erro
+llama.cpp GPU F32           100% |    3.52 (   3.52–   3.53)      3.52   283.8 |     3.58  -1.6%
+llama.cpp cache 10%          10% |   89.94 (  89.32–  90.69)     89.82    11.1 |    86.78  +3.6%
+llama.cpp cache 25%          25% |   72.36 (  72.02–  72.93)     72.13    13.8 |    64.77 +11.7%
+llama.cpp cache 50%          50% |   22.16 (  22.06–  22.33)     22.07    45.1 |    19.79 +12.0%
+nosso resident              100% |    4.21 (   4.21–   4.21)      4.21   237.5 |     4.45  -5.4%
+nosso lru_cpu                10% |   17.27 (  16.82–  17.73)     17.26    57.9 |    18.20  -5.1%
+nosso lru_cpu                25% |   12.61 (  12.40–  12.74)     12.68    79.3 |    13.49  -6.5%
+nosso lru_cpu                50% |    7.50 (   7.44–   7.59)      7.47   133.3 |     8.14  -7.9%
+nosso lfu_cpu                10% |   14.23 (  14.17–  14.30)     14.21    70.3 |    14.81  -3.9%
+nosso lfu_cpu                25% |   10.38 (  10.12–  10.59)     10.43    96.3 |    10.75  -3.4%
+nosso lfu_cpu                50% |    6.34 (   6.27–   6.38)      6.38   157.6 |     6.81  -6.9%
+
+== Linhas de base (1 execução): ms/token, tok/s; erro contra a previsão
+
+1b:
+llama.cpp GPU F16         |    1.71   586.5 |     1.76  -3.1%
+llama.cpp --cpu-moe       |   11.36    88.0 |    12.02  -5.5%
+llama.cpp -ncmoe 10%      |   10.67    93.7 |    11.18  -4.5%
+llama.cpp -ncmoe 25%      |    9.04   110.6 |     9.50  -4.9%
+llama.cpp -ncmoe 50%      |    6.70   149.4 |     6.98  -4.1%
+llama.cpp cache cheio     |    2.54   393.5 |     2.42  +5.0%
+nosso lru_sync 10%        |   33.16    30.2 |    33.24  -0.2%  acerto 0.0%
+nosso lru_sync 25%        |   18.46    54.2 |    18.70  -1.3%  acerto 48.1%
+nosso lru_sync 50%        |   11.34    88.2 |    11.58  -2.1%  acerto 71.6%
+nosso cache_full 100%     |    2.68   373.1 |     2.86  -6.3%  acerto 100.0%
+nosso resident 100%       |    2.68   373.1 |     2.86  -6.3%  acerto 100.0%
+
+3b:
+llama.cpp GPU F16         |    3.19   313.0 |     3.27  -2.3%
+llama.cpp --cpu-moe       |   21.38    46.8 |    22.12  -3.4%
+llama.cpp -ncmoe 10%      |   19.75    50.6 |    20.38  -3.1%
+llama.cpp -ncmoe 25%      |   17.01    58.8 |    17.49  -2.7%
+llama.cpp -ncmoe 50%      |   12.64    79.1 |    12.85  -1.6%
+llama.cpp cache cheio     |    4.78   209.2 |     4.22 +13.3%
+nosso lru_sync 10%        |   63.95    15.6 |    65.24  -2.0%  acerto 0.0%
+nosso lru_sync 25%        |   35.51    28.2 |    36.42  -2.5%  acerto 47.7%
+nosso lru_sync 50%        |   16.52    60.5 |    17.07  -3.2%  acerto 79.7%
+nosso cache_full 100%     |    4.20   238.1 |     4.45  -5.6%  acerto 100.0%
+nosso resident 100%       |    4.21   237.5 |     4.45  -5.4%  acerto 100.0%
+
+== Conferência das execuções do llama.cpp (log de cada execução: FA, tipo do KV, cache, hit rate)
+36 execuções conferidas
+
+== Portão de correção por configuração (argmax contra a passada tudo na GPU F32, todas as posições; ≥ 99%)
+1b llama.cpp cache 10%   : passa; argmax igual ao da referência em 3336/3356 posições com margem da referência > 0,1 (99.40%); em todas: 3411/3451; divergências com margem da referência ≥ 0,5: 8
+1b llama.cpp cache 25%   : passa; argmax igual ao da referência em 3336/3356 posições com margem da referência > 0,1 (99.40%); em todas: 3411/3451; divergências com margem da referência ≥ 0,5: 8
+1b llama.cpp cache 50%   : passa; argmax igual ao da referência em 3336/3356 posições com margem da referência > 0,1 (99.40%); em todas: 3411/3451; divergências com margem da referência ≥ 0,5: 8
+1b llama.cpp GPU F16     : passa; argmax igual ao da referência em 3353/3356 posições com margem da referência > 0,1 (99.91%); em todas: 3431/3451; divergências com margem da referência ≥ 0,5: 0
+1b llama.cpp --cpu-moe   : passa; argmax igual ao da referência em 3334/3356 posições com margem da referência > 0,1 (99.34%); em todas: 3411/3451; divergências com margem da referência ≥ 0,5: 8
+1b llama.cpp -ncmoe 10%  : passa; argmax igual ao da referência em 3334/3356 posições com margem da referência > 0,1 (99.34%); em todas: 3410/3451; divergências com margem da referência ≥ 0,5: 8
+1b llama.cpp -ncmoe 25%  : passa; argmax igual ao da referência em 3334/3356 posições com margem da referência > 0,1 (99.34%); em todas: 3412/3451; divergências com margem da referência ≥ 0,5: 8
+1b llama.cpp -ncmoe 50%  : passa; argmax igual ao da referência em 3333/3356 posições com margem da referência > 0,1 (99.31%); em todas: 3411/3451; divergências com margem da referência ≥ 0,5: 8
+1b llama.cpp cache cheio : passa; argmax igual ao da referência em 3336/3356 posições com margem da referência > 0,1 (99.40%); em todas: 3411/3451; divergências com margem da referência ≥ 0,5: 8
+1b nosso m2a-cache          : passa (logits contra o transformers e a passada residente, limite 1e-4)
+3b llama.cpp cache 10%   : passa; argmax igual ao da referência em 3734/3746 posições com margem da referência > 0,1 (99.68%); em todas: 3792/3814; divergências com margem da referência ≥ 0,5: 2
+3b llama.cpp cache 25%   : passa; argmax igual ao da referência em 3734/3746 posições com margem da referência > 0,1 (99.68%); em todas: 3792/3814; divergências com margem da referência ≥ 0,5: 2
+3b llama.cpp cache 50%   : passa; argmax igual ao da referência em 3734/3746 posições com margem da referência > 0,1 (99.68%); em todas: 3792/3814; divergências com margem da referência ≥ 0,5: 2
+3b llama.cpp GPU F16     : passa; argmax igual ao da referência em 3740/3746 posições com margem da referência > 0,1 (99.84%); em todas: 3788/3814; divergências com margem da referência ≥ 0,5: 1
+3b llama.cpp --cpu-moe   : passa; argmax igual ao da referência em 3736/3746 posições com margem da referência > 0,1 (99.73%); em todas: 3784/3814; divergências com margem da referência ≥ 0,5: 1
+3b llama.cpp -ncmoe 10%  : passa; argmax igual ao da referência em 3737/3746 posições com margem da referência > 0,1 (99.76%); em todas: 3785/3814; divergências com margem da referência ≥ 0,5: 1
+3b llama.cpp -ncmoe 25%  : passa; argmax igual ao da referência em 3738/3746 posições com margem da referência > 0,1 (99.79%); em todas: 3785/3814; divergências com margem da referência ≥ 0,5: 1
+3b llama.cpp -ncmoe 50%  : passa; argmax igual ao da referência em 3733/3746 posições com margem da referência > 0,1 (99.65%); em todas: 3782/3814; divergências com margem da referência ≥ 0,5: 5
+3b llama.cpp cache cheio : passa; argmax igual ao da referência em 3734/3746 posições com margem da referência > 0,1 (99.68%); em todas: 3792/3814; divergências com margem da referência ≥ 0,5: 2
+3b nosso m2a-cache          : passa (logits contra o transformers e a passada residente, limite 1e-4)
+configurações suspensas (sem conclusão de velocidade): nenhuma
+
+== Afirmações (uma célula com configuração suspensa não confirma nem refuta)
+(a) 1b: nosso residente 2.68 contra llama.cpp GPU F32 1.89 ms (1.42×): llama.cpp mais rápido
+(a) 3b: nosso residente 4.21 contra llama.cpp GPU F32 3.52 ms (1.20×): llama.cpp mais rápido
+(a) confirmada
+(b) 1b 10%: lfu_cpu 7.76 contra cache do llama.cpp 39.20 ms (llama.cpp ÷ nosso 5.05×): nosso mais rápido
+(b) 1b 25%: lfu_cpu 5.93 contra cache do llama.cpp 33.41 ms (llama.cpp ÷ nosso 5.64×): nosso mais rápido
+(b) 1b 50%: lfu_cpu 3.92 contra cache do llama.cpp 12.59 ms (llama.cpp ÷ nosso 3.21×): nosso mais rápido
+(b) 3b 10%: lfu_cpu 14.23 contra cache do llama.cpp 89.94 ms (llama.cpp ÷ nosso 6.32×): nosso mais rápido
+(b) 3b 25%: lfu_cpu 10.38 contra cache do llama.cpp 72.36 ms (llama.cpp ÷ nosso 6.97×): nosso mais rápido
+(b) 3b 50%: lfu_cpu 6.34 contra cache do llama.cpp 22.16 ms (llama.cpp ÷ nosso 3.49×): nosso mais rápido
+(b) confirmada
+(c) 1b 10%: cache 39.20 contra --cpu-moe 11.36 ms: cache mais lento
+(c) 1b 25%: cache 33.41 contra --cpu-moe 11.36 ms: cache mais lento
+(c) 1b 50%: cache 12.59 contra --cpu-moe 11.36 ms: cache mais lento
+(c) 3b 10%: cache 89.94 contra --cpu-moe 21.38 ms: cache mais lento
+(c) 3b 25%: cache 72.36 contra --cpu-moe 21.38 ms: cache mais lento
+(c) 3b 50%: cache 22.16 contra --cpu-moe 21.38 ms: sem diferença decidida
+(c) a 10% e 25%: confirmada
+(d) 1b 10%: lru_sync 33.16 ms (acerto 0.0%) contra cache do llama.cpp 39.20 ms (hit rate do log 0.0%): nosso mais rápido
+(d) 1b 25%: lru_sync 18.46 ms (acerto 48.1%) contra cache do llama.cpp 33.41 ms (hit rate do log 16.4%): nosso mais rápido
+(d) 1b 50%: lru_sync 11.34 ms (acerto 71.6%) contra cache do llama.cpp 12.59 ms (hit rate do log 73.3%): nosso mais rápido
+(d) 3b 10%: lru_sync 63.95 ms (acerto 0.0%) contra cache do llama.cpp 89.94 ms (hit rate do log 0.0%): nosso mais rápido
+(d) 3b 25%: lru_sync 35.51 ms (acerto 47.7%) contra cache do llama.cpp 72.36 ms (hit rate do log 26.7%): nosso mais rápido
+(d) 3b 50%: lru_sync 16.52 ms (acerto 79.7%) contra cache do llama.cpp 22.16 ms (hit rate do log 80.4%): nosso mais rápido
+(d) a 10%: confirmada
+
+== Hit rate do cache do llama.cpp: log (soma aquecimento e medida) contra a réplica do SLRU
+1b 10%: log 0.00% 0.00% 0.00%; réplica 0.00%
+1b 25%: log 16.45% 16.45% 16.45%; réplica 16.45%
+1b 50%: log 73.34% 73.34% 73.34%; réplica 73.34%
+3b 10%: log 0.00% 0.00% 0.00%; réplica 0.00%
+3b 25%: log 26.67% 26.67% 26.67%; réplica 27.45%
+3b 50%: log 80.37% 80.37% 80.37%; réplica 80.37%
+
+== Deriva por repetição (±5% da média das 3)
+1b llama.cpp GPU F32: +0.1% -0.2% +0.0%
+1b nosso resident: +0.0% +0.0% +0.0%
+3b llama.cpp GPU F32: +0.1% -0.0% -0.1%
+3b nosso resident: +0.0% +0.0% +0.0%
+
+== Argmax das linhas com cache contra a passada tudo na GPU F32 (1ª repetição)
+1b c10: 3006/3025 (99.37%)
+1b c25: 3006/3025 (99.37%)
+1b c50: 3006/3025 (99.37%)
+3b c10: 3370/3388 (99.47%)
+3b c25: 3370/3388 (99.47%)
+3b c50: 3370/3388 (99.47%)
+
+== Linha do servidor (uso normal; ms/token só da resposta)
+1b llama.cpp GPU F32     : total: 2879 tokens gerados, ms/tok 1.963, tok/s 509.5; conversas com texto diferente do traço: 4/4
+1b llama.cpp cache 10%   : total: 3075 tokens gerados, ms/tok 38.901, tok/s 25.7; conversas com texto diferente do traço: 4/4
+1b llama.cpp cache 25%   : total: 3075 tokens gerados, ms/tok 36.801, tok/s 27.2; conversas com texto diferente do traço: 4/4
+1b llama.cpp cache 50%   : total: 3075 tokens gerados, ms/tok 12.752, tok/s 78.4; conversas com texto diferente do traço: 4/4
+3b llama.cpp GPU F32     : total: 3039 tokens gerados, ms/tok 3.590, tok/s 278.5; conversas com texto diferente do traço: 4/4
+3b llama.cpp cache 10%   : total: 3412 tokens gerados, ms/tok 90.164, tok/s 11.1; conversas com texto diferente do traço: 4/4
+3b llama.cpp cache 25%   : total: 3412 tokens gerados, ms/tok 63.166, tok/s 15.8; conversas com texto diferente do traço: 4/4
+3b llama.cpp cache 50%   : total: 3412 tokens gerados, ms/tok 21.675, tok/s 46.1; conversas com texto diferente do traço: 4/4

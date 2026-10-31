@@ -1,0 +1,35 @@
+Critério da comparação com o llama.cpp (plano, seção "Comparação com o llama.cpp nos Granite 1B e 3B"), gravado antes da
+primeira execução.
+
+Núcleo (3 repetições): llama.cpp tudo na GPU com KV F32; llama.cpp --cpu-moe --moe-cache-mib a 10/25/50%; nosso m2a-cache
+com resident, lru_cpu e lfu_cpu. Por célula: média, mediana e faixa mín–máx do ms/token das 3 repetições; tok/s = 1000 ÷ média.
+- "Mais rápido" entre duas linhas do núcleo só com faixas mín–máx sem sobreposição; com sobreposição, "empate dentro do ruído".
+Linhas de base (1 execução): llama.cpp tudo na GPU com KV F16, --cpu-moe sem cache, -ncmoe 22/18/12 (1B) e 29/24/16 (3B),
+cache cheio; nosso lru_sync e cache_full.
+- Comparação com uma linha de base: o valor único é "mais lento" se passar de 1,1 × o máximo da faixa do núcleo, "mais rápido"
+  se ficar abaixo de mínimo ÷ 1,1, e "sem diferença decidida" no resto. Os 10% são uma margem operacional escolhida (o dobro
+  da deriva tolerada), e não uma incerteza medida: a linha de base roda uma vez e a dispersão dela não é observada.
+- Entre duas linhas de base: diferença acima de 10% em qualquer sentido, com a mesma ressalva.
+Afirmações registradas antes (cada uma relatada como confirmada ou não):
+(a) o nosso residente é mais lento que o llama.cpp tudo na GPU com KV F32, nos dois modelos;
+(b) o nosso lfu_cpu é mais rápido que o cache do llama.cpp nas 6 células (2 modelos × 3 orçamentos);
+(c) o cache do llama.cpp é mais lento que o --cpu-moe sem cache a 10% e a 25% (a 50% a previsão fica ~16% acima do --cpu-moe
+    no 1B e ~11% abaixo no 3B; o --cpu-moe variou 11–15% entre as passadas da validação, e a célula é só relatada);
+(d) com o mesmo protocolo síncrono, o nosso lru_sync é mais rápido que o cache do llama.cpp a 10% (onde as duas políticas
+    acertam 0% e a diferença é só do motor); a 25% e 50% a diferença é relatada junto com o acerto das duas políticas.
+Portão de correção (Breno, 30/10), conferido antes das conclusões de velocidade:
+- antes da medida (validacao.txt): o argmax do harness tudo na GPU F32 é igual ao do transformers em toda posição do texto-a
+  com margem do transformers > 0,1 logit, e em ≥ 99% das posições com margem > 0,1 nas conversas 4 a 7 (todas as posições);
+- por configuração, na medida: o argmax é igual ao da passada tudo na GPU F32 do mesmo harness (1ª repetição) em ≥ 99% das
+  posições cronometradas com margem da referência > 0,1; o nosso m2a-cache passa pela conferência própria (logits contra o
+  transformers no texto-a e contra a passada residente nas conversas, limite 1e-4);
+- uma configuração que não passa fica suspensa: as afirmações que dependem dela não são confirmadas nem refutadas;
+- o log de cada execução do llama.cpp confirma FA desligado nas linhas F32, o tipo do KV, o cache com um grupo só e o número
+  de slots certo, e hit rate diferente de zero a 25%, 50% e no cache cheio.
+O portão registrado antes, argmax contra o próximo token do traço, reprovou no 1B (98,91%, validacao.txt) e foi trocado na
+rodada 43: o traço é o texto do servidor tokenizado de novo pelo HF e não é referência do argmax para o prefixo forçado.
+Previsão numérica: relatada com o erro por célula, sem portão.
+Acerto do cache do llama.cpp: o hit rate do destrutor (soma o aquecimento) contra a réplica do SLRU somada sobre o
+aquecimento e a medida; relatado.
+Deriva: a linha tudo na GPU F32 do llama.cpp e o nosso residente, por repetição; relatar quem passar de ±5% da média.
+Linha do servidor: relatada à parte (ms/token só da resposta, texto contra o traço), sem comparação célula a célula.

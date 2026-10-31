@@ -1,0 +1,6 @@
+[transformers] Ignoring clean_up_tokenization_spaces=True for BPE tokenizer TokenizersBackend. The clean_up_tokenization post-processing step is designed for WordPiece tokenizers and is destructive for BPE (it strips spaces before punctuation). Set clean_up_tokenization_spaces=False to suppress this warning, or set clean_up_tokenization_spaces_for_bpe_even_though_it_will_corrupt_output=True to force cleanup anyway.
+conversa 4: prompt 111 tokens, gerados 705, predicted_per_token_ms 3.569, texto diverge do traço no caractere 163 de 2117
+conversa 5: prompt 103 tokens, gerados 639, predicted_per_token_ms 3.553, texto diverge do traço no caractere 1976 de 3421
+conversa 6: prompt 107 tokens, gerados 671, predicted_per_token_ms 3.567, texto diverge do traço no caractere 470 de 2680
+conversa 7: prompt 97 tokens, gerados 1024, predicted_per_token_ms 3.643, texto diverge do traço no caractere 1233 de 3145
+total: 3039 tokens gerados, ms/tok 3.590, tok/s 278.5
