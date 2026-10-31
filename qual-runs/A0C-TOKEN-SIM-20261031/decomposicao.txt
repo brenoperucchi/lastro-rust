@@ -1,0 +1,31 @@
+simulador 802ad2061bb15f21, rodada 51 286e06c713556cc1
+
+1b 10%
+  hoje                           espera  4.947  camadas com tráfego  1.54  CPU em camada com tráfego   9.19  cópias  1.53  (por token)
+  token da rodada 51             espera  4.907  camadas com tráfego  1.17  CPU em camada com tráfego   7.23  cópias  1.17  (por token)
+  token de agora                 espera  4.907  camadas com tráfego  1.16  CPU em camada com tráfego   7.15  cópias  1.17  (por token)
+
+1b 25%
+  hoje                           espera  3.058  camadas com tráfego  2.44  CPU em camada com tráfego  10.63  cópias  2.25  (por token)
+  token da rodada 51             espera  3.027  camadas com tráfego  2.18  CPU em camada com tráfego   9.12  cópias  1.95  (por token)
+  token de agora                 espera  3.021  camadas com tráfego  2.09  CPU em camada com tráfego   8.55  cópias  1.95  (por token)
+
+1b 50%
+  hoje                           espera  1.022  camadas com tráfego  2.65  CPU em camada com tráfego   5.90  cópias  1.79  (por token)
+  token da rodada 51             espera  1.001  camadas com tráfego  2.57  CPU em camada com tráfego   4.87  cópias  1.64  (por token)
+  token de agora                 espera  0.984  camadas com tráfego  2.31  CPU em camada com tráfego   4.00  cópias  1.64  (por token)
+
+3b 10%
+  hoje                           espera  9.976  camadas com tráfego  2.27  CPU em camada com tráfego  13.42  cópias  2.27  (por token)
+  token da rodada 51             espera  9.909  camadas com tráfego  1.85  CPU em camada com tráfego  10.77  cópias  1.85  (por token)
+  token de agora                 espera  9.906  camadas com tráfego  1.83  CPU em camada com tráfego  10.40  cópias  1.84  (por token)
+
+3b 25%
+  hoje                           espera  5.921  camadas com tráfego  3.38  CPU em camada com tráfego  13.05  cópias  2.98  (por token)
+  token da rodada 51             espera  5.880  camadas com tráfego  3.21  CPU em camada com tráfego  11.52  cópias  2.70  (por token)
+  token de agora                 espera  5.870  camadas com tráfego  3.16  CPU em camada com tráfego  10.62  cópias  2.70  (por token)
+
+3b 50%
+  hoje                           espera  1.982  camadas com tráfego  3.93  CPU em camada com tráfego   7.76  cópias  2.52  (por token)
+  token da rodada 51             espera  1.955  camadas com tráfego  4.04  CPU em camada com tráfego   6.67  cópias  2.40  (por token)
+  token de agora                 espera  1.937  camadas com tráfego  3.95  CPU em camada com tráfego   5.76  cópias  2.40  (por token)

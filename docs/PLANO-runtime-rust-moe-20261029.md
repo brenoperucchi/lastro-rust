@@ -2080,3 +2080,498 @@ servidor e o cálculo numérico são possibilidades, e a margem no ponto de dive
   saiu 11,36 e 21,38 na medida, abaixo de todas elas. A margem de 10% é operacional, e não uma incerteza medida.
 - Batch 1, contexto até ~1.100 posições, aquecimento só na conversa 3, uma sessão com carga de fundo.
 - A comparação com o Strata ficou fora deste escopo.
+
+## A0 — teto da busca antecipada e desenho do motor sem parada por camada (31/10)
+
+Origem: consulta ask-8 (`.herdr/ask/strata-opencode-8/`). Os dois consultores convergiram na etapa 4 da ordem aprovada,
+dividida como o rev-2 propôs: A0 sem GPU (A0a, teto da busca antecipada no simulador; A0b, desenho do protocolo), A1 (motor
+sem parada por camada, top-k na GPU, um lançamento para todos os experts, admissão do `lfu_cpu`, sem previsão) e A2 (busca
+antecipada, só se a A0a mostrar ≥ 5% de redução da espera com um preditor realista). Controles pedidos pelo rev-1: uma
+linha com a busca desligada, os ids dos traços sem servir de oráculo para a estratégia medida, a ausência de relato do
+`racecheck` não conta como prova, e as tolerâncias gravadas antes.
+
+### A0a — teto da busca antecipada no simulador
+
+Material em `qual-runs/A0-PREFETCH-SIM-20261031/`: `criterio.txt` (gravado antes de rodar nos traços de teste, com a
+previsão), `prefetch_sim.py` (o roteiro do critério) e `resultado.txt`, que saiu do simulador `0aee964c`. Depois da
+primeira versão do protocolo `token` (A0c), a A0a e o diagnóstico foram reexecutados com o simulador `493e5dd6` e saíram
+iguais byte a byte, tirando a linha do sha (`reexecucao.txt`). As correções seguintes do simulador (rodadas 51 e 52) só
+tocam o ramo `token`. Na rodada 51, o rev-2 conferiu a igualdade exata fora dele, em 432 combinações contra o `HEAD`.
+
+**Extensão do simulador** (`tools/moe_sim.py`, opção `prefetch`; sem ela o simulador dá os mesmos números de `fddc2cc`, com
+um teste de valores fixos): a cada camada, o preditor aponta os experts da camada `d` passos à frente, que entram na fila
+do PCIe como cópia em segundo plano (mesmo backlog e mesma banda disputada da admissão) e ficam reservados até o alvo
+passar. Preditores: `anterior` (o roteamento do token anterior na camada do alvo, só o passado), `frequente` (os k de maior
+frequência com decaimento na camada do alvo) e `oraculo` (os experts do alvo, só como limite). Admissão `livre` ou `lfu`.
+`espera`: a stream de cálculo espera o evento de uma cópia em voo que termina antes da CPU, o que o protocolo sem parada
+por camada permite; é relatada sozinha também, porque é parte do A1 com ou sem busca. Testes novos em
+`tests/test_moe_sim.py`: orçamento nunca excedido com busca, o oráculo com camada longa usa o que traz, o preditor
+`anterior` só lê o passado, um expert reservado não é despejado antes do uso, e a espera do evento nos dois sentidos.
+
+**Resultado (31/10, `resultado.txt`, simulador `0aee964c97e8ba8a`, critério `b979b9b2e46eed71`): o portão não passa, como a
+previsão dizia.** A busca antecipada sai do caminho, e o A1 segue sem ela.
+
+- A configuração escolhida no treino foi a mesma nos dois modelos: `anterior`, d = 8, admissão `lfu`. No teste ela reduz a
+  espera em +0,30 / +0,25 / +0,33% no 1B e +0,16 / +0,14 / +0,18% no 3B (10 / 25 / 50%), longe dos 5%.
+- O próprio oráculo, que é o limite superior, não chega a 5% em nenhuma célula:
+  - com admissão `lfu`, o melhor é +1,30% (1B a 50%, d = 8);
+  - com admissão `livre`, ele perde em todas as células, de −9,9% (3B a 50%, d = 8) a −85% (1B a 50%, d = 1). Ele acerta
+    mais (até +7 pontos de acerto), mas põe tráfego em 98–100% das camadas, e o simulador cobra de cada uma o `o_layer` e
+    a CPU disputada. Com d = 1 quase nada chega a tempo (0,2–0,5 cópia útil por token).
+- A espera do evento sozinha dá +0,00% em todas as células (previsão: < 2%).
+
+Conferências feitas depois (`diagnostico.py`, `diagnostico.txt`; não decidem o portão):
+- **Por que a busca com `lfu` quase não copia.** De ~500 mil propostas no 1B a 10%, sobram 157 cópias com o `anterior` e 6
+  com o oráculo. As outras caem por backlog cheio ou porque a frequência do candidato não vence a do residente mais fraco:
+  o `lfu_cpu` já guarda os experts mais frequentes. O ganho de +0,1–0,3% da escolhida não vem das cópias da busca. Os
+  números apontam para as reservas barrando admissões: no 1B a 10%, as cópias de admissão caem de 1,5 para 1,3 por token
+  e as camadas com tráfego de 6,4% para 5,8%, ou seja, menos tráfego (sem contador próprio que isole a causa).
+- **Por que a espera do evento não muda nada.** Em nenhuma célula uma chave pedida estava em voo: 0 de 662.592 pedidos no
+  1B e 0 de 976.384 no 3B. Toda cópia de admissão termina antes de a chave voltar a ser pedida, o que só acontece um
+  token depois, na mesma camada.
+- **Para a A0c.** Na virada do token, ainda estão em voo de 1,0% a 3,6% das cópias de admissão (no máximo 345 em 3.814
+  tokens no 3B a 50%). Com a residência publicada só no começo do token, essas cópias atrasam um token. Se cada uma custar
+  um expert na CPU (~0,05 ms), isso dá menos de 0,005 ms por token, contra uma espera de 1–10 ms por token. Fica de fora
+  desta conta o atraso das cópias para vítimas de camadas ainda não passadas no token, que a A0c mede.
+
+**Limites:**
+- **O resultado depende de dois termos do custo do tráfego, e só vira se os dois sumirem** (`sensibilidade.py`,
+  `sensibilidade.txt`). Os termos são o `o_layer` (uma sobra medida por camada com tráfego, sem causa isolada) e a CPU
+  disputada (`c_cpu` contra `c_cpu_quiet`, +14–16% por expert, medida). Com a busca livre e d = 8:
+  - com `o_layer = 0` e a disputa mantida, o oráculo passa de 5% só a 50% (+5,3% no 1B e +12,2% no 3B), e os preditores
+    realistas ficam todos ≤ 0;
+  - com a disputa zerada e o `o_layer` calibrado (f = 0), nada passa, nem o oráculo;
+  - só com os dois zerados os realistas passam de 5%: `anterior` a 50% (+5,8% no 1B, +6,2% no 3B) e `frequente` a 10%
+    (+5,2% no 1B, +5,4% no 3B).
+  - As duas primeiras variantes são os mesmos termos que o rev-2 mediu na rodada 50 (achado 5), aqui com a espera
+    desligada. Os dele, com a espera ligada, diferem até 0,8 ponto no 3B. A varredura da disputa com o `o_layer` calibrado
+    é nova.
+  - A varredura é evidência sobre as variantes amostradas (f = 0; 0,25; 0,5; 0,75), e não prova que todo limiar exige os
+    dois termos exatamente nulos.
+- **Duas regras de admissão testadas** (`livre` e `lfu`). Uma regra intermediária, como a de admitir só no lugar de um
+  residente cujo próximo uso está mais longe que o alvo, não foi testada. O oráculo `livre` mostra que acertar mais não
+  paga o tráfego neste modelo de custo, e não que nenhuma regra pagaria.
+- **Os preditores usam só o roteamento.**
+- **Reabertura:** a decisão volta à mesa se a medida do A1 mostrar os dois termos perto de zero no motor novo (critério do
+  A1, abaixo).
+
+### A0b — o protocolo sem a parada por camada
+
+**O que para hoje, e por quê.** Cada camada do `ExpertCache` sincroniza a stream de cálculo para ler os logits do roteador
+(`Epoch::router_logits`). É dessa parada que vêm o top-k no host, a escolha do que vai à CPU, a vítima com a stream parada
+(o `Idle`) e a garantia de que nenhum kernel ainda lê o slot que a cópia vai sobrescrever. Tirar a parada tira as quatro
+coisas ao mesmo tempo.
+
+**Como o Strata faz** (`/home/brenoperucchi/Devs/GitHub/strata`, 9259cad4, lido e não executado):
+- `include/strata/core/session.hpp:384–420` e `src/core/session.cpp:820–900`: o token inteiro vira um grafo. Em cada
+  camada, o roteador e o top-k rodam na GPU e um kernel publica `x`, ids e pesos em memória host mapeada e toca um número
+  de sequência (o "doorbell", `include/strata/core/layer.hpp:396–414`). O host espera a sequência, calcula as faltas na
+  CPU, escreve a saída em memória mapeada e escreve uma flag; um kernel de uma thread (`doorbell_wait`) segura a GPU até a
+  flag chegar. Não há sincronização de stream no laço das camadas.
+- A residência é **fixa durante o token** (`TokenHits`, `session.hpp:402–420`): uma tabela `n_layers × n_expert` na GPU
+  (slot ou −1); o `moe_hit_select` monta a lista de acertos da camada na GPU a partir dela, e o host lê a própria cópia da
+  mesma tabela para saber o que calcular.
+- As trocas só entram entre janelas (`generate.cpp:5689–5756`): cópia numa stream própria, despejo lógico na hora, e
+  `apply_pending` no começo da janela seguinte por `cudaEventQuery`, seguido de um `cudaMemcpy` síncrono da tabela para a
+  GPU. A garantia de que nenhum kernel lê o slot reescrito vem de as cópias rodarem entre rodadas, com a GPU parada; o
+  buraco anotado no B0 (a cópia da tabela na GPU ainda aponta o slot reescrito enquanto a troca está pendente) continua
+  lá.
+- Os comentários registram duas medidas que valem para nós como cuidado, não como fato: no Windows (WDDM) uma espera do
+  host que só lê memória nunca deixa o driver submeter o trabalho, e um `cudaEventRecord` dentro de uma captura de grafo é
+  descartado em silêncio. Não usamos grafo; no Linux a primeira é para conferir no A1, não para assumir.
+
+**Fato que simplifica o desenho.** A chave do cache é (camada, expert). Um expert admitido na camada `l` do token `t` só
+volta a ser pedido na camada `l` de um token seguinte. Fixar a residência durante o token não atrasa o uso de nenhuma
+admissão que termine antes do fim do token; só perde as cópias que terminam entre o começo do token `t+1` e a camada `l`
+dele, que o `settle` por camada de hoje aproveitaria. A A0c (abaixo) mediu esse custo no simulador.
+
+**Desenho proposto para o A1 (D1, residência fixa por token; revisto na rodada 51):**
+
+1. **Doorbell em memória mapeada, sem kernel de espera.** As bindings já têm `cuStreamWaitValue32_v2` e
+   `cuStreamWriteValue32_v2`, e o `cuda-async` já usa memória host mapeada com `cuStreamWriteValue32`
+   (`/home/brenoperucchi/Devs/GitHub/cuda-rust/cuda-async/src/reactor.rs:96–113,243`).
+   - **Por camada:**
+     - o roteador e o top-k na GPU escrevem ids, pesos e `x` numa área pinned mapeada da camada;
+     - `cuStreamWriteValue32(seq[l], t)` avisa o host;
+     - a GPU enfileira os acertos;
+     - `cuStreamWaitValue32(flag[l], t, GEQ)` segura a soma da saída da CPU.
+   - **No fim do token,** depois dos experts da última camada, um `seq[L]` avisa o host de que a GPU passou dela.
+   - **Sem anel:** a área de cada camada só é reescrita no token seguinte, depois de o host ter servido a camada (a GPU
+     esperou a flag dele).
+   - **O `GEQ` compara de forma cíclica** (`(int32_t)(*addr − value) >= 0`, `/opt/cuda/include/cuda.h:535`). Por isso o
+     contador de tokens começa em 1, com as flags zeradas (com 0, a espera do primeiro token passaria antes de a CPU
+     responder), e todo valor escrito fica na meia faixa à frente do valor esperado (passo 6).
+   - **Ordem de memória:**
+     - do device para o host, o `cuStreamWriteValue32` sem `NO_MEMORY_BARRIER` torna visíveis as escritas anteriores da
+       stream antes da sequência (a v2 nem aceita a flag);
+     - do host para o device, a saída da CPU fica em memória host mapeada, então a flag `FLUSH` do `cuStreamWaitValue32`,
+       que trata de escritas remotas na memória do device, não é o mecanismo em jogo. O host escreve a saída e depois a
+       flag com `Release`.
+   - **Primeiro portão do A1, num micro-teste antes de qualquer outra peça:**
+     - o atributo do device para esperar valor em memória host;
+     - a latência da volta;
+     - a GPU ler o `y` novo, e não um antigo, logo depois da flag, com um padrão diferente escrito a cada rodada.
+2. **Duas linhas no host, com posse separada.**
+   - **A linha principal é dona da stream de cálculo** e é a única que enfileira nela: a tabela do token, as camadas e a
+     leitura dos logits.
+   - **A linha de serviço é dona do estado do cache** (slots, tabela, frequências, admissões), da stream de cópia (a única
+     que enfileira nela) e do `TokenEpoch`.
+   - **Por token, a linha de serviço:**
+     - espera `seq[l]` para cada camada;
+     - lê ids e pesos publicados pela GPU, que são a fonte única do roteamento (o host não recalcula o top-k);
+     - calcula as faltas;
+     - escreve a saída e a flag;
+     - só então decide as admissões, fora do caminho crítico da GPU.
+   - **A virada do token:** ao ver `seq[L]`, a linha de serviço enfileira as cópias pendentes da última camada (passo 4),
+     faz o `settle` por consulta, monta a tabela do token seguinte e manda à principal, por canal, um `Published` (o lado
+     do buffer pinned com a tabela, a geração e os eventos `ready` dos slots recém-admitidos).
+   - **A principal,** depois de ler os logits do token, espera o `Published`, enfileira o envio da tabela e as esperas
+     pelos `ready` e só então enfileira o token seguinte.
+   - **As duas streams se ordenam por observação no host:** a cópia depois de o host ver o doorbell (passo 4), o uso
+     depois de o host ver o `ready` completo (passo 3).
+   - **A única espera por evento entre as linhas é a do `ready`, pela principal.** Ela é segura por dois motivos:
+     - a linha de serviço grava o `ready` antes de mandar o `Published`, e o canal ordena;
+     - o mesmo `ready` só pode ser regravado depois de a principal fazer a espera. Para virar vítima no token `t+1`, o slot
+       precisa de uma camada servida, e o `seq[0]` de `t+1` só vem depois de a principal enfileirar a tabela, as esperas e
+       a camada 0.
+     A espera de um evento capturado na hora errada foi o P1 da rodada 50, por isso o argumento fica escrito, e o backend
+     falso tem um mutante que manda o `Published` antes de gravar o `ready`.
+3. **Tabela de residência por token.**
+   - A tabela vai para a GPU na stream de cálculo antes do primeiro trabalho do token, a partir de um buffer pinned em
+     dois lados. Um lado só volta para a linha de serviço depois de o envio que o leu terminar (a principal devolve o
+     lado depois da leitura dos logits do token que o usou).
+   - A tabela do host é a mesma e fica imutável até o fim do token: um acerto do host é um acerto da GPU, sem corrida.
+   - Uma chave só entra na tabela se o `ready` dela já terminou na consulta.
+   - Por precaução, a stream de cálculo também espera o `ready` de cada slot recém-admitido. O evento foi gravado pela
+     linha de serviço antes de mandar o `Published`, e o canal dá a ordem entre as duas linhas. Custa nada quando o evento
+     já terminou.
+4. **A sobrescrita espera o último leitor, pelo doorbell.**
+   - Com a tabela fixa, o último leitor do slot de uma chave da camada `l'` no token `t` é o lançamento dos experts da
+     camada `l'` desse token.
+   - **Se a vítima é de uma camada `l' < l`** (já passada no token), a linha de serviço enfileira a cópia na hora: ela viu
+     `seq[l]`, gravado depois dos experts de `l'` na mesma stream.
+   - **Se `l' ≥ l`,** a vítima continua na tabela do token, e a linha de serviço guarda a cópia `(l', chave)`. Ela só a
+     enfileira ao ver `seq[l'+1]` (ou `seq[L]` para a última camada), que a GPU só escreve depois dos experts de `l'`.
+   - Não há evento de ordem entre as streams. A fila da stream de cópia segue a ordem em que a linha de serviço
+     enfileira, e o simulador modela essa ordem (A0c).
+   - A vítima sai da tabela do token `t+1`, e a chave nova só entra numa tabela depois do `ready`.
+5. **Um lançamento para todos os acertos.**
+   - Os slots viram um banco único (`SlotId` vira índice no banco, como o B0 previu).
+   - Um kernel de seleção monta na GPU a lista de acertos da camada (slot, peso, contagem) a partir da tabela e dos ids,
+     e um kernel agrupado lê a lista. O cutile já lê dados do device como escalar (`attn_split` com `lens`) e tem views
+     de gather.
+   - A soma dos experts muda de ordem: os logits deixam de ser bit a bit iguais aos de hoje e passam a ser comparados pela
+     tolerância (1e-4).
+6. **Erro, cancelamento e `Drop`.** Uma GPU presa num `cuStreamWaitValue32`, ou uma linha de serviço presa esperando um
+   `seq` que nunca vem, trava o processo. Por isso:
+   - **Valor de soltura:** é `t + 2^30` para o token corrente `t`, dentro da meia faixa à frente de toda espera em curso.
+     Nunca um valor "máximo", que o `GEQ` cíclico não aceita como maior.
+   - **Cancelamento:** um atômico que as duas linhas olham. A espera da linha de serviço por `seq[l]` também o consulta e
+     volta com erro quando ele é marcado.
+   - **Se a linha de serviço falha** (erro devolvido ou `panic`), uma guarda dela escreve todas as flags com o valor de
+     soltura, marca o cancelamento e envenena o cache. A principal, que pode estar parada na leitura dos logits, é solta
+     pela GPU e vê o envenenamento.
+   - **A linha de serviço sincroniza a própria stream de cópia ao sair,** por qualquer caminho (o normal, o cancelamento
+     ou a guarda do `panic`), depois da última cópia que enfileirou. Ela é a única que enfileira nessa stream, então é ela
+     quem drena. O cancelamento é cooperativo e não prova sozinho que ela parou de enfileirar.
+   - **Se a principal falha no meio da enfileiração,** ela marca o cancelamento, escreve as flags com o valor de soltura,
+     faz o `join` da linha de serviço e sincroniza a stream de cálculo.
+   - **No `Drop`,** nessa ordem:
+     1. cancelamento;
+     2. flags com o valor de soltura;
+     3. `join` da linha de serviço, que já drenou a stream de cópia;
+     4. sincronização da stream de cálculo;
+     5. só então a liberação das regiões mapeadas, dos buffers pinned e do banco de slots.
+   - **A drenagem do núcleo de hoje fica.** O `Slots::drop` sincroniza as streams antes de soltar o armazenamento
+     (`rust/moe-rt/src/cache/core.rs:433–437`, com o `sync_all` em `:424–429`). A drenagem não pode sumir na troca para o banco de slots.
+   - **Testes:**
+     - no `loom`, as quatro saídas: a linha de serviço morre, a principal morre, e o `Drop` no meio do token nos dois
+       casos. Toda espera enfileirada é solta e toda linha termina. Não se exige que nenhuma flag fique abaixo do valor de
+       soltura: a linha de serviço, antes de ver o cancelamento, pode responder uma camada com `t` depois da soltura, e só
+       o token `t` tem esperas em fila;
+     - no backend falso e no `loom`, o `Drop` com a linha de serviço parada entre a flag e a enfileiração de uma cópia.
+       Nenhuma operação fica em fila em stream nenhuma quando a memória cai. O mutante com a ordem antiga (sincronizar
+       antes do `join`) tem de ser acusado;
+     - na GPU, um teste com `t` perto de `2^31`, para o valor de soltura;
+     - na GPU, um teste em que a linha de serviço entra em `panic` no meio do token, e a chamada da principal volta com
+       erro em menos de 1 s.
+7. **O modo antigo fica.**
+   - O `ExpertCache` com a parada por camada continua como está, inclusive o `AdmitMode::Barrier`, e tem de sair bit a bit
+     igual antes e depois do A1.
+   - O motor novo ganha um modo determinístico próprio (`AdmitMode::TokenBarrier`): a linha de serviço sincroniza a stream
+     de cópia antes do `settle` da virada, e o backlog conta todas as cópias do token. Nele, acertos, cópias e experts na
+     CPU têm de bater exatamente com o simulador no protocolo `token` com barreira (A0c).
+
+**Tipos (o que a tese 1 ganha ou perde).** O `Idle` deixa de existir, porque a vítima não é mais escolhida com a stream
+parada. No lugar, todos na linha de serviço, que é dona do cache:
+- **`TokenEpoch`:** sai de `begin_token` e é consumido por `end_token`. É a tabela do token. `lookup` e a escolha de vítima
+  pedem `&TokenEpoch`, e usá-lo depois do `end_token` é E0382.
+- **`LayerView<'t>`:** sai de `serve_layer`, que espera `seq[l]`, e empresta o `TokenEpoch`. Traz ids, pesos e `x`
+  publicados, e prova que a GPU passou pelo roteador de `l` neste token.
+- **`answer(view, y) -> Served<'t>`:** consome a `LayerView` e escreve a saída e a flag uma vez só (E0382 na segunda vez).
+  Devolve um `Served`, que guarda a camada e os ids e continua provando que a GPU passou pelo roteador de `l`.
+- **A escolha de vítima pede `&Served` e `&Pins`.** As admissões vêm depois da flag, fora do caminho crítico.
+- **A cópia, `copy_after_reader(victim, key, &Served)`,** compara a camada da vítima com a do `Served`: se ela já passou,
+  enfileira na hora; senão, guarda a cópia, que `serve_layer(l'+1)` (ou o `seq[L]`) enfileira. A comparação é em tempo de
+  execução, porque a camada é um número, e fica dentro do núcleo.
+- **A principal só vê um `Published`.** Enfileirar um token pede o `Published` dele, e um `Published` de outra geração é
+  recusado em tempo de execução.
+
+Casos de `trybuild` novos, cada um com o gêmeo que compila:
+- vítima sem `Served` (o gêmeo: vítima depois do `answer`);
+- `lookup` depois do `end_token`;
+- responder a mesma camada duas vezes;
+- enfileirar um token sem `Published`.
+Ficam os 6 de hoje que ainda se aplicam.
+
+**Controles negativos** (janela forçada, como no B0, com o portão de `cuLaunchHostFunc`; 20 de 20 nos dois sentidos, sem
+depender da velocidade relativa das streams):
+- **Cópia enfileirada na escolha da vítima.** O mutante é a cópia para uma vítima de camada `l' > l` enfileirada na hora,
+  como no desenho da rodada 50. Com o portão segurando a stream de cálculo antes dos experts de `l'` e a cópia livre para
+  terminar:
+  - no mutante, a saída de `l'` sai bit a bit a do expert novo;
+  - na versão certa, a cópia não é enfileirada enquanto o portão segura a GPU antes de `seq[l'+1]`, e a saída sai bit a
+    bit a do expert antigo.
+- **Tabela publicada sem o `ready`.** São dois testes, com contratos separados (achados da rodada 50):
+  - **(a) Estado:** a publicação recusa slot `Loading`. É um teste de unidade da montagem da tabela, sem GPU.
+  - **(b) GPU:** o mutante tira as duas proteções, a consulta na publicação e a espera da stream de cálculo pelo `ready`.
+    Com o `hold_copies` segurando a stream de cópia antes da cópia, o mutante lê o slot com o expert antigo inteiro, e a
+    saída sai bit a bit a do expert antigo. A versão certa não lista a chave, que vai à CPU, e a saída sai bit a bit a
+    do expert novo calculado na CPU.
+  - Tirar só a consulta não basta para errar: a espera pelo `ready` segura a GPU até a cópia inteira terminar. O teste
+    registra esse mascaramento, em vez de tratá-lo como insensibilidade.
+  - A leitura de um slot pela metade (um portão entre os dois `memcpy` de `copy_raw`) fica como extensão opcional, e não
+    como critério.
+- O `memcheck` fica, para acesso inválido. O `racecheck` não prova nada aqui (memória global entre streams, como
+  registrado no B0).
+
+**O que o Rust dá a mais, e entra no A1** (pedido do Breno, 31/10, depois de comparar com o que o Strata e o llama.cpp
+garantem à mão):
+- **Tipos por espaço de memória.**
+  - `Pinned<T>` (origem das cópias H2D), `Mapped<T>` (pinned e mapeada, com um endereço do host e outro do device) e
+    `Device<T>`, cada um com o seu construtor. As funções de cópia e o doorbell só aceitam o tipo certo.
+  - O Strata confere isso em tempo de execução (`src/core/session.cpp:836–839`, "the parts staging is not mapped pinned
+    memory"), e o cache do llama.cpp copia de memória pageable sem aviso.
+  - As flags do doorbell são `Mapped<AtomicU32>`, alinhadas e vivas até o `join` (passo 6), com ordem de memória
+    explícita no lado do host: escrita da saída da CPU e depois a flag com `Release`; leitura da sequência com `Acquire`
+    antes de ler ids, pesos e `x`. Isso substitui o `volatile` do Strata.
+  - O lado do device fica com a semântica do `cuStreamWaitValue32`/`cuStreamWriteValue32` (passo 1), documentada no
+    núcleo `unsafe`.
+- **`loom` nas duas linhas do host.**
+  - As duas linhas compartilham só o doorbell, o canal do `Published`, a devolução dos lados do buffer e o cancelamento.
+    Esse estado fica atrás de uma interface pequena e genérica sobre os atômicos (`std` na build normal, `loom` no teste).
+  - A GPU entra no modelo como uma terceira thread, que segue a ordem da stream de cálculo: publica ids e `x`, escreve
+    `seq` e espera a flag com o `GEQ` cíclico de verdade.
+  - O modelo carrega os dados (ids, `x`, `y`) além das flags, para que o mutante com `Relaxed` apareça como dado velho
+    lido, e não só como ordem de chamadas.
+  - O teste percorre todas as intercalações de um token curto (2–3 camadas, dois tokens) e exige:
+    - cada camada respondida uma vez e na ordem;
+    - nenhuma leitura de ids antes da sequência;
+    - nenhuma flag antes da saída da CPU, e a GPU lê o `y` daquela camada e daquele token;
+    - nenhuma cópia para uma vítima antes do `seq` da camada seguinte à dela;
+    - as saídas de erro do passo 6, com a invariante de lá (toda espera solta, toda linha termina, nada em fila quando a
+      memória cai).
+  - Ele não prova a ponte de memória do CUDA, que fica com o micro-teste do passo 1.
+- **Backend falso por trait, com teste de propriedade.**
+  - O protocolo (tabela por token, vítima, cópias guardadas e liberadas pelo doorbell, `ready`, publicação) fica genérico
+    sobre um `trait Backend` com as operações de stream: copiar, gravar evento, esperar evento, consultar evento, lançar,
+    publicar a tabela e escrever e esperar valor.
+  - A implementação de teste é uma GPU de mentira, que guarda o conteúdo de cada slot como o id do expert e marca um slot
+    em cópia como inválido. Cada stream é uma fila FIFO. A espera por um evento captura a última gravação feita **antes da
+    chamada**, como no CUDA, e não uma gravação futura. A consulta de evento segue a mesma regra: olha a última gravação
+    feita antes da chamada, e um evento nunca gravado responde completo, como o `cudaEventQuery`. O `ready` de cada slot
+    é criado uma vez (`rust/moe-rt/src/cache/core.rs:154`), então ligar a consulta à cópia, e não à gravação, esconderia
+    o caso em que ela vê uma gravação velha (achado do rev-2 na rodada 52). As filas avançam em qualquer ordem que
+    respeite as esperas.
+  - As duas linhas do host rodam intercaladas pelo `proptest`, que gera roteamentos, orçamentos, a intercalação das linhas
+    e a ordem das filas.
+  - Duas invariantes:
+    - todo lançamento lê o expert que a tabela do token diz, nunca um slot reescrito ou em cópia;
+    - no modo com barreira, acertos e cópias batem com o simulador no protocolo `token`.
+  - Esta é a proposta do rev-1 que ficou fora do B0. Com a D1, as ordens possíveis entre as streams e entre as linhas
+    passam a importar, e ela entra.
+  - Os mutantes dos controles negativos (a cópia enfileirada na escolha da vítima; a tabela sem as duas proteções do
+    `ready`) têm de cair nele também, assim como o `Published` mandado antes de gravar o `ready`, a consulta do `ready`
+    antes da gravação dele e a ordem antiga do `Drop`.
+
+O que fica de fora do Rust e continua com testes na GPU: a ordem real entre streams e os kernels. Os controles negativos
+com janela forçada continuam. E os tipos do Rust impedem o uso duplo, mas não obrigam o uso: uma camada nunca respondida
+trava a GPU, o que continua com o cancelamento e o valor de soltura do passo 6.
+
+**Alternativas pesadas e não adotadas:**
+- **D2, a GPU decide os acertos por camada,** com flags de `ready` escritas pela stream de cópia, e publica a decisão para o
+  host. Ela admite mais cedo, no meio do token, mas a tabela passa a ser escrita pelo host enquanto a GPU lê, e a decisão
+  da GPU vira a única fonte da verdade sobre quem calcula cada expert.
+  - O ganho sobre a D1 se limita às cópias que terminam entre o começo do token e a camada delas. A vítima que segue
+    legível até o fim do token, de onde vem o ganho da A0c sobre o protocolo de hoje, a D2 também teria.
+  - O teto desse ganho, pela A0c (as cópias em voo na virada, cada uma a um expert na CPU), fica entre 0,07% e 1,06% da espera
+    (`resultado.txt`, linha "teto da D2" de cada célula).
+  - Mais corridas a fechar para esse teto: a D2 fica de fora.
+- **Copiar na hora só para vítimas de camadas já passadas.** Restringe a política de despejo (na camada 0 só sobram os
+  experts não pedidos dela) e muda a `lfu_cpu` validada. Guardar a cópia até o doorbell da camada seguinte dá o mesmo para
+  `l' < l` e não restringe nada.
+- **Evento `E[t, l']` gravado pela principal e esperado pela linha de serviço** (o desenho da rodada 50). Exige uma
+  barreira de submissão entre as duas linhas (a principal publicaria "gravado até (t, l)" com `Release`, e a de serviço só
+  esperaria depois de ver esse valor com `Acquire`). O doorbell já dá a mesma garantia sem estado novo.
+
+### A0c — o custo da residência por token no simulador (31/10; corrigida nas rodadas 51 e 52)
+
+Material em `qual-runs/A0C-TOKEN-SIM-20261031/`:
+- `criterio.txt`, gravado antes de rodar, com a previsão;
+- `token_sim.py`, `resultado.txt`, `diagnostico.py` e `diagnostico.txt`;
+- `mutantes.py` e `mutantes.txt`;
+- `decomposicao.py` e `decomposicao.txt` (rodada 52: o protocolo de hoje, o `token` da rodada 51 e o de agora), com
+  `moe_sim-rodada51.py`, a cópia do simulador da rodada 51 (`286e06c713556cc1`);
+- o histórico: `resultado-rodada50.txt` e `diagnostico-rodada50.txt` (a primeira execução) e `resultado-rodada51.txt`.
+
+**Protocolo `token` no simulador** (`tools/moe_sim.py`, só `lru_cpu` e `lfu_cpu`, sem busca):
+- a tabela de residência é publicada no começo do token, antes do `g` da primeira camada, e uma cópia que termina no meio
+  do token só vale no seguinte;
+- a vítima de uma camada `l'` maior ou igual à corrente continua na tabela até o fim do token;
+- a cópia para o slot dessa vítima só entra na fila do PCIe quando o host vê a GPU passar dos experts de `l'`, isto é,
+  no doorbell da camada `l'+1` (depois do `g` dela) ou, para a última camada, no doorbell do fim do token;
+- a fila do PCIe segue a ordem em que o host enfileira;
+- as admissões de uma camada vêm depois da resposta da CPU dela, como o `Served` da D1 exige (achado 1 do rev-1 na
+  rodada 51). Elas entram no fim da CPU da camada, com o backlog daquele instante, e a cópia que começa ali não é cobrada
+  como disputa na CPU da própria camada. Até a rodada 51, a admissão saía no instante do roteador e corria junto com a CPU;
+- o backlog conta as cópias ainda não terminadas, porque o host consulta o evento;
+- com `token_barreira`, o começo do token espera todas as cópias, a parada entra na espera (`barrier_ms` à parte), e o
+  backlog conta todas as cópias do token. Esse é o modo `TokenBarrier` do A1, em que acertos e cópias não dependem do
+  tempo da cópia.
+
+O tráfego da camada passou a contar as cópias que entraram na fila do PCIe, e não as admitidas, porque uma cópia adiada
+é admitida numa camada e só corre depois. Fora do protocolo `token`, as duas contagens coincidem: o teste de valores
+fixos de `fddc2cc` continua passando, e o rev-2 conferiu a igualdade exata contra o `HEAD` em 432 combinações (as 6
+políticas, os protocolos `runtime` e `m05`, 3 orçamentos, os dois conjuntos de parâmetros e 6 traços).
+
+**Testes novos (a suíte passou de 56 para 71):**
+- uma cópia terminada no meio do token só vale no seguinte;
+- uma cópia que termina dentro do primeiro `g` não entra na tabela;
+- a vítima de camada à frente continua sendo lida no token, e a cópia espera o doorbell da camada seguinte;
+- a vítima da última camada sai no doorbell do fim do token;
+- o orçamento nunca é excedido e nada fica pendente no fim do token, com e sem barreira;
+- a barreira não depende da banda da cópia;
+- a parada da barreira entra na espera;
+- (rodada 52) a primeira cópia admitida termina `c_copy` depois do fim da CPU da camada no `token`, e `c_copy` depois do
+  começo da camada no protocolo de hoje (um teste com os dois casos);
+- (rodada 52) o backlog do `token` é o do fim da CPU: quatro cópias que terminam no meio da CPU já não barram as
+  admissões da camada.
+
+**Mutantes (`mutantes.txt`).** Cada um dos 8 derruba pelo menos um teste:
+- cópia adiada começando na hora;
+- acerto pelo residente em vez da tabela;
+- `settle` a cada camada;
+- backlog da barreira pelo tempo;
+- tabela publicada depois do `g`;
+- parada da barreira fora da espera;
+- adiada liberada no fim da própria camada;
+- (rodada 52) admissão no começo da camada, antes da CPU.
+O teste da barreira usa o `lru_cpu` com um traço sem conjunto quente: no `lfu_cpu`, quase todo descarte é recusa pela
+frequência, e o backlog não chegava a encher.
+
+**Resultado (`resultado.txt`, simulador `802ad2061bb15f21`, critério `9a78e4353fd788db`): o portão passa, e a D1 fica como
+desenho do A1.** O protocolo `token` espera **menos** que o de hoje em todas as células:
+
+| | 10% | 25% | 50% |
+|---|---|---|---|
+| 1B | −0,81% | −1,21% | −3,73% |
+| 3B | −0,70% | −0,87% | −2,31% |
+
+- **O modo com barreira**, com a parada contada, fica de +0,12% a +0,62% acima do `token` no tempo total por token.
+- **O histórico.**
+  - Rodada 51 (`resultado-rodada51.txt`, admissão no instante do roteador): −0,81 / −1,02 / −2,09% e
+    −0,67 / −0,70 / −1,39%.
+  - Rodada 50, com a tabela publicada depois do `g`, a adiada liberada no fim da própria camada e a parada da barreira
+    fora da espera: −0,83 / −1,35 / −3,57% e −0,70 / −0,96 / −2,13%.
+  - As correções vieram dos achados dos revisores. O sinal e o portão não mudaram em nenhuma delas. O rev-2 também rodou
+    uma variante FIFO do desenho da rodada 50, e o portão passava nela.
+- **De onde vem a mudança da rodada 52 (`decomposicao.txt`).** As cópias por token não mudam (1B a 50%: 1,64 nas duas). Cai
+  o número de experts calculados na CPU em camada com tráfego, porque a cópia admitida depois da CPU não corre mais junto
+  com ela: 4,87 → 4,00 por token no 1B a 50% e 6,67 → 5,76 no 3B a 50%; a 10%, 7,23 → 7,15 e 10,77 → 10,40. Antes, a
+  cópia corria com a CPU da camada que a admitiu, que sempre tem ao menos a falta que gerou a admissão. Agora ela (0,22 ms
+  no 1B, 0,33 ms no 3B) corre no `g` da camada seguinte, quando a CPU espera a GPU, e na CPU dessa camada, que pode não
+  ter expert nenhum.
+- **A previsão acertou o portão e errou o tamanho:**
+  - a faixa prevista era de −1% a +1% a 10% e 25% e de −2% a +1% a 50%; saíram fora dela −1,21% no 1B a 25%, −3,73% no 1B
+    a 50% e −2,31% no 3B a 50%;
+  - as cópias em voo na virada ficaram em 5,2–12,8%, abaixo ou na borda de baixo dos 10–25% previstos;
+  - 53–55% das cópias foram adiadas, perto da metade prevista.
+- **A causa, conferida (`diagnostico.txt`, igual ao da rodada 50, porque só usa o protocolo de hoje).** No protocolo de
+  hoje, metade das vítimas é de camadas à frente, e uma parte delas é pedida de novo no mesmo token e readmitida na hora:
+  0,39 / 0,41 / 0,21 cópia por token no 1B e 0,51 / 0,43 / 0,20 no 3B, sempre igual ao número de vítimas pedidas de novo.
+  No protocolo `token`, a vítima segue como acerto até o fim do token, e esse vaivém some. A queda de cópias por token
+  bate com ele (1B a 10%: 1,53 → 1,17, −0,36 contra 0,39 de vaivém), e com menos cópias há menos camadas com tráfego.
+- **O vaivém também diz algo sobre o `lfu_cpu` de hoje:** a frequência de um expert de uma camada à frente ainda não
+  recebeu o uso deste token quando a vítima é escolhida. É um defeito pequeno da política, que o protocolo `token`
+  contorna de graça.
+- **O teto da D2** (as cópias em voo na virada, cada uma a um expert na CPU) fica entre 0,07% e 1,06% da espera do
+  `token`.
+
+**Limites:**
+- Os mesmos da A0a: o modelo de custo do tráfego foi calibrado com o protocolo de hoje, e o simulador é determinístico.
+- O protocolo `token` do simulador não cobra o doorbell nem a linha de serviço do host, que o micro-teste do A1 mede.
+- Usa o mesmo `g` para as duas pontas, e o `g` é um bloco só (atenção, roteador e o resto), então "depois do `g` da
+  camada seguinte" aproxima o instante do doorbell.
+- A parte do ganho que veio na rodada 52 depende da granularidade do modelo de custo. Ele cobra a disputa por camada
+  (todos os experts na CPU de uma camada com cópia em voo pagam `c_cpu`), e não pelo tempo de sobreposição de fato. Também
+  supõe que a cópia no `g` da camada seguinte não atrasa a GPU. O `o_layer` não tem causa isolada (A0a): se ele vier do
+  trabalho do host para enfileirar a cópia, e não da sobreposição, parte desse ganho some. A medida de tempo do A1 confere,
+  contra a previsão gravada antes.
+
+### A1 — critério de conclusão (proposto; revisto na rodada 51)
+
+- **Micro-teste do doorbell antes de qualquer outra peça:** o atributo do device, a latência da volta e a GPU lendo o `y`
+  novo depois da flag, com um padrão diferente a cada rodada.
+- **`trybuild`:** os casos falham pelo motivo esperado, e os gêmeos compilam.
+- **Controles negativos:**
+  - os dois acusados em 20 de 20, e a versão certa bit a bit em 20 de 20;
+  - o teste de estado da publicação recusa slot `Loading`.
+- **Erro e cancelamento:**
+  - a linha de serviço em `panic` no meio do token faz a chamada da principal voltar com erro em menos de 1 s;
+  - o `Drop` com a linha de serviço entre a flag e a enfileiração de uma cópia não libera memória com operação em fila (no
+    backend falso e no `loom`), e o mutante com a ordem antiga é acusado;
+  - o valor de soltura funciona com `t` perto de `2^31`.
+- **`loom`:**
+  - todas as intercalações de um token curto passam nas invariantes das linhas do host, inclusive as quatro saídas de
+    erro;
+  - três mutantes são acusados: a flag escrita antes da saída da CPU, a sequência lida com `Relaxed` (aparece como dado
+    velho) e a cópia de vítima enfileirada antes do `seq` da camada seguinte à dela.
+- **Backend falso com `proptest`:** as duas invariantes passam, e os dois mutantes dos controles negativos caem nele.
+- **Tipos por espaço de memória:** casos de `trybuild` (copiar de memória pageable; passar `Device<T>` onde se pede
+  `Mapped<T>`), cada um com o gêmeo que compila.
+- **Logits e roteamento:**
+  - logits dentro de 1e-4 contra a passada residente, nos dois modelos e nos três orçamentos;
+  - roteamento igual ao do host: os ids da GPU contra `Routing::from_logits` nos mesmos logits, com desempate por índice.
+- **O modo antigo:** `ExpertCache` com `AdmitMode::Barrier` bit a bit igual antes e depois.
+- **`TokenBarrier`:** acertos, cópias e experts na CPU iguais aos do simulador no protocolo `token` com barreira.
+- **Tempo:** o motor novo contra o `lfu_cpu` de hoje, mediana de 5 intercaladas, com a previsão gravada antes pelo
+  simulador. O A2 saiu com a A0a, então não há linha de busca.
+  - A previsão do `token` é uma faixa, e não um ponto: vai da cobrança da rodada 51 (`moe_sim-rodada51.py`, a cópia
+    correndo com a CPU da camada) à de agora, por exemplo 1,001–0,984 ms de espera por token no 1B e 1,955–1,937 ms no 3B
+    a 50%. A medida diz qual das duas cobranças fica mais perto do motor real, e esse é o controle da parte do ganho que
+    depende da granularidade do modelo (sugestão do rev-2 na rodada 52).
+- **Condição de reabertura da busca antecipada** (achados do rev-2 nas rodadas 50 e 51). A medida de tempo do A1 refaz os
+  três parâmetros com execuções que o motor novo consegue rodar (ele só tem a admissão do `lfu_cpu`):
+  - `c_cpu` e `c_cpu_quiet`: mínimos quadrados do ms de CPU por token contra os experts na CPU em camadas com e sem
+    tráfego, nas execuções `lfu_cpu` com backlog 4 e com backlog 0 (sem cópia), iterado até o ponto fixo, como no passo 3;
+  - `o_layer`: a sobra do tempo medido além do simulado contra as camadas com cópia, nas execuções `lfu_cpu` com backlog 4;
+  - o critério de aceitação de cada ajuste (resíduo máximo e validação contra o tempo medido, ±10% como no passo 3) é
+    gravado antes da medida, com a incerteza do ajuste (o intervalo entre as 5 intercaladas);
+  - o `o_layer` mal se distingue do ruído: com 1,5–3,9 camadas com cópia por token, ele vale de 0,4% a 3,6% do tempo por
+    token, da ordem da variação entre execuções (`tools/moe_sim.py:86–89` já registra que o ±10% distingue pouco esse
+    termo). Se o intervalo cobrir tanto 0 quanto 0,0367 ms, o ajuste conta como inconclusivo e não reabre nada sozinho
+    (achado do rev-2 na rodada 52).
+  Com esses parâmetros, roda de novo o `prefetch_sim.py` da A0a (cerca de 15 minutos de CPU). Se o portão da A0a passar,
+  o A2 volta. Pela sensibilidade da A0a, nas variantes amostradas isso só acontece com os dois termos perto de zero.
+
+**Perguntas para a revisão (rodada 52):**
+- A drenagem da stream de cópia pela própria linha de serviço, antes de ela terminar, e a ordem do `Drop` (cancelamento,
+  flags, `join`, sincronização da stream de cálculo, liberação) garantem que nada fica em fila quando a memória cai,
+  inclusive com a linha de serviço parada entre a consulta do cancelamento e a enfileiração?
+- O argumento da espera do `ready` (gravado antes do `Published`; só regravado depois do `seq[0]` do token seguinte, que
+  vem depois da espera) está certo, e o mutante do backend falso pega a ordem trocada?
+- O simulador agora admite depois da CPU da camada, como o `Served` exige. A explicação do ganho maior a 25% e 50%
+  (`decomposicao.txt`: a cópia sai da CPU da camada que a admitiu) e o limite escrito sobre a granularidade do modelo de
+  custo são suficientes, ou a medida do A1 precisa de um controle próprio para essa parte?
+- A reabertura da busca antecipada com os ajustes que o motor novo consegue rodar (`lfu_cpu` com backlog 4 e 0, critério
+  de aceitação gravado antes) fecha o achado 3 do rev-2?

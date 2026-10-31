@@ -1,0 +1,8 @@
+M1 cópia adiada começa na hora -> ['test_vitima_de_camada_a_frente_segue_lida_no_token_e_a_copia_espera_a_camada', 'test_vitima_da_ultima_camada_sai_no_doorbell_do_fim_do_token', 'test_orcamento_e_adiadas_no_protocolo_token[False-lru_cpu]', 'test_orcamento_e_adiadas_no_protocolo_token[False-lfu_cpu]', 'test_orcamento_e_adiadas_no_protocolo_token[True-lru_cpu]', 'test_orcamento_e_adiadas_no_protocolo_token[True-lfu_cpu]']
+M2 acerto pelo residente, não pela tabela -> ['test_vitima_de_camada_a_frente_segue_lida_no_token_e_a_copia_espera_a_camada']
+M3 settle em toda camada -> ['test_copia_terminada_no_meio_do_token_so_vale_no_seguinte[lru_cpu]', 'test_copia_terminada_no_meio_do_token_so_vale_no_seguinte[lfu_cpu]', 'test_vitima_de_camada_a_frente_segue_lida_no_token_e_a_copia_espera_a_camada', 'test_barreira_do_token_nao_depende_do_tempo_da_copia']
+M4 barreira com backlog pelo tempo -> ['test_barreira_do_token_nao_depende_do_tempo_da_copia']
+M5 tabela publicada depois do g -> ['test_copia_terminada_no_meio_do_token_so_vale_no_seguinte[lru_cpu]', 'test_copia_terminada_no_meio_do_token_so_vale_no_seguinte[lfu_cpu]', 'test_copia_que_termina_dentro_do_primeiro_g_nao_entra_na_tabela[token-0]', 'test_parada_da_barreira_entra_na_espera']
+M6 parada da barreira fora da espera -> ['test_parada_da_barreira_entra_na_espera']
+M7 adiada liberada no fim da própria camada -> ['test_vitima_de_camada_a_frente_segue_lida_no_token_e_a_copia_espera_a_camada']
+M8 admissão no começo da camada, antes da CPU -> ['test_admissao_do_token_comeca_depois_da_cpu_da_camada[token]', 'test_backlog_do_token_e_o_do_fim_da_cpu']

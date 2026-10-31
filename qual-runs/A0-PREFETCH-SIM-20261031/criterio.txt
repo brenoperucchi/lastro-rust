@@ -1,0 +1,34 @@
+A0a: teto da busca antecipada no simulador (plano, seção do A0; gravado em 31/10 antes de rodar nos traços de teste).
+
+Pergunta: a busca antecipada (prefetch) por cima do lfu_cpu reduz a espera o bastante para entrar no A2?
+
+Simulador: tools/moe_sim.py com `prefetch` (testes em tests/test_moe_sim.py), parâmetros "runtime" (os recalibrados no
+passo 3), protocolo do ExpertCache, backlog 4. Traços qual-runs/TRACOS-20261029, Granite 1B e 3B, orçamentos 10/25/50%.
+
+Configurações da busca: preditor anterior (roteamento do token anterior na camada do alvo) ou frequente (os k de maior
+frequência com decaimento na camada do alvo); distância d = 1, 2, 4 ou 8 camadas; admissão livre ou lfu; com ou sem
+espera do evento da cópia em voo. O oráculo (os experts do alvo) é o limite superior e não decide nada.
+
+Escolha sem olhar o teste: por modelo, a configuração realista de maior redução média da espera nos 3 orçamentos sobre
+o lfu_cpu com a mesma escolha de espera, com aquecimento nas conversas 0–1 e medida nas 2–3 (treino). Depois, uma única
+avaliação no teste: aquecimento na conversa 3, medida nas 4–7 (o protocolo das medidas do C e da comparação com o
+llama.cpp).
+
+Base de cada comparação: o lfu_cpu com a mesma escolha de espera, para que o ganho atribuído à busca não seja o da espera.
+A espera sozinha (lfu_cpu com espera, sem busca) é relatada à parte, como parte do protocolo do A1.
+
+Portão: a configuração escolhida reduz a espera em ≥ 5% sobre a base em pelo menos uma célula (modelo × orçamento) do
+teste. Passa → o A2 entra depois do A1. Não passa → a busca antecipada sai do caminho, registrada como resultado
+negativo para experts de 3–5 MB em BF16, com a causa; o A1 segue sem ela.
+
+Previsão (antes de rodar): o portão não passa. Conta de bolso no 1B a 10%: uma cópia leva ~0,22 ms com a CPU ocupada e o
+backlog é 4, então cabem ~35 cópias por token de ~7,8 ms. Cada cópia útil poupa um expert na CPU (~0,046 ms), ~1,6 ms
+por token no máximo. Mas a busca põe tráfego em quase toda camada: o_layer (0,037 ms) mais a CPU disputada (~0,006 ms
+por expert, ~6 por camada) em 24 camadas dá ~1,7 ms por token. Previsão: oráculo perto de zero ou negativo a 10% e 25%,
+com chance de ganho só a 50%, onde há menos faltas a cobrir e mais slots; preditores realistas abaixo de 5% em todas as
+células. A espera do evento sozinha: ganho pequeno (< 2%), porque o lfu_cpu copia 1,5–3 experts por token.
+
+Limites: o simulador foi validado no protocolo de hoje (com a parada por camada); no A1 o g muda, igual para as duas
+pontas. O simulador é determinístico e não dá faixa; na validação fria do C ele ficou de +0,7 a +7,5% otimista no
+ms/token. Os preditores usam só o roteamento (os traços não guardam o estado oculto); um preditor pelo roteador da camada
+seguinte sobre o estado atual fica fora e é registrado como lacuna.

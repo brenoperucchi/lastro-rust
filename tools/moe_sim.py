@@ -33,10 +33,29 @@ Políticas:
              quando é mais barato que a CPU; admissão como lfu_cpu (a hipótese "colocação por custo medido")
   oraculo    falta na CPU; admite e despeja pelo próximo uso conhecido (limite do modo CPU + admissão)
 
+Busca antecipada (A0 do plano, 31/10; `prefetch` no Sim, por cima de qualquer política com admissão em segundo plano): a
+cada camada, o preditor aponta os experts da camada d passos à frente e eles entram na fila do PCIe como cópia em segundo
+plano (mesmo backlog e mesma banda disputada da admissão), reservados até o alvo passar (a vítima pula a reserva).
+  pred       oraculo (os experts do alvo, limite superior), anterior (o roteamento do token anterior na camada do alvo)
+             ou frequente (os k de maior frequência com decaimento na camada do alvo);
+  d          distância em camadas (1 a L − 1);
+  admissao   livre (despeja o residente de menor prioridade) ou lfu (só se o candidato vence a vítima, como o lfu_cpu);
+  espera     a stream de cálculo espera o evento de uma cópia em voo que termina antes da CPU (o protocolo sem parada por
+             camada permite); sem ela, a chave carregando vai à CPU, como no ExpertCache de hoje.
+
 Parâmetros: "runtime" (padrão) vem do nosso runtime na velocidade do M2f (cópia e CPU por expert medidas no m2a, h dos dois
 kernels de um expert no m2c, g o resto do tempo de GPU por camada do m2b); "llamacpp" é o do M0.5 (custos do llama.cpp).
 Protocolo: "runtime" (padrão) faz o lru_cpu como o ExpertCache (chave carregando sempre vai à CPU; backlog conta cópias
-pendentes); "m05" é o do M0.5 (espera a cópia em voo se ela termina antes da CPU; backlog pelo tempo de fila do PCIe).
+pendentes); "m05" é o do M0.5 (espera a cópia em voo se ela termina antes da CPU; backlog pelo tempo de fila do PCIe);
+"token" é o motor sem parada por camada do A0b (D1, só lru_cpu e lfu_cpu): a residência é a tabela publicada no começo do
+token, antes do g da primeira camada, e uma cópia que terminou no meio dele só vale no token seguinte; a vítima de uma
+camada l' ≥ a corrente continua na tabela até o fim do token (a GPU ainda pode lê-la em l'), e a cópia para o slot dela
+só entra na fila do PCIe quando o host vê a GPU passar dos experts de l' (o doorbell da camada l' + 1, depois do g dela;
+para a última camada, o doorbell do fim do token); as admissões da camada são decididas quando a CPU dela termina (depois
+da flag), com o backlog desse instante, e a cópia imediata começa ali; a fila do PCIe segue a ordem em que o host
+enfileira; o backlog conta as cópias ainda não terminadas (o host consulta o evento). Com token_barreira, o começo do token espera todas as cópias
+(a parada entra na espera) e o backlog conta todas as do token (o modo determinístico TokenBarrier do A1: acertos e
+cópias não dependem do tempo da cópia).
 
   tools/.venv-ref/bin/python -I tools/moe_sim.py qual-runs/TRACOS-20261029/<modelo> --model 3b
   tools/.venv-ref/bin/python -I tools/moe_sim.py qual-runs/TRACOS-20261029/<modelo> --model 3b --validar <saída do m2a-cache>
@@ -92,8 +111,11 @@ def load(dirpath, which):
 
 
 class Sim:
-    def __init__(self, policy, cap, L, E, k, p, static_set=None, resident_layers=None, next_use=None, protocol="runtime", backlog=BACKLOG):
-        assert protocol in ("runtime", "m05")
+    def __init__(self, policy, cap, L, E, k, p, static_set=None, resident_layers=None, next_use=None, protocol="runtime", backlog=BACKLOG,
+                 prefetch=None, token_barreira=False):
+        assert protocol in ("runtime", "m05", "token")
+        assert protocol == "token" or not token_barreira
+        assert protocol != "token" or (policy in ("lru_cpu", "lfu_cpu") and not prefetch), "protocolo token: lru_cpu ou lfu_cpu, sem busca"
         self.policy, self.cap, self.L, self.E, self.k, self.p, self.protocol = policy, cap, L, E, k, p, protocol
         self.backlog = backlog
         self.c_copy = p["expert_mb"] / 1e3 / PCIE_GBS * 1e3
@@ -109,9 +131,22 @@ class Sim:
         self.static_set = static_set or set()
         self.resident_layers = resident_layers or set()
         self.next_use = next_use  # função (chave, passo) -> próximo passo de uso
+        self.prefetch = dict(prefetch) if prefetch else None
+        if self.prefetch:
+            assert self.prefetch["pred"] in ("oraculo", "anterior", "frequente") and self.prefetch["admissao"] in ("livre", "lfu")
+            assert self.prefetch["d"] >= 1
+        self.reserved = {}  # chave trazida pela busca antecipada -> passo do alvo (não é despejada antes)
+        self.pf_keys = set()  # chaves trazidas pela busca antecipada e ainda não usadas
+        self.token_barreira = token_barreira
+        self.table = frozenset()  # protocolo token: as chaves residentes publicadas no começo do token
+        self.deferred = []  # protocolo token: (camada da vítima, chave) das cópias que esperam a camada da vítima terminar
+        self.cur_layer = 0
+        self.last_victim = None  # chave despejada pelo último make_room
+        self.started = 0  # cópias que já entraram na fila do PCIe (o tráfego da camada)
         self.step = 0
         self.stats = {"tokens": 0, "needed": 0, "hits": 0, "cpu": 0, "copies_sync": 0, "copies_bg": 0, "dropped": 0, "wait_ms": 0.0,
-                      "layers_cpu": 0, "layers_sync": 0, "layers_traffic": 0, "cpu_traffic": 0, "cpu_quiet": 0}
+                      "layers_cpu": 0, "layers_sync": 0, "layers_traffic": 0, "cpu_traffic": 0, "cpu_quiet": 0,
+                      "copies_pf": 0, "pf_useful": 0, "pf_dropped": 0, "copies_deferred": 0, "barrier_ms": 0.0}
 
     # -- frequência com decaimento: a ordem entre chaves não muda com o tempo se usarmos log2(v) + passo/H
     def touch_freq(self, key):
@@ -145,6 +180,18 @@ class Sim:
                 # acertos da camada seguinte e o desempate pode despejar um acerto mais recente.
                 self.push(key, self.requested.pop(key, None))
 
+    def begin_token(self):
+        """Protocolo token: assenta as cópias terminadas e publica a tabela do token."""
+        assert not self.deferred, "cópia adiada que não começou no token anterior"
+        if self.token_barreira and self.inflight:
+            fim = max(self.inflight.values())
+            if fim > self.now:
+                self.stats["wait_ms"] += fim - self.now
+                self.stats["barrier_ms"] += fim - self.now
+                self.now = fim
+        self.settle()
+        self.table = frozenset(self.resident)
+
     def victim(self, pinned):
         """Residente a despejar (fora das chaves em uso nesta camada), ou None."""
         held = []
@@ -153,7 +200,7 @@ class Sim:
             prio, v, key = heapq.heappop(self.heap)
             if key not in self.resident or self.version.get(key) != v:
                 continue
-            if key in pinned:
+            if key in pinned or self.reserved.get(key, -1) >= self.step:
                 held.append((prio, v, key))
                 continue
             found = (prio, key)
@@ -166,12 +213,16 @@ class Sim:
 
     def make_room(self, pinned, candidate_prio=None):
         """Libera um slot se preciso. Com candidate_prio, só despeja quem tem prioridade menor que o candidato."""
+        self.last_victim = None
         if len(self.resident) + len(self.inflight) < self.cap:
             return True
         vic = self.victim(pinned)
         if vic is None or (candidate_prio is not None and vic[0] >= candidate_prio):
             return False
+        self.last_victim = vic[1]
         del self.resident[vic[1]]
+        self.pf_keys.discard(vic[1])
+        self.reserved.pop(vic[1], None)
         return True
 
     def copy_sync(self, key, pinned, cpu_busy=False):
@@ -181,12 +232,18 @@ class Sim:
         self.pcie_free = start + (self.c_copy_cpu if cpu_busy else self.c_copy)
         self.inflight[key] = self.pcie_free
         self.requested[key] = self.step
+        self.started += 1
         self.stats["copies_sync"] += 1
         return self.pcie_free
 
     def admit_bg(self, key, pinned):
         if self.protocol == "runtime":
             full = len(self.inflight) >= self.backlog  # como o ExpertCache: cópias ainda não assentadas
+        elif self.protocol == "token":
+            # O host consulta o evento: conta as cópias ainda não terminadas. Na barreira, todas as do token (a contagem
+            # não pode depender do tempo da cópia, senão o modo deixa de ser determinístico).
+            pend = len(self.inflight) if self.token_barreira else sum(f > self.now for f in self.inflight.values())
+            full = pend >= self.backlog
         else:
             full = self.pcie_free - self.now > self.backlog * self.c_copy_cpu
         if self.cap == 0 or full:
@@ -197,27 +254,85 @@ class Sim:
         else:
             ok = self.make_room(pinned, candidate_prio=self.prio(key))
         if ok:
-            self.pcie_free = max(self.pcie_free, self.now) + self.c_copy_cpu
-            self.inflight[key] = self.pcie_free
+            vic = self.last_victim
+            if self.protocol == "token" and vic is not None and vic[0] >= self.cur_layer:
+                # A GPU ainda pode ler o slot da vítima na camada dela neste token: a cópia espera essa camada terminar.
+                self.inflight[key] = math.inf
+                self.deferred.append((vic[0], key))
+                self.stats["copies_deferred"] += 1
+            else:
+                self.pcie_free = max(self.pcie_free, self.now) + self.c_copy_cpu
+                self.inflight[key] = self.pcie_free
+                self.started += 1
             self.requested[key] = self.step
             self.stats["copies_bg"] += 1
         else:
             self.stats["dropped"] += 1
 
-    def layer(self, l, experts):
+    def predict(self, a, t, l):
+        """Experts que o preditor aponta para a camada d passos à frente de (t, l) na conversa `a`, e o passo do alvo."""
+        L, T, _ = a.shape
+        d = self.prefetch["d"]
+        assert self.prefetch["pred"] != "anterior" or d < L, "com d ≥ L o token anterior na camada do alvo ainda não aconteceu"
+        t2, l2 = divmod(t * L + l + d, L)
+        if t2 >= T:
+            return [], self.step + d
+        if self.prefetch["pred"] == "oraculo":
+            es = a[l2, t2]
+        elif self.prefetch["pred"] == "anterior":
+            es = a[l2, t2 - 1] if t2 >= 1 else []
+        else:
+            es = sorted(range(self.E), key=lambda e: self.score((l2, e)), reverse=True)[:self.k]
+        return [(l2, int(e)) for e in es], self.step + d
+
+    def fetch_ahead(self, pred, pinned):
+        keys, alvo = pred
+        hold = pinned | set(keys)
+        for key in keys:
+            if key in self.resident:
+                self.reserved[key] = max(self.reserved.get(key, -1), alvo)
+                continue
+            if key in self.inflight:
+                continue
+            if len(self.inflight) >= self.backlog or self.cap == 0:
+                self.stats["pf_dropped"] += 1
+                continue
+            ok = self.make_room(hold, candidate_prio=self.prio(key) if self.prefetch["admissao"] == "lfu" else None)
+            if not ok:
+                self.stats["pf_dropped"] += 1
+                continue
+            self.pcie_free = max(self.pcie_free, self.now) + self.c_copy_cpu
+            self.inflight[key] = self.pcie_free
+            self.requested[key] = self.step
+            self.reserved[key] = alvo
+            self.pf_keys.add(key)
+            self.started += 1
+            self.stats["copies_pf"] += 1
+
+    def layer(self, l, experts, pred=None):
         p = self.p
-        self.now += p["g"]
-        self.settle()
+        self.cur_layer = l
+        if self.protocol == "token":
+            if l == 0:
+                self.begin_token()  # a tabela vai para a GPU antes do primeiro trabalho do token
+            self.now += p["g"]
+            if l > 0:
+                self.release_deferred(l - 1)  # o doorbell de l mostra que a GPU passou dos experts de l − 1
+        else:
+            self.now += p["g"]
+            self.settle()
         start = self.now
         keys = [(l, int(e)) for e in experts]
         pinned = set(keys)
         for key in keys:
             self.touch_freq(key)
         n_gpu, gpu_ready, cpu_t = 0, start, start
-        busy0 = bool(self.inflight)  # tráfego de cópia desde o começo da camada
-        copies0 = self.stats["copies_sync"] + self.stats["copies_bg"]
+        # Tráfego de cópia desde o começo da camada (fora do protocolo token, o settle acabou de tirar as terminadas).
+        busy0 = any(start < f < math.inf for f in self.inflight.values())
+        copies0 = self.started
         c_cpu = p["c_cpu"] if busy0 else p.get("c_cpu_quiet", p["c_cpu"])
         n_cpu = 0
+        adm = []  # protocolo token: faltas a admitir depois da resposta da CPU (o Served do A0b)
         for key in keys:
             self.stats["needed"] += 1
             if self.policy == "camadas":
@@ -238,11 +353,16 @@ class Sim:
                     n_cpu += 1
                     self.stats["cpu"] += 1
                 continue
-            if key in self.resident:
-                self.resident.move_to_end(key)
-                self.push(key)
+            if (key in self.table) if self.protocol == "token" else (key in self.resident):
+                if key in self.resident:  # no protocolo token, uma vítima de camada à frente ainda é lida neste token
+                    self.resident.move_to_end(key)
+                    self.push(key)
                 n_gpu += 1
                 self.stats["hits"] += 1
+                if key in self.pf_keys:
+                    self.pf_keys.discard(key)
+                    self.stats["pf_useful"] += 1
+                self.reserved.pop(key, None)
                 continue
             sync = self.policy in ("lru_sync", "belady")
             if key in self.inflight:
@@ -250,13 +370,17 @@ class Sim:
                 f = self.inflight[key]
                 if self.policy == "custo":
                     wait = max(f, start) + p["h"] <= cpu_t + c_cpu
-                elif self.protocol == "runtime" and not sync:
-                    wait = False  # ExpertCache: Lookup::Loading vai à CPU
+                elif self.protocol in ("runtime", "token") and not sync:
+                    # ExpertCache: Lookup::Loading vai à CPU; sem a parada por camada, a stream pode esperar o evento.
+                    wait = bool(self.prefetch and self.prefetch["espera"]) and f - start <= c_cpu
                 else:
                     wait = sync or f - start <= c_cpu
                 if wait:
                     gpu_ready = max(gpu_ready, f)
                     n_gpu += 1
+                    if key in self.pf_keys:
+                        self.pf_keys.discard(key)
+                        self.stats["pf_useful"] += 1
                 else:
                     cpu_t += c_cpu
                     n_cpu += 1
@@ -280,10 +404,22 @@ class Sim:
             cpu_t += c_cpu
             n_cpu += 1
             self.stats["cpu"] += 1
-            self.admit_bg(key, pinned)
-        traffic = busy0 or self.stats["copies_sync"] + self.stats["copies_bg"] > copies0
+            if self.protocol == "token":
+                adm.append(key)
+            else:
+                self.admit_bg(key, pinned)
+        if pred:
+            self.fetch_ahead(pred, pinned)
+        traffic = busy0 or self.started > copies0
         if traffic and not busy0:
             cpu_t += n_cpu * (p["c_cpu"] - c_cpu)  # a cópia enfileirada nesta camada corre junto com a CPU
+        if adm:
+            # Protocolo token: as admissões vêm depois da flag, quando a CPU da camada terminou; o backlog é o desse instante,
+            # e a cópia não disputa a CPU desta camada (só as camadas seguintes a veem em voo).
+            self.now = cpu_t
+            for key in adm:
+                self.admit_bg(key, pinned)
+            self.now = start
         self.stats["layers_cpu"] += cpu_t > start
         self.stats["layers_sync"] += gpu_ready > start
         self.stats["layers_traffic"] += traffic
@@ -294,7 +430,21 @@ class Sim:
             end += p.get("o_layer", 0.0)
         self.stats["wait_ms"] += (end - start) - len(keys) * p["h"]
         self.now = end
+        if self.protocol == "token" and l == self.L - 1:
+            self.release_deferred(l)  # o doorbell do fim do token
         self.step += 1
+
+    def release_deferred(self, lv):
+        """Protocolo token: as cópias para vítimas da camada lv entram na fila do PCIe, na ordem em que foram admitidas."""
+        rest = []
+        for v, key in self.deferred:
+            if v == lv:
+                self.pcie_free = max(self.pcie_free, self.now) + self.c_copy_cpu
+                self.inflight[key] = self.pcie_free
+                self.started += 1
+            else:
+                rest.append((v, key))
+        self.deferred = rest
 
     def run(self, convs, measure):
         if measure:
@@ -305,7 +455,10 @@ class Sim:
             L, T, _ = a.shape
             for t in range(T):
                 for l in range(L):
-                    self.layer(l, a[l, t])
+                    if self.prefetch:
+                        self.layer(l, a[l, t], self.predict(a, t, l))
+                    else:
+                        self.layer(l, a[l, t])
                 self.stats["tokens"] += 1
         if measure:
             self.stats["ms"] = self.now - t0

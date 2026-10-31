@@ -236,3 +236,250 @@ def test_validacao_sem_nenhuma_linha_reprova(tmp_path, corpo):
     f = tmp_path / "m2a.txt"
     f.write_text(CAB.format(b=4) + "\n" + corpo)
     assert m.validate(str(f), [trace(10, 1)], L, E, K, P, "runtime") is False
+
+
+# -- busca antecipada (A0 do plano, 31/10) ------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("pol, hits, cpu, copies, dropped, wait", [
+    ("lru_cpu", 777, 4023, 1358, 2663, 298.3241999998917),
+    ("lfu_cpu", 883, 3917, 275, 3642, 233.11839999998975),
+])
+def test_sem_busca_antecipada_o_simulador_nao_muda(pol, hits, cpu, copies, dropped, wait):
+    # Valores do moe_sim.py de fddc2cc, antes da busca antecipada: sem `prefetch`, nada pode mudar.
+    st = run(pol, 12, [trace(200, 22)], [trace(300, 21)]).stats
+    assert (st["hits"], st["cpu"], st["copies_bg"], st["dropped"]) == (hits, cpu, copies, dropped)
+    assert st["wait_ms"] == wait
+
+
+@pytest.mark.parametrize("pred", ["oraculo", "anterior", "frequente"])
+def test_orcamento_nunca_e_excedido_com_busca_antecipada(pred):
+    s = m.Sim("lfu_cpu", 12, L, E, K, P, prefetch={"pred": pred, "d": 2, "admissao": "livre", "espera": True})
+    s.run([trace(200, 31), trace(200, 32)], measure=False)
+    assert s.stats["copies_pf"] > 0
+    orig = s.layer
+
+    def checked(l, experts, pred=None):
+        orig(l, experts, pred)
+        assert len(s.resident) + len(s.inflight) <= s.cap
+
+    s.layer = checked
+    s.run([trace(100, 33)], measure=True)
+
+
+def test_o_que_o_oraculo_traz_e_usado():
+    # O oráculo traz exatamente os experts do alvo, reservados até ele: com a cópia chegando antes do alvo (camada longa) e
+    # orçamento folgado, quase tudo o que ele traz é usado. Não vale "acerta mais que sem busca" em geral: com o g real a
+    # cópia chega tarde, e com orçamento apertado a admissão livre despeja experts quentes (o tráfego que o A0 mede).
+    train, test = [trace(300, 41, np.arange(8))], [trace(300, 42, np.arange(8))]
+    s = m.Sim("lfu_cpu", 48, L, E, K, dict(P, g=1.0), prefetch={"pred": "oraculo", "d": 3, "admissao": "livre", "espera": True})
+    s.run(train, measure=False)
+    s.run(test, measure=True)
+    pf = s.stats
+    assert pf["copies_pf"] > 0
+    assert pf["pf_useful"] > 0.8 * pf["copies_pf"]
+
+
+def test_preditor_anterior_so_le_o_passado():
+    # Alvo d camadas à frente; o preditor "anterior" devolve o roteamento do token anterior na camada do alvo, que já
+    # aconteceu: no mesmo token (camada do alvo > l) ou no token atual (o alvo passou para o próximo token).
+    a = trace(6, 51)
+    s = m.Sim("lfu_cpu", 12, L, E, K, P, prefetch={"pred": "anterior", "d": 1, "admissao": "livre", "espera": False})
+    for d in range(1, L):
+        s.prefetch["d"] = d
+        for t in range(1, 5):
+            for l in range(L):
+                keys, alvo = s.predict(a, t, l)
+                t2, l2 = divmod(t * L + l + d, L)
+                assert alvo == s.step + d
+                assert keys == [(l2, int(e)) for e in a[l2, t2 - 1]]
+                assert (t2 - 1, l2) < (t, l) or (t2 - 1 == t and l2 < l)
+
+
+def test_expert_reservado_nao_e_despejado_antes_do_uso():
+    # Um expert trazido para o alvo daqui a 2 camadas não pode sair na admissão da camada seguinte, mesmo sendo o de
+    # menor frequência (nunca foi usado).
+    s = m.Sim("lfu_cpu", K + 1, 1, E, K, P, prefetch={"pred": "oraculo", "d": 2, "admissao": "livre", "espera": False})
+    s.layer(0, np.arange(K))  # K experts quentes, residentes depois do aquecimento abaixo
+    for _ in range(50):
+        s.now += 10.0
+        s.layer(0, np.arange(K))
+    s.now += 10.0
+    s.layer(0, np.arange(K), ([(0, E - 1)], s.step + 2))
+    assert (0, E - 1) in s.inflight or (0, E - 1) in s.resident
+    s.now += 10.0
+    s.layer(0, np.arange(K, 2 * K))  # faltas: a admissão do lfu_cpu procura vítima
+    assert (0, E - 1) in s.inflight or (0, E - 1) in s.resident
+
+
+@pytest.mark.parametrize("espera, cpu, sync", [(False, K, 0), (True, K - 1, 1)])
+def test_espera_do_evento_na_copia_em_voo(espera, cpu, sync):
+    # No protocolo sem parada por camada, a stream de cálculo pode esperar o evento de uma cópia em voo que termina antes da
+    # CPU; sem a espera, a chave carregando vai à CPU, como no ExpertCache de hoje.
+    s = m.Sim("lfu_cpu", 16, 1, E, K, P, prefetch={"pred": "oraculo", "d": 1, "admissao": "livre", "espera": espera})
+    s.inflight[(0, 0)] = s.now + P["g"] + 0.001
+    s.layer(0, np.arange(K))
+    assert s.stats["cpu"] == cpu
+    assert s.stats["layers_sync"] == sync
+
+
+# -- protocolo token (A0c do plano, 31/10): residência publicada no começo do token ---------------------------------------
+
+def _token_vazio(s, ultima):
+    """Um token em que só a última camada pede experts."""
+    for l in range(L - 1):
+        s.layer(l, [])
+    s.layer(L - 1, ultima)
+
+
+@pytest.mark.parametrize("pol", ["lru_cpu", "lfu_cpu"])
+def test_copia_terminada_no_meio_do_token_so_vale_no_seguinte(pol):
+    # As K faltas da última camada do token 0 são copiadas durante o token 1 (a tabela dele já foi publicada). No runtime,
+    # o settle de cada camada assenta todas antes da última camada do token 1; no protocolo token, elas já terminaram mas
+    # só entram na tabela do token 2.
+    p = dict(P, g=0.4)
+    hits = {}
+    for protocol in ("runtime", "token"):
+        s = m.Sim(pol, 64, L, E, K, p, protocol=protocol)
+        _token_vazio(s, np.arange(K))
+        assert s.stats["copies_bg"] == K
+        for t in (1, 2):
+            for l in range(L - 1):
+                s.layer(l, [])
+            if protocol == "token" and t == 1:
+                assert all(k not in s.table and s.inflight[k] <= s.now + p["g"] for k in [(L - 1, e) for e in range(K)])
+            h0 = s.stats["hits"]
+            s.layer(L - 1, np.arange(K))
+            hits[protocol, t] = s.stats["hits"] - h0
+    assert hits == {("runtime", 1): K, ("runtime", 2): K, ("token", 1): 0, ("token", 2): K}
+
+
+def test_vitima_de_camada_a_frente_segue_lida_no_token_e_a_copia_espera_a_camada():
+    # Orçamento de K slots, todos com experts da camada 1. No token 2, as faltas da camada 0 escolhem vítimas da camada 1:
+    # no protocolo token, a vítima continua na tabela do token (a GPU a lê na camada 1) e a cópia só entra na fila do PCIe
+    # quando o host vê o doorbell da camada 2 (fim da camada 1 mais o g da 2); no runtime, a vítima sai na hora e a camada
+    # 1 vai à CPU.
+    p = dict(P, g=1.0)
+    out = {}
+    for protocol in ("runtime", "token"):
+        s = m.Sim("lru_cpu", K, L, E, K, p, protocol=protocol)
+        for _ in range(2):
+            for l in range(L):
+                s.layer(l, np.arange(K) if l == 1 else [])
+        assert set(s.resident) == {(1, e) for e in range(K)}
+        s.layer(0, np.arange(K, 2 * K))
+        if protocol == "token":
+            assert s.stats["copies_deferred"] == K
+            assert all(s.inflight[(0, e)] == float("inf") for e in range(K, 2 * K))
+        h0 = s.stats["hits"]
+        s.layer(1, np.arange(K))
+        out[protocol] = s.stats["hits"] - h0
+        if protocol == "token":
+            fim_camada_1 = s.now
+            assert all(s.inflight[(0, e)] == float("inf") for e in range(K, 2 * K))
+            s.layer(2, [])
+            assert all(fim_camada_1 + p["g"] < s.inflight[(0, e)] < float("inf") for e in range(K, 2 * K))
+    assert out == {"runtime": 0, "token": K}
+
+
+def test_vitima_da_ultima_camada_sai_no_doorbell_do_fim_do_token():
+    p = dict(P, g=1.0)
+    s = m.Sim("lru_cpu", K, L, E, K, p, protocol="token")
+    for _ in range(2):
+        for l in range(L):
+            s.layer(l, np.arange(K) if l == L - 1 else [])
+    s.layer(0, np.arange(K, 2 * K))
+    assert s.stats["copies_deferred"] == K
+    for l in range(1, L - 1):
+        s.layer(l, [])
+    assert all(s.inflight[(0, e)] == float("inf") for e in range(K, 2 * K))
+    s.layer(L - 1, np.arange(K))
+    assert not s.deferred
+    assert all(s.now < s.inflight[(0, e)] < float("inf") for e in range(K, 2 * K))
+
+
+@pytest.mark.parametrize("protocol, hits", [("runtime", 1), ("token", 0)])
+def test_copia_que_termina_dentro_do_primeiro_g_nao_entra_na_tabela(protocol, hits):
+    # A tabela do token vai para a GPU antes do g da primeira camada: uma cópia que termina no meio desse g fica para o
+    # token seguinte. No runtime, o settle depois do g a aproveita.
+    s = m.Sim("lru_cpu", 16, 1, E, K, dict(P, g=0.1), protocol=protocol)
+    s.inflight[(0, 0)] = 0.05
+    s.layer(0, np.arange(K))
+    assert s.stats["hits"] == hits
+
+
+def test_parada_da_barreira_entra_na_espera():
+    s = m.Sim("lru_cpu", 16, 1, E, K, P, protocol="token", token_barreira=True)
+    s.inflight[(0, E - 1)] = 5.0
+    s.layer(0, np.arange(K))
+    assert s.stats["barrier_ms"] == pytest.approx(5.0)
+    assert s.stats["wait_ms"] >= 5.0
+
+
+@pytest.mark.parametrize("pol", ["lru_cpu", "lfu_cpu"])
+@pytest.mark.parametrize("barreira", [False, True])
+def test_orcamento_e_adiadas_no_protocolo_token(pol, barreira):
+    s = m.Sim(pol, 12, L, E, K, P, protocol="token", token_barreira=barreira)
+    orig = s.layer
+
+    def checked(l, experts, pred=None):
+        orig(l, experts)
+        assert len(s.resident) + len(s.inflight) <= s.cap
+        # A adiada da camada l começa no doorbell de l + 1; a da última, no fim do token.
+        assert all(lv >= l for lv, _ in s.deferred)
+        assert l < L - 1 or not s.deferred
+        assert set(s.resident) <= s.table
+
+    s.layer = checked
+    s.run([trace(200, 61), trace(200, 62)], measure=True)
+    assert s.stats["copies_bg"] > 0 and s.stats["copies_deferred"] > 0
+
+
+def test_barreira_do_token_nao_depende_do_tempo_da_copia():
+    # O modo TokenBarrier do A1: o começo do token espera todas as cópias, então acertos, cópias e experts na CPU são os
+    # mesmos com qualquer banda; sem a barreira, a banda muda o resultado. lru_cpu e traço sem conjunto quente, para o backlog
+    # encher (no lfu_cpu quase todo descarte é recusa da frequência, e o backlog não seria exercitado).
+    train, test = [trace(200, 71)], [trace(300, 72)]
+    res = {}
+    for barreira in (False, True):
+        for gbs in (14.1, 2.0):
+            s = m.Sim("lru_cpu", 12, L, E, K, dict(P, pcie_gbs_cpu=gbs), protocol="token", token_barreira=barreira)
+            if barreira:
+                ob = s.begin_token
+
+                def bt(_ob=ob, _s=s):
+                    _ob()
+                    assert not _s.inflight  # tudo assentado no começo do token
+
+                s.begin_token = bt
+            s.run(train, measure=False)
+            s.run(test, measure=True)
+            st = s.stats
+            res[barreira, gbs] = (st["hits"], st["cpu"], st["copies_bg"], st["dropped"])
+    assert all(r[3] > 0 for r in res.values())  # o backlog encheu (houve descarte)
+    assert res[True, 14.1] == res[True, 2.0]
+    assert res[False, 14.1] != res[False, 2.0]
+
+
+@pytest.mark.parametrize("protocol", ["runtime", "token"])
+def test_admissao_do_token_comeca_depois_da_cpu_da_camada(protocol):
+    # Rodada 52: no protocolo token, as admissões vêm depois da resposta da CPU (o Served). Com slots livres e K faltas, a
+    # primeira cópia termina c_copy depois do fim da CPU da camada; no runtime, c_copy depois do começo da camada.
+    s = m.Sim("lru_cpu", 64, 2, E, K, P, protocol=protocol)
+    s.layer(0, np.arange(K))
+    primeira = min(s.inflight.values())
+    inicio = P["g"]
+    if protocol == "token":
+        assert primeira == pytest.approx(inicio + K * P["c_cpu_quiet"] + s.c_copy_cpu)
+    else:
+        assert primeira == pytest.approx(inicio + s.c_copy_cpu)
+
+
+def test_backlog_do_token_e_o_do_fim_da_cpu():
+    # Quatro cópias que terminam no meio da CPU da camada: no instante da admissão (fim da CPU) o backlog já está livre, e
+    # as K faltas são admitidas.
+    s = m.Sim("lru_cpu", 64, 2, E, K, P, protocol="token")
+    for e in range(m.BACKLOG):
+        s.inflight[(1, E - 1 - e)] = P["g"] + 0.5 * P["c_cpu_quiet"]
+    s.layer(0, np.arange(K))
+    assert s.stats["copies_bg"] == K
+    assert s.stats["dropped"] == 0

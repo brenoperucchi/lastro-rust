@@ -1,0 +1,39 @@
+A0c: o custo da residência publicada por token (D1 do A0b) no simulador. Gravado em 31/10 antes de rodar.
+
+Pergunta: o motor sem parada por camada com a residência fixa durante o token (D1) perde espera contra o lfu_cpu de hoje,
+que assenta as cópias a cada camada?
+
+Simulador: tools/moe_sim.py com protocol="token" (testes em tests/test_moe_sim.py, conferidos contra 4 mutantes). No
+protocolo token:
+- a tabela de residência é publicada no começo do token; uma cópia que terminou no meio dele só vale no token seguinte;
+- a vítima de uma camada l' maior ou igual à corrente continua na tabela até o fim do token, e a cópia para o slot dela
+  só entra na fila do PCIe quando a camada l' do token termina (a espera por E[t, l'] do A0b);
+- o backlog (4) conta as cópias ainda não terminadas, porque o host consulta o evento;
+- uma chave em voo vai à CPU, como hoje.
+Base: lfu_cpu no protocolo runtime (o de hoje), parâmetros "runtime". O mesmo g para as duas pontas: o g do A1 muda com o
+top-k na GPU e o lançamento único, e isso fica fora da pergunta.
+
+Traços qual-runs/TRACOS-20261029, Granite 1B e 3B, orçamentos 10/25/50%. Aquecimento na conversa 3 e medida nas 4–7 (o
+protocolo da A0a, do C e da comparação com o llama.cpp). Não há escolha de configuração, então não há divisão treino e
+teste.
+
+Também relatado, sem decidir nada: o protocolo token com barreira (o modo TokenBarrier do A1; acertos e cópias, porque
+o tempo dele inclui as esperas da barreira), a fração das cópias adiadas e as cópias ainda em voo na virada do token.
+
+Portão: a espera do protocolo token fica ≤ 1,02 × a da base em todas as células (modelo × orçamento). Passa → a D1 fica
+como desenho do A1. Não passa → a D2 (a GPU decide os acertos por camada) volta à mesa antes do A1, com a célula e a
+causa registradas.
+
+Previsão (antes de rodar): passa. Dois efeitos em sentidos opostos:
+- perde: as cópias para vítimas de camadas à frente começam mais tarde (a vítima é escolhida pelo lfu entre todas as
+  camadas, então cerca de metade das cópias deve ser adiada), e uma cópia que termina depois da virada só vale um token
+  depois. Na A0a, 1,0–3,6% das cópias estavam em voo na virada; com o adiamento, espero 10–25%. Se cada uma custar um
+  expert na CPU (~0,05 ms) com o lfu_cpu copiando 1,5–3 por token, a perda fica abaixo de 0,04 ms por token: < 1% nas
+  células de 10% e 25% (espera de 3–10 ms) e até ~3% no pior caso a 50% no 1B (espera de 1,0 ms);
+- ganha: uma vítima de camada à frente continua sendo acerto até o fim do token, onde hoje ela vira falta na hora;
+- o backlog que conta só as cópias não terminadas admite um pouco mais.
+Número previsto: entre −1% e +1% a 10% e 25%, e entre −2% e +1% a 50% (negativo = menos espera que a base).
+
+Limites: os mesmos da A0a (o modelo de custo do tráfego foi calibrado com o protocolo de hoje; o simulador é
+determinístico; na validação fria do C ele ficou de +0,7 a +7,5% otimista no ms/token). O protocolo token do simulador
+não modela o custo do doorbell nem a linha de serviço do host, que o micro-teste do A1 mede.

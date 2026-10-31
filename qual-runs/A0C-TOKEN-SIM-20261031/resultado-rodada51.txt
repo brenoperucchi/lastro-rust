@@ -1,0 +1,56 @@
+simulador 286e06c713556cc1, critério 9a78e4353fd788db
+
+== 1b: 24 camadas × 32 experts, k 8
+
+1b 10% (76 slots)
+  lfu_cpu, protocolo de hoje   espera  4.947 ms/token (barreira 0.000)  total  7.9373 ms/token  acerto 24.86%  CPU 144.27/token  cópias  1.53/token (adiadas  0.00)  descartes 142.74/token
+  lfu_cpu, protocolo token     espera  4.907 ms/token (barreira 0.000)  total  7.8972 ms/token  acerto 25.04%  CPU 143.92/token  cópias  1.17/token (adiadas  0.64)  descartes 142.71/token
+  lfu_cpu, token com barreira  espera  4.914 ms/token (barreira 0.012)  total  7.9043 ms/token  acerto 25.06%  CPU 143.88/token  cópias  1.18/token (adiadas  0.64)  descartes 142.70/token
+  token contra hoje: espera -0.81%; cópias em voo na virada do token 245 de 4033 (6.1%); adiadas 54.7% das cópias
+  teto da D2 (em voo na virada × c_cpu): 0.0033 ms/token, 0.07% da espera do token; barreira contra token no total: +0.09%
+
+1b 25% (192 slots)
+  lfu_cpu, protocolo de hoje   espera  3.058 ms/token (barreira 0.000)  total  6.0482 ms/token  acerto 50.11%  CPU  95.79/token  cópias  2.25/token (adiadas  0.00)  descartes  93.54/token
+  lfu_cpu, protocolo token     espera  3.027 ms/token (barreira 0.000)  total  6.0169 ms/token  acerto 50.27%  CPU  95.49/token  cópias  1.95/token (adiadas  1.07)  descartes  93.45/token
+  lfu_cpu, token com barreira  espera  3.042 ms/token (barreira 0.028)  total  6.0320 ms/token  acerto 50.31%  CPU  95.41/token  cópias  1.93/token (adiadas  1.07)  descartes  93.48/token
+  token contra hoje: espera -1.02%; cópias em voo na virada do token 701 de 6731 (10.4%); adiadas 55.1% das cópias
+  teto da D2 (em voo na virada × c_cpu): 0.0094 ms/token, 0.31% da espera do token; barreira contra token no total: +0.25%
+
+1b 50% (384 slots)
+  lfu_cpu, protocolo de hoje   espera  1.022 ms/token (barreira 0.000)  total  4.0121 ms/token  acerto 78.55%  CPU  41.19/token  cópias  1.79/token (adiadas  0.00)  descartes  39.40/token
+  lfu_cpu, protocolo token     espera  1.001 ms/token (barreira 0.000)  total  3.9908 ms/token  acerto 78.62%  CPU  41.05/token  cópias  1.64/token (adiadas  0.88)  descartes  39.34/token
+  lfu_cpu, token com barreira  espera  1.017 ms/token (barreira 0.024)  total  4.0073 ms/token  acerto 78.65%  CPU  40.99/token  cópias  1.63/token (adiadas  0.87)  descartes  39.36/token
+  token contra hoje: espera -2.09%; cópias em voo na virada do token 610 de 5658 (10.8%); adiadas 53.7% das cópias
+  teto da D2 (em voo na virada × c_cpu): 0.0082 ms/token, 0.82% da espera do token; barreira contra token no total: +0.41%
+
+== 3b: 32 camadas × 40 experts, k 8
+
+3b 10% (128 slots)
+  lfu_cpu, protocolo de hoje   espera  9.976 ms/token (barreira 0.000)  total 14.8056 ms/token  acerto 28.88%  CPU 182.08/token  cópias  2.27/token (adiadas  0.00)  descartes 179.81/token
+  lfu_cpu, protocolo token     espera  9.909 ms/token (barreira 0.000)  total 14.7390 ms/token  acerto 29.06%  CPU 181.60/token  cópias  1.85/token (adiadas  1.02)  descartes 179.72/token
+  lfu_cpu, token com barreira  espera  9.917 ms/token (barreira 0.015)  total 14.7467 ms/token  acerto 29.08%  CPU 181.57/token  cópias  1.82/token (adiadas  1.01)  descartes 179.74/token
+  token contra hoje: espera -0.67%; cópias em voo na virada do token 272 de 7046 (3.9%); adiadas 55.4% das cópias
+  teto da D2 (em voo na virada × c_cpu): 0.0049 ms/token, 0.05% da espera do token; barreira contra token no total: +0.05%
+
+3b 25% (320 slots)
+  lfu_cpu, protocolo de hoje   espera  5.921 ms/token (barreira 0.000)  total 10.7514 ms/token  acerto 55.26%  CPU 114.52/token  cópias  2.98/token (adiadas  0.00)  descartes 111.54/token
+  lfu_cpu, protocolo token     espera  5.880 ms/token (barreira 0.000)  total 10.7101 ms/token  acerto 55.40%  CPU 114.16/token  cópias  2.70/token (adiadas  1.46)  descartes 111.39/token
+  lfu_cpu, token com barreira  espera  5.895 ms/token (barreira 0.032)  total 10.7251 ms/token  acerto 55.41%  CPU 114.14/token  cópias  2.58/token (adiadas  1.39)  descartes 111.57/token
+  token contra hoje: espera -0.70%; cópias em voo na virada do token 709 de 10290 (6.9%); adiadas 54.2% das cópias
+  teto da D2 (em voo na virada × c_cpu): 0.0129 ms/token, 0.22% da espera do token; barreira contra token no total: +0.14%
+
+3b 50% (640 slots)
+  lfu_cpu, protocolo de hoje   espera  1.982 ms/token (barreira 0.000)  total  6.8124 ms/token  acerto 82.44%  CPU  44.95/token  cópias  2.52/token (adiadas  0.00)  descartes  42.43/token
+  lfu_cpu, protocolo token     espera  1.955 ms/token (barreira 0.000)  total  6.7847 ms/token  acerto 82.49%  CPU  44.82/token  cópias  2.40/token (adiadas  1.28)  descartes  42.34/token
+  lfu_cpu, token com barreira  espera  1.984 ms/token (barreira 0.044)  total  6.8144 ms/token  acerto 82.50%  CPU  44.80/token  cópias  2.27/token (adiadas  1.21)  descartes  42.53/token
+  token contra hoje: espera -1.39%; cópias em voo na virada do token 946 de 9166 (10.3%); adiadas 53.2% das cópias
+  teto da D2 (em voo na virada × c_cpu): 0.0172 ms/token, 0.88% da espera do token; barreira contra token no total: +0.44%
+
+== Portão (espera do protocolo token ≤ 1,02 × a de hoje em todas as células)
+  1b 10%: -0.81%
+  1b 25%: -1.02%
+  1b 50%: -2.09%
+  3b 10%: -0.67%
+  3b 25%: -0.70%
+  3b 50%: -1.39%
+portão: PASSA (a D1 fica como desenho do A1)

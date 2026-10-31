@@ -1,0 +1,20 @@
+== 1b
+  10% busca anterior d=8 lfu: propostas descartadas 493924, cópias 157, úteis 72
+  10% busca oraculo d=8 lfu: propostas descartadas 496927, cópias 6, úteis 6
+  10% lfu_cpu: chave pedida ainda em voo 0 vezes em 662592 pedidos; cópias em voo na virada do token 67 de 5291 (1.3%) em 3451 tokens
+  25% busca anterior d=8 lfu: propostas descartadas 324353, cópias 147, úteis 61
+  25% busca oraculo d=8 lfu: propostas descartadas 329576, cópias 10, úteis 10
+  25% lfu_cpu: chave pedida ainda em voo 0 vezes em 662592 pedidos; cópias em voo na virada do token 283 de 7769 (3.6%) em 3451 tokens
+  50% busca anterior d=8 lfu: propostas descartadas 136645, cópias 49, úteis 23
+  50% busca oraculo d=8 lfu: propostas descartadas 141638, cópias 8, úteis 8
+  50% lfu_cpu: chave pedida ainda em voo 0 vezes em 662592 pedidos; cópias em voo na virada do token 215 de 6180 (3.5%) em 3451 tokens
+== 3b
+  10% busca anterior d=8 lfu: propostas descartadas 687986, cópias 129, úteis 65
+  10% busca oraculo d=8 lfu: propostas descartadas 693386, cópias 6, úteis 6
+  10% lfu_cpu: chave pedida ainda em voo 0 vezes em 976384 pedidos; cópias em voo na virada do token 86 de 8650 (1.0%) em 3814 tokens
+  25% busca anterior d=8 lfu: propostas descartadas 427351, cópias 90, úteis 29
+  25% busca oraculo d=8 lfu: propostas descartadas 435910, cópias 7, úteis 7
+  25% lfu_cpu: chave pedida ainda em voo 0 vezes em 976384 pedidos; cópias em voo na virada do token 267 de 11375 (2.3%) em 3814 tokens
+  50% busca anterior d=8 lfu: propostas descartadas 162714, cópias 32, úteis 18
+  50% busca oraculo d=8 lfu: propostas descartadas 171004, cópias 3, úteis 3
+  50% lfu_cpu: chave pedida ainda em voo 0 vezes em 976384 pedidos; cópias em voo na virada do token 345 de 9604 (3.6%) em 3814 tokens

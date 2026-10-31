@@ -1,0 +1,6 @@
+1b 10%: vítimas 1.53/token, de camada à frente 0.78; pedidas de novo no mesmo token 0.391/token, readmitidas 0.390/token; cópias 1.53/token
+1b 25%: vítimas 2.25/token, de camada à frente 1.15; pedidas de novo no mesmo token 0.409/token, readmitidas 0.409/token; cópias 2.25/token
+1b 50%: vítimas 1.79/token, de camada à frente 0.93; pedidas de novo no mesmo token 0.206/token, readmitidas 0.206/token; cópias 1.79/token
+3b 10%: vítimas 2.27/token, de camada à frente 1.15; pedidas de novo no mesmo token 0.509/token, readmitidas 0.509/token; cópias 2.27/token
+3b 25%: vítimas 2.98/token, de camada à frente 1.52; pedidas de novo no mesmo token 0.432/token, readmitidas 0.432/token; cópias 2.98/token
+3b 50%: vítimas 2.52/token, de camada à frente 1.30; pedidas de novo no mesmo token 0.200/token, readmitidas 0.200/token; cópias 2.52/token

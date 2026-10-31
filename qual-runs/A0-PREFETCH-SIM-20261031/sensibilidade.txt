@@ -1,0 +1,30 @@
+simulador 286e06c713556cc1
+
+== 1b (c_cpu 0.0464, c_cpu_quiet 0.0401, o_layer 0.0367)
+  redução da espera sobre o lfu_cpu, 10 / 25 / 50%, busca livre d = 8:
+  calibrado                oraculo  -23.0 /  -25.4 /  -33.4   anterior  -31.7 /  -38.4 /  -70.4   frequente  -26.2 /  -31.2 /   +0.0
+  o_layer=0                oraculo   -7.7 /   -3.5 /   +5.3   anterior  -15.5 /  -14.2 /  -16.4   frequente  -10.6 /  -11.3 /   -0.0
+  o_layer=0, sem disputa   oraculo   +7.6 /  +11.6 /  +22.2   anterior   +1.4 /   +3.0 /   +5.8   frequente   +5.2 /   +3.4 /   -0.0
+  disputa f=0.00           oraculo   -8.3 /  -11.9 /  -21.1   anterior  -15.2 /  -22.4 /  -52.8   frequente  -10.9 /  -18.6 /   +0.0
+  disputa f=0.25           oraculo  -12.0 /  -15.4 /  -24.3   anterior  -19.3 /  -26.5 /  -57.5   frequente  -14.7 /  -21.9 /   -0.0
+  disputa f=0.50           oraculo  -15.7 /  -18.8 /  -27.3   anterior  -23.4 /  -30.5 /  -61.9   frequente  -18.6 /  -25.1 /   +0.0
+  disputa f=0.75           oraculo  -19.3 /  -22.1 /  -30.3   anterior  -27.5 /  -34.6 /  -66.3   frequente  -22.4 /  -28.2 /   +0.0
+
+== 3b (c_cpu 0.0694, c_cpu_quiet 0.061, o_layer 0.0367)
+  redução da espera sobre o lfu_cpu, 10 / 25 / 50%, busca livre d = 8:
+  calibrado                oraculo  -14.5 /  -15.4 /  -10.2   anterior  -21.8 /  -26.9 /  -41.7   frequente  -17.9 /   -8.8 /   -0.0
+  o_layer=0                oraculo   -4.5 /   -0.3 /  +12.2   anterior  -11.3 /  -10.2 /   -8.7   frequente   -7.6 /   -4.0 /   +0.0
+  o_layer=0, sem disputa   oraculo   +7.7 /  +11.5 /  +22.9   anterior   +2.3 /   +3.4 /   +6.2   frequente   +5.4 /   +0.6 /   +0.0
+  disputa f=0.00           oraculo   -2.5 /   -3.9 /   -0.7   anterior   -8.5 /  -13.3 /  -28.0   frequente   -5.2 /   -5.2 /   +0.0
+  disputa f=0.25           oraculo   -5.6 /   -7.2 /   -3.8   anterior  -11.9 /  -17.1 /  -32.3   frequente   -8.4 /   -5.9 /   +0.0
+  disputa f=0.50           oraculo   -8.6 /  -10.0 /   -6.1   anterior  -15.2 /  -20.4 /  -35.6   frequente  -11.6 /   -6.9 /   -0.0
+  disputa f=0.75           oraculo  -11.5 /  -12.7 /   -8.3   anterior  -18.5 /  -23.6 /  -38.8   frequente  -14.7 /   -7.9 /   +0.0
+
+== Preditores realistas com ≥ 5% (o que reabriria o A2)
+  calibrado                nenhum
+  o_layer=0                nenhum
+  o_layer=0, sem disputa   1b 50% anterior +5.8%, 1b 10% frequente +5.2%, 3b 50% anterior +6.2%, 3b 10% frequente +5.4%
+  disputa f=0.00           nenhum
+  disputa f=0.25           nenhum
+  disputa f=0.50           nenhum
+  disputa f=0.75           nenhum
