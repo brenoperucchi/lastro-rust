@@ -1,0 +1,48 @@
+A1.0 — micro-teste do doorbell (critério gravado antes de rodar, 31/10)
+
+Origem: plano, seção A0b, passo 1 ("Primeiro portão do A1, num micro-teste antes de qualquer outra peça") e o critério
+do A1. Binário: rust/moe-rt/src/bin/a1-doorbell.rs, API do driver direto (cuda_core::sys), sem cutile. Rodar com
+taskset -c 0-15 (P-cores); a linha de serviço do host gira num P-core.
+
+Montagem
+- Uma stream de cálculo e uma linha de host (a "de serviço"), como na D1.
+- Memória host pinned e mapeada (cuMemHostAlloc PORTABLE | DEVICEMAP): seq, flag, done (u32 cada), y (W = 1536 u32,
+  a largura do 3B) e três saídas de W u32.
+- Volta i (contador começa em 1; seq, flag e done começam em 0):
+  GPU: escreve seq = i; espera flag >= i (GEQ cíclico); três leitores copiam y para a própria saída:
+       (a) kernel PTX com ld.global (cache padrão), (b) kernel PTX com ld.global.nc, (c) cuMemcpyDtoDAsync;
+       escreve done = i.
+  Host: espera seq >= i; nas voltas i % 4 == 0 gira mais 20 µs antes de escrever (a GPU fica parada na espera);
+        escreve y[j] = padrão(i, j), um padrão diferente a cada volta; grava flag = i com Release; espera done >= i;
+        confere as três saídas contra padrão(i, ·).
+- Segmentos: (1) 1.000 voltas de aquecimento + 20.000 voltas a partir de 1; (2) 5.000 voltas a partir de 2^31 − 2.500
+  (atravessa 2^31); (3) 5.000 voltas a partir de 2^32 − 2.500 (atravessa o zero).
+- Soltura: com a GPU esperando flag >= t + 1, o host escreve t + 2^30; a stream tem de terminar em menos de 1 s.
+
+Controles negativos (o conferidor tem de acusar dado velho)
+- N1: a GPU não espera a flag (sem o cuStreamWaitValue32), e o host gira 20 µs antes de escrever y em toda volta
+  (sem a parada, o host poderia escrever antes de o kernel ler, e o controle não discriminaria).
+- N2: o host grava a flag antes de escrever y e gira 20 µs entre as duas coisas.
+(Ajuste feito antes da primeira execução, ao escrever o binário.)
+Cada um em 2.000 voltas; a saída errada tem de aparecer em pelo menos 50% das voltas, em pelo menos um leitor.
+
+Latência (informativa, com a régua abaixo)
+- Doorbell: o tempo no host da gravação da flag até ver done, com só o leitor (a) na volta (variante de 1 leitor,
+  20.000 voltas).
+- Comparação, o caminho de hoje: lançar o mesmo kernel (a), gravar um evento e cuEventSynchronize; o tempo no host do
+  lançamento até a volta da sincronização (20.000 voltas).
+- Mediana, p90, p99 e máximo das duas.
+
+Portão do A1.0 (passa se as quatro valem)
+1. CU_DEVICE_ATTRIBUTE_CAN_MAP_HOST_MEMORY = 1 e UNIFIED_ADDRESSING = 1; toda chamada do driver devolve CUDA_SUCCESS.
+2. Zero saídas erradas nos três leitores, nos três segmentos (31.000 voltas medidas), e a soltura termina em < 1 s.
+3. N1 e N2 acusados (>= 50% das voltas com saída errada).
+4. A mediana da volta do doorbell até 20 µs (um quarto do g por camada do 1B, 85 µs) e até 1,5× a mediana do caminho
+   com evento. Se passar disso, paro e aviso o Breno antes do A1.1, sem mudar o desenho por conta própria.
+
+Previsão: portão passa; volta do doorbell com mediana de 3 a 8 µs, do evento de 8 a 15 µs; o leitor (b) .nc também
+lê o dado novo, porque o cache de textura é invalidado entre lançamentos.
+
+Limites: não exercita a escrita de y pelo cutile nem um kernel cutile lendo memória mapeada; o lado GPU → host só é
+conferido pelas saídas lidas depois de done (sem controle negativo próprio, porque a v2 não aceita
+NO_MEMORY_BARRIER). Uma GPU, uma linha de host, sem disputa de CPU.

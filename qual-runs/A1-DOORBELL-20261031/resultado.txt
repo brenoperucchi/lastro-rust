@@ -1,0 +1,27 @@
+sha256 do binário: f452e365589a90cd05e9d9e97475e9c5517e27116578482e8ebcd5af57a071a4
+sha256 do fonte: dcf1a29354a32983d1fe8c8824f2c234a7de96933dcf5a40a905f6eb3a95f2d8
+== Atributos do device 0
+  CAN_MAP_HOST_MEMORY 1, UNIFIED_ADDRESSING 1, CAN_USE_STREAM_MEM_OPS_V1 0, CAN_FLUSH_REMOTE_WRITES 0, HOST_NATIVE_ATOMIC_SUPPORTED 0
+
+== Correção (leitores (a), (b) e (c); nas voltas i % 4 == 0 o host para 20 µs antes de escrever)
+  aquecimento, de 1      1000 voltas: saídas erradas [0, 0, 0] ((a) ld.global, (b) ld.global.nc, (c) motor de cópia), voltas com erro 0
+  de 1                   20000 voltas: saídas erradas [0, 0, 0] ((a) ld.global, (b) ld.global.nc, (c) motor de cópia), voltas com erro 0
+  atravessando 2^31      5000 voltas: saídas erradas [0, 0, 0] ((a) ld.global, (b) ld.global.nc, (c) motor de cópia), voltas com erro 0
+  atravessando o zero    5000 voltas: saídas erradas [0, 0, 0] ((a) ld.global, (b) ld.global.nc, (c) motor de cópia), voltas com erro 0
+  soltura com t + 2^30 (t = 1000000): done antes da flag 999999, a espera segurou true; soltou em 6.6 µs (prazo 1 s)
+
+== Controles negativos (2.000 voltas cada; o conferidor tem de acusar dado velho)
+  N1 sem a espera da flag  saídas erradas [2000, 2000, 1938], voltas com erro 2000 (100.0%)
+  N2 flag antes do y       saídas erradas [1992, 1992, 1992], voltas com erro 1992 (99.6%)
+
+== Latência (20.000 voltas, só o leitor (a))
+  voltas com erro no leitor (a): aquecimento 0 de 1000, medida 0 de 20000
+  doorbell (flag gravada → done visto)     mediana   5.41  p90   5.70  p99   6.09  máx   520.70 µs
+  evento (lançar → cuEventSynchronize)     mediana   6.85  p90   7.15  p99   7.43  máx   423.10 µs
+  razão das medianas doorbell/evento: 0.79
+
+== Portão do A1.0
+  1+2 atributos, chamadas e correção: passa
+  3 controles negativos acusados:     passa
+  4 latência (≤ 20 µs e ≤ 1,5× evento): passa
+portão: PASSA

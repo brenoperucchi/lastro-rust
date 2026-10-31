@@ -1,0 +1,23 @@
+== Atributos do device 0
+  CAN_MAP_HOST_MEMORY 1, UNIFIED_ADDRESSING 1, CAN_USE_STREAM_MEM_OPS_V1 0, CAN_FLUSH_REMOTE_WRITES 0, HOST_NATIVE_ATOMIC_SUPPORTED 0
+
+== Correção (leitores (a), (b) e (c); nas voltas i % 4 == 0 o host para 20 µs antes de escrever)
+  de 1                   20000 voltas: saídas erradas [0, 0, 0] ((a) ld.global, (b) ld.global.nc, (c) motor de cópia), voltas com erro 0
+  atravessando 2^31      5000 voltas: saídas erradas [0, 0, 0] ((a) ld.global, (b) ld.global.nc, (c) motor de cópia), voltas com erro 0
+  atravessando o zero    5000 voltas: saídas erradas [0, 0, 0] ((a) ld.global, (b) ld.global.nc, (c) motor de cópia), voltas com erro 0
+  soltura com t + 2^30 (t = 1000000): done antes da flag 999999, a espera segurou true; soltou true em 5.9 µs
+
+== Controles negativos (2.000 voltas cada; o conferidor tem de acusar dado velho)
+  N1 sem a espera da flag  saídas erradas [2000, 2000, 1928], voltas com erro 2000 (100.0%)
+  N2 flag antes do y       saídas erradas [2000, 2000, 2000], voltas com erro 2000 (100.0%)
+
+== Latência (20.000 voltas, só o leitor (a))
+  doorbell (flag gravada → done visto)     mediana   5.49  p90   5.91  p99   8.40  máx  1279.96 µs
+  evento (lançar → cuEventSynchronize)     mediana   6.79  p90   7.15  p99   7.60  máx   347.45 µs
+  razão das medianas doorbell/evento: 0.81
+
+== Portão do A1.0
+  1+2 atributos, chamadas e correção: passa
+  3 controles negativos acusados:     passa
+  4 latência (≤ 20 µs e ≤ 1,5× evento): passa
+portão: PASSA

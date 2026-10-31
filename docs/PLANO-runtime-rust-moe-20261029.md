@@ -2081,6 +2081,34 @@ servidor e o cálculo numérico são possibilidades, e a margem no ponto de dive
 - Batch 1, contexto até ~1.100 posições, aquecimento só na conversa 3, uma sessão com carga de fundo.
 - A comparação com o Strata ficou fora deste escopo.
 
+## Decisão do Breno (31/10, 12:11): terminar o plano com o llama.cpp como base, e o Strata depois
+
+O plano segue até o fim com o llama.cpp como única base de comparação de velocidade. A comparação com o Strata volta
+depois, como etapa própria. O Strata continua como referência de código (regra de 29/10).
+
+**Por que a comparação com o Strata não cabe agora** (pesquisa de 31/10, sem executar nada; código do Strata em
+`origin/main` 46c152a1):
+- Nenhum modelo roda hoje nos dois motores sem mudança. O nosso aceita só `granitemoe` em BF16
+  (`rust/moe-rt/src/model.rs:37–38`, `rust/moe-rt/src/weights.rs:111–112`). O Strata aceita só `qwen4exp` e `qwen35moe`, sempre
+  quantizado em GGUF, e não lê F16 nem BF16 nas matrizes (`src/kernels/cuda/native_mmvq.cu:3443–3448`).
+- No `qwen35moe`, a geometria vem do GGUF (`include/strata/core/family_layout.hpp:31–94`), com estas exigências:
+  - cabeça 256, estado do SSM 128, conv 4 (`src/qwen35/q36_engine.cu:972`, `constexpr int HD = 256` em `:304`);
+  - camadas GDN, shared expert e `output.weight` separado;
+  - a chave `qwen35moe.nextn_predict_layers` (`include/strata/artifact/gguf_reader.hpp:645–664`). O MTP em si é opcional
+    (`q36_engine.cu:1031`).
+- **Candidato para quando voltarmos:** Groot-19B-A3B-261023 (`qwen35moe`, 19,4B no total, ~3B ativos, 128 experts, 40
+  camadas).
+  - O GGUF Q8_0 publicado (20,2 GB) tem as chaves e os tipos que o Strata exige, então deve rodar sem mudança. É leitura
+    do código, ninguém executou, e com 128 experts o roteador cai num caminho genérico nunca testado com esse número
+    (`q36_engine.cu:1799,2007`).
+  - No nosso lado o esforço é grande: suporte a `qwen35moe` (Gated DeltaNet só para decode, atenção com porta, Q/K norm,
+    RoPE parcial, shared expert, `lm_head` separado, carregador). Os experts empilhados têm o formato que o Granite já usa.
+  - Alternativa com tudo residente: o REAP-64 do Qwen3.6 (10,9B, só BF16), que exige converter para GGUF com a chave
+    `nextn`.
+- **O mesmo modelo não basta para uma comparação justa.** O decode é limitado por memória, e Q8_0 (~1,06 byte por
+  parâmetro) contra BF16 (2 bytes) mede o formato, não o motor. Uma das pontas precisa de outro tipo de peso: Q8_0 no
+  nosso runtime ou BF16 no Strata, cada uma com esforço médio.
+
 ## A0 — teto da busca antecipada e desenho do motor sem parada por camada (31/10)
 
 Origem: consulta ask-8 (`.herdr/ask/strata-opencode-8/`). Os dois consultores convergiram na etapa 4 da ordem aprovada,
@@ -2521,7 +2549,11 @@ desenho do A1.** O protocolo `token` espera **menos** que o de hoje em todas as 
 ### A1 — critério de conclusão (proposto; revisto na rodada 51)
 
 - **Micro-teste do doorbell antes de qualquer outra peça:** o atributo do device, a latência da volta e a GPU lendo o `y`
-  novo depois da flag, com um padrão diferente a cada rodada.
+  novo depois da flag, com um padrão diferente a cada rodada. Feito no A1.0. O mesmo conferidor volta duas vezes (rev-2, rodada 54):
+  - no A1.2, com o kernel cutile que lê o `y` como quarto leitor;
+  - no A1.3, com o `y` escrito pelo `Pool` da CPU, e a condição "sem store não temporal no `y`, ou `sfence` antes da
+    flag".
+  Zero erros nos dois, com o N1 acusado.
 - **`trybuild`:** os casos falham pelo motivo esperado, e os gêmeos compilam.
 - **Controles negativos:**
   - os dois acusados em 20 de 20, e a versão certa bit a bit em 20 de 20;
@@ -2546,6 +2578,9 @@ desenho do A1.** O protocolo `token` espera **menos** que o de hoje em todas as 
 - **`TokenBarrier`:** acertos, cópias e experts na CPU iguais aos do simulador no protocolo `token` com barreira.
 - **Tempo:** o motor novo contra o `lfu_cpu` de hoje, mediana de 5 intercaladas, com a previsão gravada antes pelo
   simulador. O A2 saiu com a A0a, então não há linha de busca.
+  - **O llama.cpp como base** (decisão do Breno de 31/10, 12:15): a comparação de 31/10 se refaz com o motor novo, no
+    mesmo harness (`tools/llama-forcado`), nas mesmas 6 células, com as mesmas regras e as linhas do llama.cpp medidas de
+    novo na mesma sessão. O plano fecha com esse número.
   - A previsão do `token` é uma faixa, e não um ponto: vai da cobrança da rodada 51 (`moe_sim-rodada51.py`, a cópia
     correndo com a CPU da camada) à de agora, por exemplo 1,001–0,984 ms de espera por token no 1B e 1,955–1,937 ms no 3B
     a 50%. A faixa fica como previsão gravada antes (sugestão do rev-2 na rodada 52).
@@ -2579,3 +2614,85 @@ desenho do A1.** O protocolo `token` espera **menos** que o de hoje em todas as 
   custo são suficientes, ou a medida do A1 precisa de um controle próprio para essa parte?
 - A reabertura da busca antecipada com os ajustes que o motor novo consegue rodar (`lfu_cpu` com backlog 4 e 0, critério
   de aceitação gravado antes) fecha o achado 3 do rev-2?
+
+## A1 — implementação (a partir de 31/10)
+
+Ordem aprovada pelo Breno (31/10, 12:15), cada passo com revisão de nível 2:
+- A1.0, micro-teste do doorbell;
+- A1.1, o protocolo sem GPU (tipos por espaço de memória, `trait Backend`, backend falso com `proptest`, `loom`,
+  `trybuild` e mutantes);
+- A1.2, as peças na GPU (roteador e top-k, um lançamento que lê a tabela do token);
+- A1.3, o motor D1 (linha de serviço, cópias guardadas até o doorbell, encerramento, controles negativos na GPU, modo
+  com barreira igual ao simulador, modo de hoje bit a bit);
+- A1.4, a medida final contra o `lfu_cpu` de hoje e contra o llama.cpp.
+
+### A1.0 — micro-teste do doorbell (31/10; corrigido na rodada 54): o portão passa
+
+Material em `qual-runs/A1-DOORBELL-20261031/`:
+- `criterio.txt`, gravado antes de rodar, com a previsão;
+- `resultado.txt`, a execução que vale (o topo imprime o sha256 do binário e do fonte);
+- o histórico: `resultado-execucao1.txt` e `resultado-execucao2.txt`.
+
+Binário `rust/moe-rt/src/bin/a1-doorbell.rs`, API do driver direto, sem cutile. Tem 4 testes de unidade do conferidor
+(`cargo test --release --bin a1-doorbell`): a conclusão da soltura antes do prazo conta, vista depois do prazo ou nunca
+reprova e termina, e o GEQ cíclico.
+
+**Montagem.** A linha principal enfileira na stream; a de serviço só toca memória host mapeada, como na D1. A cada volta
+`i`, a GPU escreve `seq = i`, espera `flag >= i` (GEQ cíclico), três leitores copiam o `y` (1.536 palavras, a largura do
+3B) e a GPU escreve `done = i`:
+- (a) um kernel PTX com `ld.global`;
+- (b) um kernel PTX com `ld.global.nc`;
+- (c) uma cópia pelo motor de cópia.
+O host espera o `seq`, escreve um padrão novo no `y`, grava a flag com `Release`, espera o `done` e confere as três
+saídas. Em uma volta a cada quatro, o host para 20 µs antes de escrever, e a GPU fica parada na espera. Essas voltas são
+um controle positivo embutido: uma espera que não segurasse daria erro nelas. As voltas que cruzam 2^31 e o zero também
+têm a parada, então um GEQ sem sinal ou sem ciclo daria erro garantido (rev-2, rodada 54).
+
+**Resultado (`resultado.txt`, terceira execução):**
+- **Atributos:** `CAN_MAP_HOST_MEMORY` 1 e `UNIFIED_ADDRESSING` 1. O atributo antigo `CAN_USE_STREAM_MEM_OPS_V1` dá 0,
+  mas ele é da API v1, que está obsoleta; as chamadas `_v2` funcionaram em todas as voltas.
+- **Correção:** zero saídas erradas nos três leitores em 31.000 voltas: as 1.000 de aquecimento, as 20.000 a partir de
+  1, e 5.000 atravessando 2^31 e 5.000 atravessando o zero. O leitor (a) também ficou sem erro nas 21.000 voltas da
+  latência. O `ld.global.nc` lê o dado novo, como previsto.
+- **Soltura:** com a GPU esperando `t + 1`, o `done` estava em `t − 1` antes da flag (a espera segurou), e a gravação de
+  `t + 2^30` a soltou em 6,6 µs, dentro do prazo de 1 s. Se o prazo vencer, o binário sai com falha, sem o
+  `cuStreamSynchronize`, que esperaria para sempre.
+- **Controles negativos:** o conferidor acusou dado velho em 100% das 2.000 voltas sem a espera da flag (N1) e em 99,6%
+  com a flag gravada antes do `y` (N2).
+- **Latência** (20.000 voltas, só o leitor (a)):
+
+  | | mediana | p90 | p99 | máximo |
+  |---|---|---|---|---|
+  | doorbell (flag gravada → `done` visto) | 5,41 µs | 5,70 µs | 6,09 µs | 521 µs |
+  | evento (lançar → `cuEventSynchronize`) | 6,85 µs | 7,15 µs | 7,43 µs | 423 µs |
+
+  A razão das medianas é 0,79, dentro da régua (até 20 µs e até 1,5× o evento). O doorbell ficou dentro da previsão (3 a
+  8 µs); o evento, não (previsto de 8 a 15 µs, saiu 6,85 µs), o que não muda o portão, cuja régua é relativa. Os máximos
+  são voltas isoladas, provavelmente preempção do host; a cauda entra na medida de tempo do A1.4.
+
+**Histórico das execuções:**
+- A primeira (`resultado-execucao1.txt`) deu "não passa" por um erro do teste: a conferência da soltura comparava o
+  `done` com `t`, mas o `reset(t)` o deixa em `t − 1`, e "segurou" dava falso sempre. Os outros itens do portão passavam
+  (zero erros, controles em 100%, mediana de 5,49 µs).
+- A segunda (`resultado-execucao2.txt`), com a conferência corrigida, passou. A rodada 54 achou duas falhas no
+  conferidor, corrigidas para a terceira:
+  - o prazo de 1 s da soltura não entrava no portão, e uma soltura que nunca viesse travaria no `cuStreamSynchronize`
+    (achado do rev-1);
+  - o aquecimento e as voltas da latência não eram conferidos, e o critério pede 31.000 voltas (os dois revisores).
+- Entre as execuções, os números fora do portão variaram: o N1 (c) foi 1.921, 1.928 e 1.938 de 2.000; o N2, 2.000,
+  2.000 e 1.992 (os dois controles dependem do tempo, e em 8 voltas a GPU não leu dentro da janela de 20 µs); o p99 do
+  doorbell, 6,09, 8,40 e 6,09 µs; o máximo, 38,5, 1.280 e 521 µs. Os dois revisores aprovaram na rodada 55.
+
+**Limites, e onde cada um volta a ser conferido:**
+- **O cutile lendo memória mapeada.** O teste de logits do A1.2 pega um `y` sempre velho, mas não uma leitura velha que
+  só aparece numa janela de tempo. Por isso o A1.2 repete este conferidor com um quarto leitor, o kernel cutile que vai
+  ler o `y` (padrão novo por volta, parada em uma de cada quatro, N1 acusado) (rev-2, rodada 54).
+- **O `y` escrito por outras linhas.** Aqui uma linha só escreve o `y` e grava a flag. No A1.3, o `y` vem do `Pool` da
+  CPU (`rust/moe-rt/src/cpu.rs:96`), escrito por outras linhas, e a de serviço grava a flag depois. No x86, a garantia
+  passa adiante pela sincronização do `pool.run` mais o `Release`, desde que nenhuma escrita do `y` use store não
+  temporal, que o `Release` não ordena. Hoje não há nenhum em `rust/moe-rt/src`. A condição fica escrita: sem store não
+  temporal no `y`, ou um `sfence` antes da flag. O A1.3 repete este conferidor com o `y` escrito pelo `Pool` (rev-2,
+  rodada 54).
+- O lado GPU → host só é conferido pelas saídas lidas depois do `done`, sem controle negativo próprio (a v2 não aceita
+  `NO_MEMORY_BARRIER`).
+- Uma GPU, sem disputa de CPU.
