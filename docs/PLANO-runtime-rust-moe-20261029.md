@@ -2709,6 +2709,9 @@ repositório e um space próprios: `/home/brenoperucchi/Devs/lastro-rust`, space
   cuda-rust (`../../../GitHub/cuda-rust`) seguem valendo.
 - Os registros das `qual-runs` ficam como foram gravados, com os caminhos absolutos antigos, porque os critérios têm sha
   citados nos resultados. Para executar de novo, troque `/home/brenoperucchi/Devs/strata-opencode` por este repositório.
-- As rodadas de revisão e de consulta citadas acima (`.herdr/review/strata-opencode-N`, `.herdr/ask/strata-opencode-N`)
-  continuam em `/home/brenoperucchi/Devs/strata-opencode/.herdr/`. As novas são `lastro-rust-N`, neste repositório.
+- As rodadas de revisão e de consulta do runtime citadas acima (revisões `strata-opencode-25` a `55`, consultas `5` a `8`)
+  foram copiadas para `.herdr/` deste repositório, fora do git, então os caminhos relativos do plano resolvem aqui; o
+  original continua em `/home/brenoperucchi/Devs/strata-opencode/.herdr/`. As novas são `lastro-rust-N`.
+- O plano que deu origem ao runtime (o runtime híbrido para o Strata, 24/10) está em
+  `docs/historico/PLANO-runtime-hybrid-strata-2026-10-24.md`.
 - Ficou no strata-opencode a parte do OpenCode e todo o material da Fase 0A.

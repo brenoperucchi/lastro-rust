@@ -12,7 +12,9 @@ strata-opencode e mudou para cá em 31/10/2026 (seção "Mudança para o lastro-
 - Simulador e referências: `tools/moe_sim.py`, `tools/ref_*.py`, `tools/llama-forcado/`; testes em `tests/`.
 - Medidas: `qual-runs/<MARCO>-<data>/`, cada uma com `criterio.txt` gravado antes de rodar. Os registros antigos citam
   `/home/brenoperucchi/Devs/strata-opencode`; para executar de novo, troque pelo caminho deste repositório.
-- Rodadas de revisão até a 55: `/home/brenoperucchi/Devs/strata-opencode/.herdr/review/`. As novas: `lastro-rust-N`.
+- Rodadas de revisão 25 a 55 e consultas 5 a 8 do runtime: copiadas em `.herdr/` (fora do git; o original fica em
+  `/home/brenoperucchi/Devs/strata-opencode/.herdr/`). As novas: `lastro-rust-N`. Plano de origem (24/10):
+  `docs/historico/PLANO-runtime-hybrid-strata-2026-10-24.md`.
 - Página no Claude Docs: https://claude.ai/artifact/MNTT17taf1C7RC4VeHD4mt (etapa 4 e riscos atualizados a cada passo).
 
 ## Estado (31/10, 17h)
