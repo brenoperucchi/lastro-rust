@@ -1,0 +1,11 @@
+Sat Oct 31 03:44:32 PM -03 2026
+NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  615.78.08  Release Build  (root@omarchy)  
+ 15:44:32 up 28 min,  1 user,  load average: 3.01, 2.66, 2.65
+index, name, pci.bus_id, pcie.link.gen.max, pcie.link.width.max, memory.used [MiB]
+0, NVIDIA GeForce RTX 3080 Ti, 00000000:01:00.0, 4, 16, 2810 MiB
+1, NVIDIA GeForce RTX 4090, 00000000:02:00.0, 4, 16, 2 MiB
+    PID %CPU COMMAND
+  60662 89.7 localsearch-3
+ 225729 36.3 journalctl
+  22312  6.9 chrome
+   6560  5.3 quickshell

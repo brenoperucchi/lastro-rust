@@ -1,0 +1,22 @@
+PCIe x8 — o nosso motor de hoje com a 4090 em x8 (critério gravado antes de rodar, 31/10)
+
+Origem: pedido do Breno (análise x8/x8 contra x16/x4). Depois do reboot com a 3080 Ti, a 4090 está no PCIE2 em
+Gen4 x8 (02:00.0); a 3080 Ti, no PCIE1 em x8, com o desktop. Banda H2D pinned medida: 4090 12,1–12,6 GB/s (x16 em 30/10:
+19,2–21,8); 3080 Ti 12,0–12,6. Driver 615.78 (em 30/10: 610.57), um fator a mais na comparação.
+
+O que roda: o mesmo binário de 30/10 (qual-runs/LLAMACPP-COMPARA-20261030/bin/m2a-cache, sha 028f59d0…), os mesmos
+argumentos do nosso() do rodar.sh (traços TRACOS-20261029, --budgets 0.1,0.25,0.5, --policies resident,lru_cpu,lfu_cpu,
+--warmup 3), 1B e 3B, com taskset -c 0-15 e CUDA_VISIBLE_DEVICES fixando a 4090 pelo UUID. Duas repetições de cada,
+intercaladas (1b, 3b, 1b, 3b). A 3080 Ti segue com o desktop (não é parada).
+
+Comparação: tok/s médio de cada célula contra as três repetições de 30/10 (nucleo-*-nosso-{1,2,3}.txt).
+- resident é o controle: não copia expert por token; a diferença nele mede driver + máquina, não o PCIe.
+- lfu_cpu copia 1,5–2,3 experts por token em segundo plano (3,15 MB no 1B): ~5–7 MB por token, coisa de 0,3–0,6 ms de
+  cópia em x8 contra 0,2–0,4 ms em x16, sobreposta ao cálculo.
+- lru_cpu copia 24–43 experts por token: ~75–135 MB por token no 1B, onde a banda deve pesar.
+
+Previsão: resident dentro de ±3% de 30/10; lfu_cpu dentro de ±5% (descontado o que o resident mudar); lru_cpu mais
+lento em 10% e 25%, até ~1,5× nas células de mais cópia, e menos em 50%. Logits dentro da tolerância em todas.
+
+Limites: uma GPU só (o nosso motor não divide entre duas); não mede x16/x4 (exigiria mover placas). A estimativa de
+x16 contra x8 para o motor D1 vem do simulador, à parte, e é estimativa, não medida.

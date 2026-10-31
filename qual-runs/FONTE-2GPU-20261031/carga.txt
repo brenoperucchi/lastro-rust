@@ -1,0 +1,13 @@
+início 16:49:48; antes: {'power1': 192.0, 'power2': 158.0, 'curr2': 13.0, 'in1': 12.031, 'temp1': 48.25} {'g3080_w': 38.97, 'g3080_c': 45.0, 'g3080_mhz': 495.0, 'g4090_w': 28.08, 'g4090_c': 48.0, 'g4090_mhz': 210.0}
+16:49:48 etapa 4090 (pid 704544)
+16:51:48 etapa +3080 Ti (pid 717409)
+16:53:48 etapa +CPU (pid 729796)
+pid 704544: 75850 gemm em 360.0 s: 231.6 TFLOPS
+pid 717409: 27910 gemm em 240.1 s: 127.8 TFLOPS
+fim 16:55:48; depois: {'power1': 320.0, 'power2': 296.0, 'curr2': 25.0, 'in1': 12.031, 'temp1': 56.5}
+
+picos por etapa (in1: mínimo)
+  4090      total 630 W | +12V 602 W 52.8 A min 12.000 V | VRM 49.2 °C | 4090 356 W 68 °C | 3080 Ti 114 W 48 °C
+  +3080 Ti  total 834 W | +12V 790 W 65.5 A min 12.015 V | VRM 53.0 °C | 4090 355 W 66 °C | 3080 Ti 257 W 57 °C
+  +CPU      total 1000 W | +12V 968 W 81.2 A min 12.000 V | VRM 56.5 °C | 4090 371 W 68 °C | 3080 Ti 259 W 57 °C
+exit 0

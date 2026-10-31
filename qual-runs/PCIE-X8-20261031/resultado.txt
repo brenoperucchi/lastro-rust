@@ -1,0 +1,32 @@
+PCIe x8 — resultado (31/10, 16:08). Critério e previsão em criterio.txt, gravados antes de rodar.
+
+FATOS MEDIDOS (driver 615.78; 4090 em 02:00.0 e 3080 Ti em 01:00.0, as duas Gen4 x8; P2P "NS" no topo -p2p r)
+- banda2.txt (pinned, mediana de 200): H2D 12,4–12,8 GB/s em cada GPU (x16 em 30/10, a 4090: 19–22); D2H ~13,1;
+  as duas juntas 12,4 cada, soma 24,5–25,0 GB/s; GPU0 -> GPU1 sem P2P (pelo host) 6,0 GB/s e 9,5 µs em 16 KiB.
+- Motor (m2a-cache 028f59d0, mesmos traços e argumentos de 30/10), tok/s médio x8 (2 rodadas) contra x16 (3 rodadas):
+  1b: resident +1,0%; lfu_cpu +1,8 / +1,6 / −1,0%; lru_cpu −2,1 / −6,7 / −5,8%   (10 / 25 / 50%)
+  3b: resident +1,6%; lfu_cpu +3,1 / +3,3 / +1,6%; lru_cpu +1,4 / −0,3 / −4,0%
+  Logits dentro da tolerância em todas. Banda efetiva de cópia com a CPU calculando (lru_cpu 10%): 12,2 GB/s nos dois
+  modelos (0,258 ms por 3,15 MB; 0,388 ms por 4,72 MB), contra 14,1 calibrado em x16. Link da 4090 em Gen4 x8 em toda
+  amostra com carga (link-*.log).
+- Previsão: resident ±3% (acertou, +1,0/+1,6%); lfu_cpu ±5% (acertou); lru_cpu "até ~1,5× mais lento" (errou: −7% no pior).
+  O erro veio da banda efetiva: em x16 a cópia já estava limitada a 14,1 GB/s pela CPU ocupada, e não aos 20 da banda crua.
+
+LIMITES TEÓRICOS (por direção): Gen4 x16 ≈ 31,5 GB/s; x8 ≈ 15,75; x4 ≈ 7,9. PCIE3 (x4) é do chipset, que sobe à CPU pelo
+DMI 4.0 x8 (≈ 15,75 GB/s), dividido com o NVMe WD SN350, a rede e o USB.
+
+ESTIMATIVAS (simulador 802ad206, sim_largura.txt; banda x4 = metade da efetiva de x8, sem medida)
+- lfu_cpu (hoje) e protocolo token (D1): x16 -> x8 muda ≤ 0,4% o ms/token; x8 -> x4, +1,3 a +2,6%.
+- lru_cpu: o simulador dá o x8 igual ou mais rápido que o x16 (menos cópias, menos disputa), mas a medida no 1B deu −2 a −7%:
+  o modelo de custo não captura bem o lru_cpu com banda menor. Não decide nada (o lru_cpu não é o padrão).
+- x16/x4 para o nosso motor de hoje: a 4090 volta aos números de x16 (0–2% no lfu_cpu); a 3080 Ti não é usada.
+- Duas GPUs: o runtime não divide entre GPUs (adiado no plano). Se dividir por camadas, só trafegam ativações de KB
+  (~10 µs por salto pelo host); o ganho viria da memória a mais para experts. GPU->GPU pelo host (6 GB/s) é mais lento que a
+  RAM (12,4), então a 3080 Ti não serve de segundo nível do cache da 4090. Em x16/x4 a 3080 Ti teria ≤ ~6–7 GB/s no chipset.
+- Busca antecipada: menos banda encarece o tráfego; o portão da A0a, que falhou em x16 por o_layer e CPU disputada, não reabre.
+
+NÃO MEDIDO: TTFT e p95 entre tokens (a ferramenta reproduz traços; dá média e mediana); x16/x4 real (mover placas).
+CONFUSORES: driver 610.57 -> 615.78; a CPU bateu 100 °C (TjMax) durante a medida e o localsearch-3 usava ~100% de um núcleo.
+
+CONCLUSÃO: ficar em x8/x8. Para o motor de hoje, 0–2% no lfu_cpu; para um uso futuro das duas GPUs, x8/x8 dá banda igual
+às duas e soma 25 GB/s, contra a 3080 Ti em x4 no chipset.

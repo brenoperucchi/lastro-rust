@@ -1,0 +1,13 @@
+Fonte HX1500i com as duas GPUs — teste de carga (31/10, 16:49–16:55). Roteiro carga.py, amostras a cada 0,5 s em amostras.csv.
+3080 Ti limitada a 300 W (gpu-power-limit.service); 4090 no padrão de 500 W. Nenhum limite de parada foi atingido.
+
+Picos por etapa (hwmon corsairpsu + nvidia-smi):
+  4090 sozinha       total  630 W | +12 V 602 W  52,8 A, mínimo 12,000 V | VRM 49,2 °C | 4090 356 W | 3080 Ti 114 W
+  + 3080 Ti          total  834 W | +12 V 790 W  65,5 A, mínimo 12,015 V | VRM 53,0 °C | 4090 355 W | 3080 Ti 257 W
+  + CPU (28 workers) total 1000 W | +12 V 968 W  81,2 A, mínimo 12,000 V | VRM 56,5 °C | 4090 371 W | 3080 Ti 259 W
+Regime (mediana dos 2/3 finais de cada etapa): 512 / 737 / 924 W.
+
+Limite do teste: o HGEMM levou a 4090 a ~355–371 W, não aos 500 W do limite (pico histórico dela: 515,6 W em 19/10), e a
+3080 Ti a ~259 W, abaixo dos 300 W. Pior caso estimado somando o que faltou: 1000 + (515 − 371) + (300 − 259) ≈ 1185 W
+(79% de 1500 W) e ~81 + 15 ≈ 96 A no +12 V (77% de 125 A). Amostragem de 0,5 s: picos de milissegundos não aparecem.
+Conclusão: com a 3080 Ti em 300 W há folga; a 4090 não precisa de limite.

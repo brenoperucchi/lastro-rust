@@ -1,0 +1,48 @@
+device 0: NVIDIA GeForce RTX 4090, pci 02:00
+device 1: NVIDIA GeForce RTX 3080 Ti, pci 01:00
+cudaDeviceCanAccessPeer 0->1 0, 1->0 0
+16 KiB:
+  H2D device 0 sozinha                  0.0054 ms     3.01 GB/s
+  H2D device 1 sozinha                  0.0061 ms     2.68 GB/s
+  D2H device 0 sozinha                  0.0044 ms     3.73 GB/s
+  D2H device 1 sozinha                  0.0049 ms     3.33 GB/s
+  H2D device 0 com a 1 junto            0.0048 ms     3.41 GB/s
+  H2D device 1 com a 0 junto            0.0055 ms     2.99 GB/s
+  soma das duas                         6.40 GB/s
+  device 0 -> device 1 (peer, via host)    0.0095 ms     1.72 GB/s
+1024 KiB:
+  H2D device 0 sozinha                  0.0875 ms    11.98 GB/s
+  H2D device 1 sozinha                  0.0883 ms    11.88 GB/s
+  D2H device 0 sozinha                  0.0832 ms    12.60 GB/s
+  D2H device 1 sozinha                  0.0836 ms    12.54 GB/s
+  H2D device 0 com a 1 junto            0.0891 ms    11.77 GB/s
+  H2D device 1 com a 0 junto            0.0894 ms    11.73 GB/s
+  soma das duas                        23.50 GB/s
+  device 0 -> device 1 (peer, via host)    0.1740 ms     6.03 GB/s
+3072 KiB:
+  H2D device 0 sozinha                  0.2535 ms    12.41 GB/s
+  H2D device 1 sozinha                  0.2527 ms    12.45 GB/s
+  D2H device 0 sozinha                  0.2418 ms    13.01 GB/s
+  D2H device 1 sozinha                  0.2419 ms    13.00 GB/s
+  H2D device 0 com a 1 junto            0.2563 ms    12.27 GB/s
+  H2D device 1 com a 0 junto            0.2567 ms    12.25 GB/s
+  soma das duas                        24.53 GB/s
+  device 0 -> device 1 (peer, via host)    0.5245 ms     6.00 GB/s
+4608 KiB:
+  H2D device 0 sozinha                  0.3758 ms    12.56 GB/s
+  H2D device 1 sozinha                  0.3754 ms    12.57 GB/s
+  D2H device 0 sozinha                  0.3608 ms    13.08 GB/s
+  D2H device 1 sozinha                  0.3615 ms    13.05 GB/s
+  H2D device 0 com a 1 junto            0.3812 ms    12.38 GB/s
+  H2D device 1 com a 0 junto            0.3814 ms    12.37 GB/s
+  soma das duas                        24.75 GB/s
+  device 0 -> device 1 (peer, via host)    0.7897 ms     5.98 GB/s
+65536 KiB:
+  H2D device 0 sozinha                  5.2637 ms    12.75 GB/s
+  H2D device 1 sozinha                  5.2632 ms    12.75 GB/s
+  D2H device 0 sozinha                  5.0813 ms    13.21 GB/s
+  D2H device 1 sozinha                  5.0823 ms    13.20 GB/s
+  H2D device 0 com a 1 junto            5.3679 ms    12.50 GB/s
+  H2D device 1 com a 0 junto            5.3671 ms    12.50 GB/s
+  soma das duas                        25.01 GB/s
+  device 0 -> device 1 (peer, via host)   11.2056 ms     5.99 GB/s
