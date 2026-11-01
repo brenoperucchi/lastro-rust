@@ -467,6 +467,12 @@ impl CudaBackend {
         self.set_input(s, &x)
     }
 
+    /// Só para o teste de regressão do caminho de erro de `read_logits`.
+    #[doc(hidden)]
+    pub fn injeta_falha_na_copia_dos_logits(on: bool) {
+        crate::cuda_dense::FALHA_NA_COPIA_DOS_LOGITS.store(on, std::sync::atomic::Ordering::SeqCst);
+    }
+
     /// Os logits do token, depois de `run_token` (que já sincronizou a stream de cálculo).
     pub fn read_logits(&self, s: &CudaStream) -> Result<Vec<f32>, CudaError> {
         ck!(sys::cuStreamSynchronize(s.raw()));

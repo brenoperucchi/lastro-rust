@@ -77,6 +77,9 @@ fn dtod(dst: &Tensor<f32>, off: usize, src: &Tensor<f32>, n: usize, s: &Arc<Stre
         .map_err(fail_k(raw))
 }
 
+/// Só para o teste de regressão: faz `read_logits` falhar depois de trocar o tensor de logits.
+pub(crate) static FALHA_NA_COPIA_DOS_LOGITS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 impl Dense {
     pub fn new(m: &HostModel, s: &Arc<Stream>, max_len: usize) -> Result<Self, CudaError> {
         let c = m.cfg.clone();
@@ -210,9 +213,13 @@ impl Dense {
 
     /// Os logits do último token, depois de a stream terminar (quem chama sincronizou).
     pub fn read_logits(&mut self, s: &Arc<Stream>) -> Result<Vec<f32>, CudaError> {
+        let falha = FALHA_NA_COPIA_DOS_LOGITS.load(std::sync::atomic::Ordering::SeqCst);
         let pad = self.cfg.vocab.next_multiple_of(GEMV_BM);
         let l = std::mem::replace(&mut self.logits, zeros(&[pad], s)?);
         let l = Arc::new(l);
+        if falha {
+            return Err(CudaError::Config("falha injetada na cópia dos logits"));
+        }
         let mut v = api::copy_device_to_host_vec(&l).sync_on(s).map_err(kernel_err)?;
         self.logits = Arc::try_unwrap(l).map_err(|_| CudaError::Config("logits ainda referenciados"))?;
         v.truncate(self.cfg.vocab);

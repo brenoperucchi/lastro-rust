@@ -20,6 +20,12 @@ fn erro_rel(got: &[f32], want: &[f32]) -> f32 {
 
 /// Roda `tokens` pelo motor e pela CPU; devolve o pior erro relativo dos logits e os contadores até o fim.
 fn roda(tokens: &[usize], slots: usize, admit: AdmitMode) -> Option<(f32, Stats)> {
+    roda_com_falha(tokens, slots, admit, None)
+}
+
+/// `falha_em`: no token com esse índice a cópia dos logits falha (injetada); os logits desse token se perdem, mas os seguintes
+/// têm de voltar a bater com a CPU.
+fn roda_com_falha(tokens: &[usize], slots: usize, admit: AdmitMode, falha_em: Option<usize>) -> Option<(f32, Stats)> {
     let _trava = GPU.lock().unwrap_or_else(|e| e.into_inner());
     let device = match cuda_core::Device::new(0) {
         Ok(d) => d,
@@ -57,6 +63,13 @@ fn roda(tokens: &[usize], slots: usize, admit: AdmitMode) -> Option<(f32, Stats)
         let p = eng.next_published().unwrap();
         stats = p.stats().clone();
         eng.run_token(p).unwrap();
+        if falha_em == Some(i) {
+            CudaBackend::injeta_falha_na_copia_dos_logits(true);
+            let r = b.read_logits(&compute);
+            CudaBackend::injeta_falha_na_copia_dos_logits(false);
+            assert!(r.is_err(), "a falha injetada devia voltar como erro");
+            continue;
+        }
         let got = b.read_logits(&compute).unwrap();
         let err = erro_rel(&got, &want[i]);
         pior = pior.max(err);
@@ -80,4 +93,12 @@ fn modelo_inteiro_pelo_motor_bate_com_a_cpu_a_1e4() {
             assert!(stats.hits > 0, "o teste precisa exercitar a GPU: {stats:?}");
         }
     }
+}
+
+/// Regressão: um erro na cópia dos logits não pode deixar o estado com um tensor de logits de forma errada (antes era de 1
+/// elemento); os tokens seguintes voltam a bater com a CPU a 1e-4.
+#[test]
+fn erro_na_copia_dos_logits_nao_estraga_os_tokens_seguintes() {
+    let Some((pior, _)) = roda_com_falha(&TOKENS[..6], 5, AdmitMode::TokenBarrier, Some(2)) else { return };
+    eprintln!("depois da falha injetada: pior erro relativo {pior:e}");
 }
