@@ -1,0 +1,17 @@
+sha256 do binário: b6c80b4eb0cdaa4512687142523717e2c2e603d44b7fccd6e5f6dba1a3235fe2
+sha256 do fonte: 1eaad587b846a4e63477c0d71fe00524e876eb0450fe2d6d6fffa66831448783
+== Correção (kernel cutile como leitor; nas voltas i % 4 == 0 o host para 20 µs antes de escrever)
+  voltas de compilação (JIT)   10 voltas: saídas erradas 0
+  aquecimento, de 1      1000 voltas: saídas erradas 0
+  de 1                   20000 voltas: saídas erradas 0
+  atravessando 2^31      5000 voltas: saídas erradas 0
+  atravessando o zero    5000 voltas: saídas erradas 0
+
+== Controles negativos (2.000 voltas cada; o conferidor tem de acusar dado velho)
+  N1 sem a espera da flag  saídas erradas 1993 de 2000 (99.7%)
+  N2 flag antes do y       saídas erradas 2000 de 2000 (100.0%)
+
+== Portão do A1.2b (quarto leitor)
+  2 correção:                  passa
+  3 controles negativos:       passa
+portão: PASSA

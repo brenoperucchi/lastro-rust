@@ -54,6 +54,8 @@ pub struct LayerView<'t> {
     layer: usize,
     keys: Vec<u32>,
     misses: Vec<u32>,
+    /// Os bits `f32` dos pesos do softmax, na ordem de `keys`.
+    w: Vec<u32>,
     x: Vec<u32>,
     io: Arc<Mapped<LayerIo>>,
     flag: Arc<Mapped<AtomicU32>>,
@@ -77,6 +79,11 @@ impl<'t> LayerView<'t> {
     /// As chaves fora da tabela do token, que vão à CPU, na ordem do top-k.
     pub fn cpu_keys(&self) -> Vec<u32> {
         self.keys.iter().copied().filter(|&k| self.epoch.lookup(k).is_none()).collect()
+    }
+
+    /// Os pesos (bits `f32`) das chaves de [`cpu_keys`](Self::cpu_keys), na mesma ordem.
+    pub fn cpu_weights(&self) -> Vec<u32> {
+        self.keys.iter().zip(&self.w).filter(|(&k, _)| self.epoch.lookup(k).is_none()).map(|(_, &w)| w).collect()
     }
 }
 
@@ -246,11 +253,12 @@ impl<B: Backend> Service<B> {
     }
 
     /// Espera `seq[l] >= t` e lê ids e `x` (por [`read_layer`]), consultando o cancelamento.
-    fn wait_layer(&self, l: usize, t: u32) -> R<(Vec<u32>, Vec<u32>), B> {
+    fn wait_layer(&self, l: usize, t: u32) -> R<(Vec<u32>, Vec<u32>, Vec<u32>), B> {
         let relaxed = self.cfg.is(Mutant::SeqRelaxed);
         loop {
-            if let Some(r) = read_layer(&self.sh.seq[l], &self.sh.io[l], t, relaxed) {
-                return Ok(r);
+            if let Some((ids, x)) = read_layer(&self.sh.seq[l], &self.sh.io[l], t, relaxed) {
+                // Os pesos vêm da mesma publicação: lidos depois do `Acquire` de `seq`, como ids e `x`.
+                return Ok((ids, LayerIo::load(&self.sh.io[l].w), x));
             }
             if self.sh.cancel.load(Ordering::Acquire) {
                 return Err(Error::Cancelled);
@@ -350,7 +358,7 @@ impl<B: Backend> Service<B> {
     /// Espera `seq[l] >= t`, solta as cópias guardadas da camada anterior e lê ids e `x` publicados pela GPU.
     pub fn serve_layer<'t>(&mut self, epoch: &'t TokenEpoch, l: usize) -> R<LayerView<'t>, B> {
         let t = epoch.t;
-        let (ids, x) = self.wait_layer(l, t)?;
+        let (ids, w, x) = self.wait_layer(l, t)?;
         if let Some(k) = release_layer(l, self.cfg.is(Mutant::HeldOneLayerEarly)) {
             self.release_held(k, true)?;
         }
@@ -377,7 +385,7 @@ impl<B: Backend> Service<B> {
             }
         }
         let flag = self.sh.flag[l].clone();
-        Ok(LayerView { epoch, layer: l, keys, misses, x, io, flag, flag_first: self.cfg.is(Mutant::FlagBeforeY) })
+        Ok(LayerView { epoch, layer: l, keys, misses, w, x, io, flag, flag_first: self.cfg.is(Mutant::FlagBeforeY) })
     }
 
     pub fn pin_layer(&self, served: &Served<'_>) -> Pins {
@@ -601,7 +609,7 @@ fn run<B: Backend, C: HostExperts>(svc: &mut Service<B>, cpu: &mut C) -> R<(), B
         for l in 0..layers {
             let view = svc.serve_layer(&epoch, l)?;
             let mut y = vec![0u32; width];
-            cpu.compute(l, &view.cpu_keys(), view.x(), &mut y).map_err(|e| Error::Cpu(format!("{e:?}")))?;
+            cpu.compute(l, &view.cpu_keys(), &view.cpu_weights(), view.x(), &mut y).map_err(|e| Error::Cpu(format!("{e:?}")))?;
             let served = answer(view, &y);
             let pins = svc.pin_layer(&served);
             for &key in served.misses() {

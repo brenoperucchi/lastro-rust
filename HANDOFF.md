@@ -21,7 +21,9 @@ strata-opencode e mudou para cá em 31/10/2026 (seção "Mudança para o lastro-
 
 - Feitos e aprovados: M0 a M2, B0, C, comparação com o llama.cpp, A0 (A0a/A0b/A0c) e A1.0 (doorbell; commit ff639fd).
 - A1.1 (protocolo sem GPU) aprovado pelos dois revisores na rodada `lastro-rust-6`. Estado em
-  `rust/moe-rt/src/motor/ESTADO-A1.1.md`. **Próximo: A1.2.**
+  `rust/moe-rt/src/motor/ESTADO-A1.1.md`.
+- A1.2 (peças na GPU) aprovado pelos dois revisores (checkpoint nas rodadas 7 e 8, final na rodada 12). Estado em
+  `rust/moe-rt/src/motor/ESTADO-A1.2.md`. **Próximo: A1.3 (motor D1 completo com o modelo inteiro).**
 - Depois: A1.2 (peças de GPU), A1.3 (motor D1), A1.4 (medida final contra lfu_cpu e llama.cpp, mesmas 6 células; a
   janela longa só com o aval do Breno). O plano termina no A1.4.
 - Fora do plano, feitos em 31/10 (commit a4faca6): `qual-runs/PCIE-X8-20261031/` (análise x8/x8 contra x16/x4: ficar

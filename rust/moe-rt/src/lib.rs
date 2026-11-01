@@ -8,12 +8,16 @@
 pub mod block;
 pub mod cache;
 pub mod cpu;
+#[cfg(not(motor_loom))]
+pub mod cuda_backend;
 pub mod gpu;
 pub mod gpu_model;
+pub mod hits;
 pub mod model;
 pub mod motor;
 pub mod npy;
 pub mod pool;
+pub mod route;
 pub mod weights;
 
 /// Os testes de unidade que usam a GPU rodam em threads do mesmo processo; os dois testes de portão do núcleo fecham uma

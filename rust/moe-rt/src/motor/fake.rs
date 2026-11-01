@@ -170,6 +170,10 @@ fn step(st: &mut State, cfg: &FakeCfg, q: usize) -> bool {
             for (a, &e) in io.ids.iter().zip(ids) {
                 a.store(e, Ordering::Relaxed);
             }
+            // Pesos do softmax: o backend falso publica pesos iguais (o motor ainda não os usa; entram com o A1.3).
+            for a in io.w.iter() {
+                a.store((1.0f32 / io.w.len() as f32).to_bits(), Ordering::Relaxed);
+            }
             for (j, a) in io.x.iter().enumerate() {
                 a.store(x_value(tok, *layer, j), Ordering::Relaxed);
             }
@@ -553,7 +557,7 @@ pub struct FakeCpu {
 impl HostExperts for FakeCpu {
     type Error = String;
 
-    fn compute(&mut self, layer: usize, keys: &[u32], x: &[u32], y: &mut [u32]) -> Result<(), String> {
+    fn compute(&mut self, layer: usize, keys: &[u32], _weights: &[u32], x: &[u32], y: &mut [u32]) -> Result<(), String> {
         let c = self.calls;
         self.calls += 1;
         if self.panic_at == Some(c) {

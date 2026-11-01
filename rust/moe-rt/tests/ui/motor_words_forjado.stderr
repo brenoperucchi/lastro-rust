@@ -1,0 +1,11 @@
+error[E0423]: cannot initialize a tuple struct which contains private fields
+ --> tests/ui/motor_words_forjado.rs:7:14
+  |
+7 |     let _w = Words(std::ptr::null::<AtomicU32>());
+  |              ^^^^^
+  |
+note: constructor is not visible here due to private fields
+ --> src/motor/backend.rs
+  |
+  | pub struct Words(Repr);
+  |                  ^^^^ private field

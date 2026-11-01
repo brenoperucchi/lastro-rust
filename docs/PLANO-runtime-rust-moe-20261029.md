@@ -2818,6 +2818,89 @@ ramos reprova o teste. Fora do `loom`: a corrida entre o valor de soltura do `sh
 - Dois tipos chamados `Victim` e `Pins` agora existem no crate (`cache::core` e `motor`), então dois `.stderr` antigos do
   `trybuild` mudaram só no nome qualificado do tipo, sem mudar o erro nem a linha.
 
+### A1.2 — as peças na GPU (1/11): aprovado (rodada 12)
+
+Quatro sub-passos (estado em `rust/moe-rt/src/motor/ESTADO-A1.2.md`): a, top-k na GPU; b, destino mapeado e quarto leitor
+do `y`; c, um lançamento para os acertos; d, backend de CUDA. Checkpoint de revisão depois do b (rodadas 7 e 8, os dois aprovaram),
+revisão final depois do d.
+
+**A1.2a e A1.2b (checkpoint)**
+- `rust/moe-rt/src/route.rs`: o kernel cutile `route_topk` (um bloco) tira os `K` maiores logits (empate: o menor índice, como
+  `Routing::from_logits`), calcula o softmax sobre eles e escreve ids, pesos e o `x` da camada, por `DevicePointer`, em
+  memória host pinned e mapeada. A sentinela do padding e da remoção é menos infinito. Teste `topk_na_gpu_bate_com_o_do_host`:
+  oito tipos de logits (distintos, com empates, negativos, espalhados em dezenas, todos iguais a -1e30 e a -2e30, dois
+  máximos, empate no corte de `K`) em E = 32 e E = 40 (EP = 64), 50 casos por tipo e por E, ids iguais, pesos a 1e-6 e `x`
+  bit a bit. Pré-condições escritas no módulo: logits finitos, `K <= E <= EP`, `-0` e `+0` empatam e NaN não é coberto.
+- Controles do `route` (cada um verificado vermelho): com a sentinela antiga de -1e30 os casos todos iguais a -1e30 e -2e30
+  falham (200 de 800); o desempate pelo maior índice (parâmetro `TS = -1`) é acusado só nos tipos com empate; sem a máscara
+  do padding (o kernel recebe `E = EP`) os casos negativos de E = 40 são acusados.
+- `LayerIo` ganhou `w` (os pesos do softmax, na ordem dos ids). O backend falso publica pesos iguais; o motor ainda não os
+  usa, e passam a valer no A1.3 (a CPU precisa do peso `g` de cada expert).
+- Quarto leitor do `y` (`rust/moe-rt/src/bin/a1-cutile-leitor.rs`, critério gravado antes em
+  `qual-runs/A1-CUTILE-LEITOR-20261101/criterio.txt`, resultado em `resultado.txt`): o kernel cutile `copy_y` lê o `y` em
+  memória mapeada por uma vista sobre o ponteiro, depois de `cuStreamWaitValue32`, com a parada de 20 µs em uma volta a cada
+  quatro. Zero saídas erradas em 30.010 voltas (10 de compilação do JIT, de 1, atravessando 2^31 e atravessando o zero); N1 (sem a espera) acusado em 1.993 de 2.000 voltas e N2 (flag
+  antes do `y`) em 2.000 de 2.000.
+- Limites: o `y` é escrito pela própria linha de serviço (o `y` escrito pelo `Pool` fica para o A1.3); uma GPU, sem disputa de
+  CPU; o lado GPU para host só é conferido pelas saídas lidas depois do `done`.
+
+**A1.2c — um lançamento para os acertos**
+- `rust/moe-rt/src/hits.rs`: três kernels cutile sobre o banco único de slots (`[S·2I, H]` e `[S·H, I]`, BF16, lidos por vista
+  sobre ponteiro): `hit_select` monta, a partir dos ids e pesos do top-k e da linha da camada na tabela do token (slot ou -1), a
+  lista compacta de acertos (slot, peso, contagem) na ordem do top-k; `moe_gate_up` calcula o SwiGLU de cada acerto (grade
+  `K·I/BM`); `moe_down` soma `peso · (W_down · a)` sobre os acertos, em ordem, com máscara pela contagem.
+- Teste `hits::tests::acertos_na_gpu_batem_com_a_cpu_a_1e4` (1.536 de largura, 512 intermediária, 40 experts, 8 residentes, banco
+  de 9 slots): 40 casos com 0 a 8 acertos contra o caminho de CPU (`Cpu::experts`); pior erro relativo 3,6e-7, tolerância 1e-4.
+  O slot 0 do banco fica com NaN e nunca entra na tabela: as posições além da contagem o leem, e a máscara tem de impedir que
+  chegue ao `y`. Verificado vermelho: sem a máscara o teste acusa o NaN; sem a compactação (escrita na posição do top-k) acusa
+  os slots fora de ordem; a conferência com um acerto a menos fica fora da tolerância (o teste distingue 1e-4 de um acerto).
+  Esses dois mutantes foram aplicados à mão e revertidos, não são testes permanentes.
+- A soma dos experts muda de ordem em relação ao caminho de hoje (como o plano previa): os logits passam a valer pela tolerância.
+
+**A1.2d — backend de CUDA**
+- `rust/moe-rt/src/cuda_backend.rs`: `CudaBackend` implementa `Backend` sobre o driver e os kernels acima: `copy_expert`
+  (`cuMemcpyHtoDAsync` do expert pinned para o slot do banco), eventos (`cuEventRecord`, `cuStreamWaitEvent`, `cuEventQuery`),
+  `upload_table`, `route` (GEMV do roteador e `route_topk`), `launch_hits`, `add_y` (soma da GPU e da saída da CPU no estado `h`),
+  `write_value` e `wait_value` (`cuStreamWriteValue32_v2`/`cuStreamWaitValue32_v2`, `GEQ` cíclico) e `sync`. Os tipos de
+  memória ganharam o interior real: `Pinned` e `Mapped` aceitam conteúdo em memória do driver (`cuMemHostAlloc`) além do `Arc`
+  do backend falso, e `LayerIo` agora tem os pesos do softmax e pode ser montada sobre palavras mapeadas (`Words` opaco, `LayerIo::from_raw` interno).
+- O trait `HostExperts::compute` recebeu os pesos do softmax das faltas (`weights`), publicados pela GPU; a linha de serviço
+  os lê depois do `Acquire` de `seq`, como ids e `x`. As suítes do A1.1 passam sem mudança de comportamento.
+- Teste `cuda_backend::tests::pilha_de_blocos_moe_pelo_d1_bate_com_a_cpu_a_1e4`: uma pilha de 3 blocos MoE (16 experts, topk 4,
+  largura 512, 14 slots) pelo motor D1 completo (duas linhas do host, doorbell, cópias, tabela por token) contra a mesma pilha
+  inteira na CPU, 16 tokens com duas entradas alternadas (o cache enche: 90 acertos da GPU e 90 faltas da CPU nos contadores
+  acumulados até o último `Published`). Pior erro relativo 2,2e-7, tolerância 1e-4. Verificado vermelho: sem o `cuStreamWaitValue32` da flag
+  o erro é de 19% no token 0; sem a saída da GPU na soma o teste acusa a partir do token 1 (o token 0 não tem acertos).
+  Mutantes aplicados à mão e revertidos.
+- Correções da rodada 9 (revisão final): (1) `Words` virou tipo opaco (representação privada, `LayerIo::from_raw` é
+  `pub(crate) unsafe`), porque a variante pública `Raw` permitia ler memória arbitrária por código seguro; novo par
+  `trybuild` (`motor_words_forjado`, falha por construtor privado; gêmeo em `ui-pass` com `LayerIo::new`), 17 pares. (2) Os
+  tensores de trabalho ficam donos do estado e os lançadores recebem partições emprestadas (`&mut`, `PartitionMut`), então um
+  lançamento que falha derruba só o empréstimo: o cutile libera tensor com `cuMemFreeAsync` em outra stream, e antes isso
+  acontecia com os argumentos movidos (rodada 10, rev-1 P1, rev-2 P3-1). Os `?` de `route`/`launch_hits`/`add_y` esperam a
+  stream (`fail_k`) antes de a função retornar. Teste `erro_apos_enfileirar_espera_a_stream_antes_de_soltar_os_tensores`: a
+  stream fica presa numa espera de valor, `moe_down` falha na compilação (`FAULT_DOWN`) e `launch_hits` não pode voltar até a
+  flag; verificado vermelho trocando o `cuStreamSynchronize` por nada. O teste prende a espera; que o dono continue vivo
+  vale pelo desenho (sem argumento movido), não por um teste de liberação. (3) O banco tem `slots + 1` slots: o último é um slot de preenchimento zerado, lido pelos
+  grupos inativos de `hit_select` (parâmetro `pad`), para que nenhum kernel leia slots administrados pela linha de cópia.
+  (4) O banco é zerado e o contexto esperado depois do `memset` (stream nula não ordena as streams do motor). (5) O oráculo do teste integrado recusa NaN e tamanho diferente (`erro_rel` devolve infinito), com teste próprio.
+- O `trybuild` do A1.1 passa; mudou só o texto de um `.stderr` (`motor_view_forjada`: o compilador abrevia a lista de campos
+  privados porque `LayerView` ganhou o campo `w`).
+
+**Limites que ficam do A1.2**
+- Mutante equivalente no D1: contar uma falta como acerto no `hit_select` não muda a saída do teste integrado (o slot -1 lê o zero do
+  preenchimento); só o teste do `hits` o pega.
+- O modelo do teste é uma pilha de blocos MoE (`h ← h + moe(h)`), sem atenção, embedding ou logits do vocabulário; o "teste de
+  logits" do plano com o modelo inteiro passa a ser o do A1.3. Aqui o que se compara é a ativação depois dos blocos.
+- Uma GPU, sem disputa de CPU; o `y` é escrito pela linha de serviço (o `y` escrito pelo `Pool` e a condição do store não
+  temporal são do A1.3). Nenhuma medida de tempo: o A1.4 mede.
+- A seleção dos acertos roda um bloco só e os kernels calculam os `K` slots mesmo com poucos acertos (a bandwidth das posições
+  além da contagem é gasta e descartada); otimizar fica para depois da medida.
+- O backend roda `route`, `launch_hits` e `add_y` com um mutex no estado de trabalho; só a linha principal os chama.
+- Não há teste de portão ou sanitizador para a corrida do slot de preenchimento: a garantia vem do desenho (o slot nunca é
+  escrito pela linha de cópia), não de uma medida.
+- `-0` e `+0`, NaN e logits não finitos não são cobertos no top-k (pré-condições escritas em `route.rs`).
+
 ## Mudança para o lastro-rust (31/10)
 
 A pedido do Breno, o runtime saiu do strata-opencode (o projeto que liga o OpenCode ao Strata, onde ele nasceu) para um

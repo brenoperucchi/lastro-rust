@@ -6,4 +6,4 @@ error: cannot construct `LayerView<'_>` with struct literal syntax due to privat
    |                               |
    |                               private field
    |
-   = note: ...and other private fields `keys`, `misses`, `x`, `io`, `flag` and `flag_first` that were not provided
+   = note: ...and other private fields that were not provided

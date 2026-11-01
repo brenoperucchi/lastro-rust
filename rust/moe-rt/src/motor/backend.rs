@@ -5,7 +5,7 @@
 //! - `record` / `wait_event` / `query`: `cuEventRecord` / `cuStreamWaitEvent` / `cuEventQuery` (a espera captura a última
 //!   gravação feita antes da chamada; um evento nunca gravado responde completo);
 //! - `upload_table`: `cuMemcpyHtoDAsync` do lado pinned da tabela para a tabela do device;
-//! - `route`: o roteador e o top-k na GPU, que escrevem ids e `x` na área mapeada da camada;
+//! - `route`: o roteador e o top-k na GPU, que escrevem ids, pesos do softmax e `x` na área mapeada da camada;
 //! - `launch_hits`: a seleção dos acertos pela tabela do token e o lançamento agrupado (passo 5);
 //! - `add_y`: a soma da saída da CPU, lida da área mapeada;
 //! - `write_value` / `wait_value`: `cuStreamWriteValue32_v2` / `cuStreamWaitValue32_v2` com `GEQ` cíclico;
@@ -24,18 +24,67 @@ pub fn release_value(t: u32) -> u32 {
     t.wrapping_add(1 << 30)
 }
 
-/// A área pinned mapeada de uma camada: a GPU escreve ids (na ordem do top-k) e `x`; o host escreve `y`. Os atômicos são
+/// A área pinned mapeada de uma camada: a GPU escreve ids (na ordem do top-k), os pesos do softmax (bits de `f32`, na mesma ordem) e `x`; o host escreve `y`. Os atômicos são
 /// lidos e escritos com `Relaxed`: a ordem vem da sequência (`Acquire`) e da flag (`Release`) do doorbell.
 pub struct LayerIo {
-    pub ids: Box<[AtomicU32]>,
-    pub x: Box<[AtomicU32]>,
-    pub y: Box<[AtomicU32]>,
+    pub ids: Words,
+    pub w: Words,
+    pub x: Words,
+    pub y: Words,
+}
+
+/// Palavras de 32 bits compartilhadas com a GPU: um bloco do heap (backend falso) ou uma fatia de memória host mapeada que o
+/// backend de CUDA aloca. A representação é privada: só `LayerIo::new` (heap, seguro) e `LayerIo::from_raw` (`unsafe`,
+/// só do crate) criam um `Words`, então código seguro não forja uma fatia.
+pub struct Words(Repr);
+
+enum Repr {
+    Heap(Box<[AtomicU32]>),
+    /// Fora do `loom`, que não tem `AtomicU32::from_ptr`.
+    #[cfg(not(motor_loom))]
+    Raw { ptr: *const AtomicU32, len: usize },
+}
+
+// SAFETY: `Raw` só nasce em `LayerIo::from_raw`, que exige memória viva e acessada por atômicos.
+#[cfg(not(motor_loom))]
+#[allow(unsafe_code)]
+unsafe impl Send for Words {}
+#[cfg(not(motor_loom))]
+#[allow(unsafe_code)]
+unsafe impl Sync for Words {}
+
+impl std::ops::Deref for Words {
+    type Target = [AtomicU32];
+    #[allow(unsafe_code)]
+    fn deref(&self) -> &[AtomicU32] {
+        match &self.0 {
+            Repr::Heap(b) => b,
+            // SAFETY: o construtor `LayerIo::from_raw` exige `len` palavras vivas e alinhadas a partir de `ptr`.
+            #[cfg(not(motor_loom))]
+            Repr::Raw { ptr, len } => unsafe { std::slice::from_raw_parts(*ptr, *len) },
+        }
+    }
 }
 
 impl LayerIo {
     pub fn new(topk: usize, width: usize) -> Self {
-        let z = |n: usize| (0..n).map(|_| AtomicU32::new(0)).collect::<Vec<_>>().into_boxed_slice();
-        Self { ids: z(topk), x: z(width), y: z(width) }
+        let z = |n: usize| Words(Repr::Heap((0..n).map(|_| AtomicU32::new(0)).collect::<Vec<_>>().into_boxed_slice()));
+        Self { ids: z(topk), w: z(topk), x: z(width), y: z(width) }
+    }
+
+    /// Uma `LayerIo` sobre `2·topk + 2·width` palavras contíguas (ids, pesos, `x`, `y`), na ordem dos campos.
+    ///
+    /// # Safety
+    /// `base` aponta essas palavras, alinhadas a 4 bytes, vivas enquanto a `LayerIo` e o `Mapped` que a guarda existirem, e
+    /// só acessadas por atômicos (do host) ou pelos kernels do backend.
+    #[cfg(not(motor_loom))]
+    #[allow(unsafe_code)]
+    pub(crate) unsafe fn from_raw(base: *const AtomicU32, topk: usize, width: usize) -> Self {
+        // SAFETY: os deslocamentos ficam dentro das `2·topk + 2·width` palavras.
+        unsafe {
+            let at = |off: usize, len: usize| Words(Repr::Raw { ptr: base.add(off), len });
+            Self { ids: at(0, topk), w: at(topk, topk), x: at(2 * topk, width), y: at(2 * topk + width, width) }
+        }
     }
 
     pub fn load(v: &[AtomicU32]) -> Vec<u32> {
@@ -90,6 +139,18 @@ pub trait Backend: Send + Sync + 'static {
 /// Os experts calculados na CPU pela linha de serviço.
 pub trait HostExperts: Send + 'static {
     type Error: Debug + Send + 'static;
-    /// `y = Σ expert(key, x)` sobre `keys` (as faltas da camada `layer`, na ordem do top-k).
-    fn compute(&mut self, layer: usize, keys: &[u32], x: &[u32], y: &mut [u32]) -> Result<(), Self::Error>;
+    /// `y = Σ peso · expert(key, x)` sobre `keys` (as faltas da camada `layer`, na ordem do top-k); `weights` são os bits `f32`
+    /// dos pesos do softmax das mesmas chaves, que a GPU publicou.
+    fn compute(&mut self, layer: usize, keys: &[u32], weights: &[u32], x: &[u32], y: &mut [u32]) -> Result<(), Self::Error>;
+}
+
+#[cfg(all(test, not(motor_loom)))]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn layer_io_tem_um_peso_por_id() {
+        let io = LayerIo::new(8, 1536);
+        assert_eq!((io.ids.len(), io.w.len(), io.x.len(), io.y.len()), (8, 8, 1536, 1536));
+    }
 }

@@ -1,0 +1,36 @@
+A1.2b — o kernel cutile como quarto leitor do y (critério gravado antes de rodar, 1/11)
+
+Origem: plano, A1.0, "Limites" (rodada 54, rev-2): o teste de logits do A1.2 pega um y sempre velho, mas não uma leitura
+velha que só aparece numa janela de tempo. O A1.2 repete o conferidor do A1.0 com o kernel cutile que lê o y.
+Binário: rust/moe-rt/src/bin/a1-cutile-leitor.rs. Rodar com CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+e taskset -c 0-15 (a linha de serviço do host gira num P-core).
+
+Montagem (igual à do A1.0, critério em qual-runs/A1-DOORBELL-20261031/criterio.txt, com um leitor só)
+- Uma stream de cálculo do cuda-core (Stream::cu_stream() dá o handle para cuStreamWriteValue32/WaitValue32) e uma linha
+  de host (a "de serviço"). Memória host pinned e mapeada: seq, flag, done (u32), y (W = 1536 u32) e a saída (W u32).
+- Leitor: kernel cutile `copy_y<BK = 512>` (3 blocos), que lê o y por uma vista sobre o ponteiro do device da memória
+  mapeada (tile load) e grava a saída (tile store). Lançado na stream de cálculo com async_on, sem sincronizar.
+- Volta i (contador a partir do segmento; seq, flag e done começam em t0 − 1):
+  GPU: escreve seq = i; espera flag >= i (GEQ cíclico); lança o kernel; escreve done = i.
+  Host: espera seq >= i; nas voltas i % 4 == 0 gira mais 20 µs antes de escrever (a GPU fica parada na espera);
+        escreve y[j] = padrão(i, j), padrão diferente a cada volta; grava flag = i com Release; espera done >= i;
+        confere a saída contra padrão(i, ·).
+- Segmentos: aquecimento de 1.000 voltas + 20.000 voltas a partir de 1; 5.000 a partir de 2^31 − 2.500; 5.000 a partir de
+  2^32 − 2.500. Total medido: 30.000 voltas.
+
+Controles negativos (o conferidor tem de acusar dado velho)
+- N1: a GPU não espera a flag, e o host gira 20 µs antes de escrever y em toda volta.
+- N2: o host grava a flag antes de escrever y e gira 20 µs entre as duas coisas.
+Cada um em 2.000 voltas; a saída errada tem de aparecer em pelo menos 50% das voltas.
+
+Portão (passa se as três valem)
+1. Toda chamada do driver devolve CUDA_SUCCESS e o kernel cutile compila e lança.
+2. Zero saídas erradas nos três segmentos (30.000 voltas medidas).
+3. N1 e N2 acusados (>= 50% das voltas com saída errada).
+
+Previsão: passa. O kernel cutile lê por load de tile sem cache não coerente? Se o compilador usar ld.global.nc ou cache L1
+para a vista, o N1 ainda acusa e a correção também passa, porque o cache é invalidado entre lançamentos (como o (b) do A1.0).
+Se alguma saída vier errada na correção, o plano muda: o y passa a ser lido por uma cópia do motor de cópia, não pelo cutile.
+
+Limites: uma GPU, uma linha de host, sem disputa de CPU; o y é escrito pela própria linha de serviço (o y escrito pelo Pool
+fica para o A1.3).

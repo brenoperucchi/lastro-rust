@@ -16,6 +16,38 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 
+/// Onde o conteúdo do lado do host vive: num `Arc` (backend falso) ou em memória do driver (`Raw`), que o backend de CUDA
+/// aloca (`cuMemHostAlloc`) e cuja liberação fica com `keep`.
+enum Host<T: ?Sized> {
+    Arc(Arc<T>),
+    Raw { ptr: *const T, _keep: Arc<dyn Send + Sync> },
+}
+
+// SAFETY: `Raw` só é criado por `from_raw`, que exige `T: Send + Sync` e memória viva enquanto `_keep` viver.
+#[allow(unsafe_code)]
+unsafe impl<T: ?Sized + Send + Sync> Send for Host<T> {}
+#[allow(unsafe_code)]
+unsafe impl<T: ?Sized + Send + Sync> Sync for Host<T> {}
+
+impl<T: ?Sized> Host<T> {
+    #[allow(unsafe_code)]
+    fn get(&self) -> &T {
+        match self {
+            Host::Arc(a) => a,
+            // SAFETY: `from_raw` exige `ptr` válido enquanto `_keep` viver; `&self` segura o `_keep`.
+            Host::Raw { ptr, .. } => unsafe { &**ptr },
+        }
+    }
+
+    /// O `Arc` do backend falso. O backend de CUDA não usa este caminho.
+    fn arc(&self) -> Arc<T> {
+        match self {
+            Host::Arc(a) => a.clone(),
+            Host::Raw { .. } => panic!("conteúdo em memória do driver não tem Arc"),
+        }
+    }
+}
+
 /// Identificador de uma alocação, para o dono saber o que está sendo liberado.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct AllocId(pub u64);
@@ -27,14 +59,26 @@ pub trait Release: Send + Sync {
 
 /// Memória do host pinned (não mapeada): origem das cópias para o device.
 pub struct Pinned<T: ?Sized> {
-    host: Arc<T>,
+    host: Host<T>,
     id: AllocId,
     owner: Arc<dyn Release>,
 }
 
 impl<T: ?Sized> Pinned<T> {
     pub(crate) fn from_parts(host: Arc<T>, id: AllocId, owner: Arc<dyn Release>) -> Self {
-        Self { host, id, owner }
+        Self { host: Host::Arc(host), id, owner }
+    }
+
+    /// Conteúdo em memória do driver.
+    ///
+    /// # Safety
+    /// `ptr` é válido e só acessado por atômicos ou pelo driver enquanto `keep` viver.
+    #[allow(unsafe_code)]
+    pub(crate) unsafe fn from_raw(ptr: *const T, keep: Arc<dyn Send + Sync>, id: AllocId, owner: Arc<dyn Release>) -> Self
+    where
+        T: Send + Sync,
+    {
+        Self { host: Host::Raw { ptr, _keep: keep }, id, owner }
     }
 
     pub fn id(&self) -> AllocId {
@@ -43,14 +87,14 @@ impl<T: ?Sized> Pinned<T> {
 
     /// O conteúdo, para o backend ler na hora em que a operação roda (a memória fica viva até lá).
     pub(crate) fn shared(&self) -> Arc<T> {
-        self.host.clone()
+        self.host.arc()
     }
 }
 
 impl<T: ?Sized> Deref for Pinned<T> {
     type Target = T;
     fn deref(&self) -> &T {
-        &self.host
+        self.host.get()
     }
 }
 
@@ -62,7 +106,7 @@ impl<T: ?Sized> Drop for Pinned<T> {
 
 /// Memória do host pinned e mapeada no device.
 pub struct Mapped<T: ?Sized> {
-    host: Arc<T>,
+    host: Host<T>,
     dev: u64,
     id: AllocId,
     owner: Arc<dyn Release>,
@@ -70,7 +114,19 @@ pub struct Mapped<T: ?Sized> {
 
 impl<T: ?Sized> Mapped<T> {
     pub(crate) fn from_parts(host: Arc<T>, dev: u64, id: AllocId, owner: Arc<dyn Release>) -> Self {
-        Self { host, dev, id, owner }
+        Self { host: Host::Arc(host), dev, id, owner }
+    }
+
+    /// Conteúdo em memória do driver, com o endereço do lado do device.
+    ///
+    /// # Safety
+    /// `ptr` é válido e só acessado por atômicos ou pelo driver enquanto `keep` viver; `dev` é o endereço dele no device.
+    #[allow(unsafe_code)]
+    pub(crate) unsafe fn from_raw(ptr: *const T, keep: Arc<dyn Send + Sync>, dev: u64, id: AllocId, owner: Arc<dyn Release>) -> Self
+    where
+        T: Send + Sync,
+    {
+        Self { host: Host::Raw { ptr, _keep: keep }, dev, id, owner }
     }
 
     pub fn id(&self) -> AllocId {
@@ -83,14 +139,14 @@ impl<T: ?Sized> Mapped<T> {
     }
 
     pub(crate) fn shared(&self) -> Arc<T> {
-        self.host.clone()
+        self.host.arc()
     }
 }
 
 impl<T: ?Sized> Deref for Mapped<T> {
     type Target = T;
     fn deref(&self) -> &T {
-        &self.host
+        self.host.get()
     }
 }
 
