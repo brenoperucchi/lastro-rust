@@ -287,6 +287,26 @@ fn fixtures() -> Vec<Fixture> {
         .collect()
 }
 
+/// Os índices das fixtures em que o mutante `m` provoca uma violação do tipo `kind` no backend falso (em ao menos uma das
+/// quatro intercalações). A versão certa sai limpa em todas. Os controles da GPU (A1.3d) usam as fixtures em que o falso já mostrou que o
+/// mutante lê dado errado, para pedir que a GPU de verdade também o mostre.
+pub(crate) fn fixtures_em_que_o_mutante_viola(m: Mutant, kind: &str) -> Vec<usize> {
+    fixtures()
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| {
+            // As quatro intercalações da comparação com o simulador: basta o mutante violar numa delas.
+            [[1, 1, 1, 1], [8, 8, 8, 1], [8, 8, 1, 8], [8, 1, 8, 8]].iter().any(|&weights| {
+                let mut c = f.caso.clone();
+                c.sched = SchedCfg { seed: 0x5EED, weights, budget: BUDGET };
+                assert!(roda(&c, None).limpa());
+                roda(&c, Some(m)).tem(kind)
+            })
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
 /// Cada fixture em quatro intercalações (uniforme, fila de cópia lenta, fila de cálculo lenta, linha de serviço lenta),
 /// mais quatro sorteadas: os contadores têm de ser os do simulador em todas.
 #[test]

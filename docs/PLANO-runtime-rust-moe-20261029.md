@@ -2901,7 +2901,7 @@ revisão final depois do d.
   escrito pela linha de cópia), não de uma medida.
 - `-0` e `+0`, NaN e logits não finitos não são cobertos no top-k (pré-condições escritas em `route.rs`).
 
-### A1.3 — o motor D1 completo (1/11): em andamento
+### A1.3 — o motor D1 completo (1/11): feito e aprovado (revisão final, rodada 17)
 
 Quatro sub-passos (estado em `rust/moe-rt/src/motor/ESTADO-A1.3.md`): a, as fixtures do simulador no motor de CUDA; b, o `y`
 escrito pelo `Pool`; c, o modelo inteiro no motor; d, controles negativos na GPU e o modo antigo. Checkpoint de revisão depois
@@ -2940,6 +2940,29 @@ do b, revisão final depois do d.
 - Limites: no motor de produção quem escreve a área mapeada continua sendo a linha de serviço (`HostExperts::compute` devolve um
   vetor, e `answer` o copia para o `y` mapeado e grava a flag); o conferidor cobre o caso em que as threads do `Pool` escrevem a
   área mapeada, que é o que o plano pede. Uma GPU, sem disputa de CPU além do próprio `Pool`.
+
+**A1.3c — o modelo inteiro no motor**
+- `rust/moe-rt/src/cuda_dense.rs` (`Dense`): embedding, atenção (rmsnorm, q/k/v, rope, cache KV, atenção em duas passadas, o),
+  residual, rmsnorm do MoE e o `lm_head`, na stream de cálculo, reaproveitando os kernels do M1b. O `Backend` ganhou dois
+  ganchos com implementação vazia por padrão (`pre_layer`, antes do roteador da camada, e `post_layers`, antes do último
+  `seq`); o backend de CUDA os usa para rodar o bloco denso. Os pesos do softmax valem na CPU (`g`) e o resíduo soma
+  `residual_multiplier * g * (yg + yh)`.
+- `rust/moe-rt/tests/motor_model.rs`: modelo Granite pequeno, 14 tokens, com 2, 5 e 8 slots nos modos por evento e
+  `TokenBarrier`; logits do motor contra a `CpuSession` a 1e-4 (pior erro ~4e-7).
+
+**A1.3d — controles negativos na GPU e o modo antigo**
+- Janela da cópia na vítima (`janela_da_copia_na_vitima_...`, em `src/cuda_backend.rs`): a stream de cálculo fica presa na
+  camada 1 enquanto as cópias decididas nas camadas 0 e 1 correm. A versão certa sai a ~2e-6 da CPU; o mutante `CopyAtVictim`
+  é acusado em 60 de 60 voltas (3 cenas, 20 voltas cada, atrasos de teste de 80 e 400 ms alternados); a versão certa repete os mesmos bits em todas as voltas. Só 3 fixtures do simulador viram cena elegível (o mutante só lê dado errado quando a vítima é um
+  slot que uma camada futura ainda lê no mesmo token); o teste exige as 3 cenas e 100% das voltas acusadas, com a saída do mutante diferente, em bits, da execução sem janela; a versão certa com janela é bit a bit igual a essa execução. No controle do `ready` (modo por evento) a execução sem janela muda a divisão GPU/CPU e não serve de referência: ali valem a repetição de bits entre voltas e a tolerância contra a CPU.
+- Janela do `ready` (`janela_do_ready_...`): com a stream de cópia presa, a versão certa não lista a chave e bate com a CPU
+  (erros 0, 0, 0); o mutante `NoReadyProtection` perde a contribuição do expert (erro 1.0 no token 1). 20 de 20 voltas, a versão certa com os mesmos bits.
+- Os kernels precisam estar compilados (JIT) antes de prender uma stream: carregar um módulo é uma sincronização implícita do
+  contexto e travaria; os testes rodam a cena uma vez sem prender antes.
+- Modo antigo: os testes de `tests/model.rs` (`ExpertCache` com `AdmitMode::Barrier`, contadores e logits) seguem iguais. Motor
+  normal (38 na lib), loom (18) e trybuild (17 pares) passam; zero avisos no build normal.
+- Limites: na GPU, `K` potência de dois e `E` par; o bloco denso copia entre buffers por dtod (custo a medir no A1.4); nenhuma
+  medida de tempo; o controle da janela da cópia tem poucas cenas; os controles não têm sinal explícito de progresso da linha de serviço (decisão do Breno em 01/11: aceitar; a independência da velocidade vem de repetir com atrasos de 80 e 400 ms, e o mutante da cópia é acusado até sem janela), e a comparação é bit a bit entre as voltas da versão certa e por tolerância contra a CPU, não contra uma referência GPU do expert antigo/novo. `Dense` é interno ao crate (`pub(crate)`), porque os lançamentos não sincronizam.
 
 ## Mudança para o lastro-rust (31/10)
 

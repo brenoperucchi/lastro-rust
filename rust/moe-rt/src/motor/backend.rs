@@ -118,6 +118,15 @@ pub trait Backend: Send + Sync + 'static {
     fn query(&self, ev: &Self::Event) -> Result<bool, Self::Error>;
     /// Publica a tabela do token: o lado pinned vai para a tabela do device, na stream `s`.
     fn upload_table(&self, s: &Self::Stream, dst: &Device<[u32]>, src: &Pinned<[AtomicU32]>) -> Result<(), Self::Error>;
+    /// Antes do `route` da camada: o que o modelo roda antes do bloco MoE (no A1.3, a atenção e a norma de entrada do bloco).
+    /// O padrão não faz nada (o backend falso e a pilha de blocos MoE do A1.2).
+    fn pre_layer(&self, _s: &Self::Stream, _layer: usize) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    /// Depois do `add_y` da última camada: a norma final e a cabeça de saída (A1.3). O padrão não faz nada.
+    fn post_layers(&self, _s: &Self::Stream) -> Result<(), Self::Error> {
+        Ok(())
+    }
     fn route(&self, s: &Self::Stream, layer: usize, io: &Mapped<LayerIo>) -> Result<(), Self::Error>;
     fn launch_hits(&self, s: &Self::Stream, layer: usize, table: &Device<[u32]>, bank: &Device<Self::Bank>, io: &Mapped<LayerIo>)
         -> Result<(), Self::Error>;

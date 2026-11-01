@@ -170,12 +170,14 @@ impl<B: Backend> Engine<B> {
         }
         for l in 0..self.cfg.layers {
             let io = &self.sh.io[l];
+            b.pre_layer(c, l)?;
             b.route(c, l, io)?;
             b.write_value(c, &self.sh.seq[l], t)?;
             b.launch_hits(c, l, &self.table, &self.sh.bank, io)?;
             b.wait_value(c, &self.sh.flag[l], t)?;
             b.add_y(c, l, io)?;
         }
+        b.post_layers(c)?;
         b.write_value(c, &self.sh.seq[self.cfg.layers], t)
     }
 

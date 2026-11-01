@@ -24,7 +24,7 @@ pub mod sync;
 #[cfg(all(test, motor_loom))]
 mod loom_tests;
 #[cfg(all(test, not(motor_loom)))]
-mod tests;
+pub(crate) mod tests;
 
 pub use backend::{geq, release_value, Backend, HostExperts, LayerIo, Role};
 pub use engine::{Engine, Parts, Published};

@@ -36,3 +36,10 @@ o aval do Breno.
   antes em `qual-runs/A1-POOL-Y-20261101-b/criterio.txt`, a primeira rodada em `qual-runs/A1-POOL-Y-20261101/` fica de
   histórico; 31.010 voltas conferidas sem erro; N1, N2 e N3 acusados, o N3 com as faixas de fora da 0 retidas 20 µs). Limite: no motor de produção quem escreve a área mapeada continua sendo a linha de
   serviço (`HostExperts::compute` devolve um vetor); o conferidor cobre o caso do plano, com as threads do `Pool` escrevendo a área.
+- **A1.3c feito:** `src/cuda_dense.rs`, ganchos `pre_layer`/`post_layers` no `Backend`, `CudaBackend::new_model`, `tests/motor_model.rs`
+  (logits contra a CPU a 1e-4, pior ~4e-7, slots 2/5/8 nos dois modos).
+- **A1.3d feito:** controles da janela da cópia (mutante acusado em 60 de 60 voltas, 20 por cena, atrasos 80/400 ms; certa com os mesmos bits) e do `ready` (erro 1.0 no token 1), com
+  versão certa limpa; suítes: lib 38, loom 18, tipos 2 (17 pares), motor_gpu 2, block 16, model 21, motor_model 1,
+  sem_store_nao_temporal 2. Falta a revisão final (nível 2).
+- **Rodada 15:** rev-1 pediu mudanças (`Dense` público e os controles sem 20 repetições); rev-2 deu TIMEOUT. Corrigido: `cuda_dense` virou `pub(crate)`; controles com 20 voltas e bits repetidos. Rodada 16 é a repetição.
+- **Revisão final aprovada pelos dois na rodada 17** (rodadas 15 e 16 pediram mudanças; decisão do Breno em 01/11: aceitar os controles sem sinal de progresso). A1.3 fechado, commit local, sem push. Próximo: A1.4.

@@ -10,6 +10,8 @@ pub mod cache;
 pub mod cpu;
 #[cfg(not(motor_loom))]
 pub mod cuda_backend;
+#[cfg(not(motor_loom))]
+pub(crate) mod cuda_dense;
 pub mod gpu;
 pub mod gpu_model;
 pub mod hits;
