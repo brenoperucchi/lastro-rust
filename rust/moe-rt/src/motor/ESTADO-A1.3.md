@@ -43,3 +43,4 @@ o aval do Breno.
   sem_store_nao_temporal 2. Falta a revisão final (nível 2).
 - **Rodada 15:** rev-1 pediu mudanças (`Dense` público e os controles sem 20 repetições); rev-2 deu TIMEOUT. Corrigido: `cuda_dense` virou `pub(crate)`; controles com 20 voltas e bits repetidos. Rodada 16 é a repetição.
 - **Revisão final aprovada pelos dois na rodada 17** (rodadas 15 e 16 pediram mudanças; decisão do Breno em 01/11: aceitar os controles sem sinal de progresso). A1.3 fechado, commit local, sem push. Próximo: A1.4.
+- **Rodada 18 (aprovada pelos dois):** teste de regressão `erro_na_copia_dos_logits_nao_estraga_os_tokens_seguintes` (`tests/motor_model.rs`) com falha injetada na cópia dos logits (commit 55f9ded); vermelho com o tensor de troca de 1 elemento, verde com `vocab_pad`. Limite: o caminho de erro de `read_logits` só tem esse teste. Suítes completas verdes depois dele.

@@ -2901,7 +2901,7 @@ revisão final depois do d.
   escrito pela linha de cópia), não de uma medida.
 - `-0` e `+0`, NaN e logits não finitos não são cobertos no top-k (pré-condições escritas em `route.rs`).
 
-### A1.3 — o motor D1 completo (1/11): feito e aprovado (revisão final, rodada 17)
+### A1.3 — o motor D1 completo (1/11): feito e aprovado (checkpoint na rodada 14, final na 17, regressão do `read_logits` na 18)
 
 Quatro sub-passos (estado em `rust/moe-rt/src/motor/ESTADO-A1.3.md`): a, as fixtures do simulador no motor de CUDA; b, o `y`
 escrito pelo `Pool`; c, o modelo inteiro no motor; d, controles negativos na GPU e o modo antigo. Checkpoint de revisão depois
@@ -2959,6 +2959,7 @@ do b, revisão final depois do d.
   (erros 0, 0, 0); o mutante `NoReadyProtection` perde a contribuição do expert (erro 1.0 no token 1). 20 de 20 voltas, a versão certa com os mesmos bits.
 - Os kernels precisam estar compilados (JIT) antes de prender uma stream: carregar um módulo é uma sincronização implícita do
   contexto e travaria; os testes rodam a cena uma vez sem prender antes.
+- Regressão: `erro_na_copia_dos_logits_nao_estraga_os_tokens_seguintes` (`tests/motor_model.rs`) injeta uma falha na cópia dos logits; antes da correção os tokens seguintes saíam errados (erro `inf`).
 - Modo antigo: os testes de `tests/model.rs` (`ExpertCache` com `AdmitMode::Barrier`, contadores e logits) seguem iguais. Motor
   normal (38 na lib), loom (18) e trybuild (17 pares) passam; zero avisos no build normal.
 - Limites: na GPU, `K` potência de dois e `E` par; o bloco denso copia entre buffers por dtod (custo a medir no A1.4); nenhuma
