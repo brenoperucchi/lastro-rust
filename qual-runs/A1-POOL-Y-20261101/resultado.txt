@@ -1,0 +1,24 @@
+sha256 do binário: 1d032a0b46148d361cf0bd4b45fa8bc30b3f04d2e700f9ec1c852fc52a2aa467
+sha256 do fonte: 5e2fb72969dda316446f69905a3d9bf48b0a6781487d1f1e0997f736e2a3e572
+== Correção (kernel cutile como leitor, y escrito pelo Pool; nas voltas i % 4 == 0 o host para 20 µs antes de escrever)
+  voltas de compilação (JIT)   10 voltas: saídas erradas 0
+  aquecimento, de 1      1000 voltas: saídas erradas 0
+  de 1                   20000 voltas: saídas erradas 0
+  atravessando 2^31      5000 voltas: saídas erradas 0
+  atravessando o zero    5000 voltas: saídas erradas 0
+
+== Controles negativos (2.000 voltas cada; o conferidor tem de acusar dado velho)
+  N1 sem a espera da flag  saídas erradas 1998 de 2000 (99.9%; mínimo 1000)
+  N2 flag antes do y       saídas erradas 2000 de 2000 (100.0%; mínimo 1000)
+  N3 flag dentro do Pool   saídas erradas 201 de 2000 (10.1%; mínimo 200)
+
+== Portão do A1.3b (y escrito pelo Pool)
+  2 correção:                  passa
+  3 controles negativos:       passa
+portão: PASSA
+
+== Repetições (mesmo binário, mesmas regras; só o N3 varia, porque depende de a faixa 0 acabar antes das outras)
+  N3 saídas erradas: 1089, 1965 e 1511 de 2000 (54,5%, 98,2% e 75,5%); correção com zero saídas erradas e portão PASSA nas três.
+  Uma execução anterior, de um binário do mesmo código com um método sem uso a mais, deu N3 = 1714 de 2000. A execução oficial acima
+  (N3 = 201 de 2000, 10,1%) ficou a uma volta do mínimo de 10% do critério: o limiar é frouxo de propósito e o controle varia de
+  10% a 98% entre execuções.

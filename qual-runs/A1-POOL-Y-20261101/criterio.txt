@@ -1,0 +1,41 @@
+A1.3b: o y escrito pelo Pool da CPU (criterio gravado antes de rodar, 1/11)
+
+Origem: plano, A1.0 "Limites" e "A1 criterio de conclusao" (rev-2, rodada 54): no A1.3 o y vem do Pool da CPU, escrito por
+outras linhas, e a linha de servico grava a flag depois. A condicao e "sem store nao temporal no y, ou sfence antes da flag".
+Este conferidor repete o do A1.0 (qual-runs/A1-DOORBELL-20261031/criterio.txt) e o do quarto leitor
+(qual-runs/A1-CUTILE-LEITOR-20261101/criterio.txt) com o y escrito pelas threads do Pool.
+Binario: rust/moe-rt/src/bin/a1-pool-y.rs. Rodar com CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd e
+taskset -c 0-15 (a linha de servico e as threads do Pool giram em P-cores).
+
+Montagem (igual a do quarto leitor, com um leitor so: o kernel cutile copy_y)
+- Uma stream de calculo; uma linha de host (a "de servico") e um Cpu::new(8) com o Pool de producao.
+- Memoria host pinned e mapeada: seq, flag, done (u32), y (W = 1536 u32) e a saida (W u32).
+- Volta i: GPU escreve seq = i, espera flag >= i (GEQ ciclico), lanca o kernel, escreve done = i.
+  Host: espera seq >= i; nas voltas i % 4 == 0 gira mais 20 us; entao Cpu::fill_rows escreve y[j] = padrao(i, j) com as threads
+  do Pool (um padrao diferente a cada volta, sempre um f32 finito); so depois do retorno de fill_rows a linha de servico grava
+  flag = i com Release; espera done >= i; confere a saida contra padrao(i, .).
+- Segmentos: aquecimento de 1.000 voltas + 20.000 voltas a partir de 1; 5.000 a partir de 2^31 - 2.500; 5.000 a partir de
+  2^32 - 2.500; mais 10 voltas de compilacao do JIT, conferidas. Total medido: 30.000 voltas.
+
+Controles negativos (o conferidor tem de acusar dado velho)
+- N1: a GPU nao espera a flag, e o host gira 20 us antes de escrever o y em toda volta.
+- N2: o host grava a flag antes de o Pool escrever o y e gira 20 us entre as duas coisas.
+- N3: o Pool escreve o y, mas a flag e gravada por uma thread do Pool sem esperar o fim das outras tarefas (a flag sai de
+  dentro de uma tarefa do despacho, com a faixa 0 ja escrita e as demais ainda por escrever).
+Cada um em 2.000 voltas; a saida errada tem de aparecer em pelo menos 50% das voltas (N3: em pelo menos 10%, porque a corrida
+depende de a tarefa 0 acabar antes das outras).
+
+Portao (passa se as quatro valem)
+1. Toda chamada do driver devolve CUDA_SUCCESS e o kernel cutile compila e lanca.
+2. Zero saidas erradas nos segmentos de correcao (30.010 voltas, contando as do JIT).
+3. N1, N2 e N3 acusados nos limiares acima.
+4. O teste de unidade cpu::testes_a13b::nenhum_store_nao_temporal passa (nenhum store nao temporal em rust/moe-rt/src, o que
+   dispensa o sfence; a flag e Release depois do retorno de run).
+
+Previsao: passa. No x86 o retorno de Pool::run sincroniza com as threads (acquire/release nos contadores) e nenhum store do y
+e nao temporal, entao o Release da flag publica as escritas das threads do Pool. Se alguma saida vier errada na correcao, a
+condicao falhou e o motor passa a exigir um sfence antes da flag.
+
+Limites: uma GPU, sem disputa de CPU alem do proprio Pool; a porta do motor (HostExperts::compute) ainda devolve o y por um
+vetor que a linha de servico copia para a area mapeada, entao no motor de producao quem escreve a area mapeada continua sendo a
+linha de servico. Este conferidor cobre o caso em que as threads do Pool escrevem a area mapeada, que e o que o plano pede.

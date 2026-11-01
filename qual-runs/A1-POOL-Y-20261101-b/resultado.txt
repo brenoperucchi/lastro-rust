@@ -1,0 +1,22 @@
+sha256 do binário: fe49e17faa1f3d1013d9cd488a14bec74a03a0a58034e873d7f84304b68bc76c
+sha256 do fonte: 4c9b33c43503a3d3be9b62beff8f5b67105283ec09be660ed9d2ea1de98d7738
+== Correção (kernel cutile como leitor, y escrito pelo Pool; nas voltas i % 4 == 0 o host para 20 µs antes de escrever)
+  voltas de compilação (JIT)   10 voltas: saídas erradas 0
+  aquecimento, de 1      1000 voltas: saídas erradas 0
+  de 1                   20000 voltas: saídas erradas 0
+  atravessando 2^31      5000 voltas: saídas erradas 0
+  atravessando o zero    5000 voltas: saídas erradas 0
+
+== Controles negativos (2.000 voltas cada; o conferidor tem de acusar dado velho)
+  N1 sem a espera da flag  saídas erradas 1999 de 2000 (100.0%; mínimo 1000)
+  N2 flag antes do y       saídas erradas 2000 de 2000 (100.0%; mínimo 1000)
+  N3 flag dentro do Pool   saídas erradas 2000 de 2000 (100.0%; mínimo 1000)
+
+== Portão do A1.3b (y escrito pelo Pool)
+  2 correção:                  passa
+  3 controles negativos:       passa
+portão: PASSA
+
+== Item 4 do portão e repetições
+  4 sem_store_nao_temporal (tests/sem_store_nao_temporal.rs, 2 testes): passa
+  Repetições do mesmo binário (N3 e portão):   N3 flag dentro do Pool   saídas erradas 2000 de 2000 (100.0%; mínimo 1000) portão: PASSA   N3 flag dentro do Pool   saídas erradas 2000 de 2000 (100.0%; mínimo 1000) portão: PASSA  

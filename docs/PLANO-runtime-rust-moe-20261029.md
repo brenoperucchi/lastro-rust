@@ -2901,6 +2901,46 @@ revisão final depois do d.
   escrito pela linha de cópia), não de uma medida.
 - `-0` e `+0`, NaN e logits não finitos não são cobertos no top-k (pré-condições escritas em `route.rs`).
 
+### A1.3 — o motor D1 completo (1/11): em andamento
+
+Quatro sub-passos (estado em `rust/moe-rt/src/motor/ESTADO-A1.3.md`): a, as fixtures do simulador no motor de CUDA; b, o `y`
+escrito pelo `Pool`; c, o modelo inteiro no motor; d, controles negativos na GPU e o modo antigo. Checkpoint de revisão depois
+do b, revisão final depois do d.
+
+**A1.3a — o motor de CUDA com os contadores do simulador**
+- `rust/moe-rt/tests/motor_gpu.rs`: as fixtures de `tests/fixtures/a1_sim_token_barreira.json` (protocolo `token` com barreira,
+  `AdmitMode::TokenBarrier`) rodam no `Engine` com o `CudaBackend`, com as duas linhas do host em threads de verdade e a GPU de
+  verdade. O roteamento do simulador é forçado por roteadores construídos: a entrada do token `t` é o vetor com 1 na posição
+  `t`, e o roteador da camada `l` dá ao expert na posição `p` da lista de `routing[t][l]` o logit `K - p` e zero aos demais.
+  Os experts têm pesos zero, então o `h` não muda (conferido a cada token) e só os contadores contam.
+- Resultado: as 31 fixtures que cabem batem com o simulador (acertos, cópias, experts na CPU, recusas e cópias guardadas), e
+  somam acertos, cópias, CPU e cópias guardadas diferentes de zero. Limite: o top-k do backend exige `K` potência de dois e `E`
+  par (`GEMV_BM = 2`), então as fixtures com `K = 3` ou `E` ímpar (33 das 64) não rodam na GPU; elas seguem no backend falso.
+- Controle: com o expert deslocado pelo índice do token (um deslocamento igual para todos só renomearia os experts), 26 das 31
+  fixtures saem com contadores diferentes. Mostra que o roteamento que chega ao motor é o dos roteadores construídos.
+
+**A1.3b — o `y` escrito pelo `Pool`**
+- `Cpu::fill_rows` (`rust/moe-rt/src/cpu.rs`) é o caminho de escrita das saídas da CPU: faixas de 16 linhas repartidas pelas
+  threads do `Pool`, stores comuns, retorno só depois de todas as tarefas. `gemv` e a soma final dos experts passaram a usá-lo
+  (mesmas faixas, mesma conta; os testes de CPU e de modelo seguem iguais).
+- A condição do plano ("sem store não temporal no `y`, ou `sfence` antes da flag") ficou como teste permanente em
+  `rust/moe-rt/tests/sem_store_nao_temporal.rs`: uma varredura textual de `rust/moe-rt/src`, sem exceção de arquivo e sem
+  distinguir caixa, atrás das famílias `stream`, `movnt`, `maskmov` (`maskmovdqu`, `_mm_maskmove`; o `vmaskmovps` do AVX é um
+  store mascarado comum e fica de fora), `movdir` e `directstore`, mais um teste do detector com trechos de código. Verificado
+  vermelho com `maskmovdqu` plantado em `src/route.rs` e em `src/motor/cpu.rs`. Cobertura textual, não prova sobre código
+  gerado nem sobre dependências. Os dois furos que a rodada 13 achou (família `maskmov` e a exceção de qualquer `cpu.rs` por
+  nome) estão fechados.
+- Conferidor `rust/moe-rt/src/bin/a1-pool-y.rs`: o kernel cutile lê o `y` mapeado depois da flag, mas quem escreve o `y` são as
+  threads do `Pool` (`fill_rows`) e a linha de serviço grava a flag com `Release` depois do retorno. Duas rodadas, cada uma
+  com critério gravado antes: `qual-runs/A1-POOL-Y-20261101/` (o N3 deu 201 de 2.000, a uma volta do mínimo, e não isolava o
+  término das outras faixas; mantida como histórico) e `qual-runs/A1-POOL-Y-20261101-b/` (a oficial). Na segunda, o N3 segura as
+  faixas diferentes da 0 por 20 µs, publica a flag de dentro da faixa 0 e só conta o erro que alcança uma faixa de outra tarefa.
+  31.010 voltas conferidas (30.000 medidas, 1.000 de aquecimento e 10 de JIT), zero saídas erradas; N1 acusado em 1.999 de 2.000,
+  N2 em 2.000 de 2.000 e N3 em 2.000 de 2.000 (mínimo 50% nos três).
+- Limites: no motor de produção quem escreve a área mapeada continua sendo a linha de serviço (`HostExperts::compute` devolve um
+  vetor, e `answer` o copia para o `y` mapeado e grava a flag); o conferidor cobre o caso em que as threads do `Pool` escrevem a
+  área mapeada, que é o que o plano pede. Uma GPU, sem disputa de CPU além do próprio `Pool`.
+
 ## Mudança para o lastro-rust (31/10)
 
 A pedido do Breno, o runtime saiu do strata-opencode (o projeto que liga o OpenCode ao Strata, onde ele nasceu) para um

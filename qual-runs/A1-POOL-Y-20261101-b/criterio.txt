@@ -1,0 +1,21 @@
+A1.3b, segunda rodada do conferidor do y escrito pelo Pool (criterio gravado antes de rodar, 1/11)
+
+Mudanca em relacao a qual-runs/A1-POOL-Y-20261101/criterio.txt (mantido como historico), por achados da rodada 13 de revisao
+(rev-1 P2, rev-2 P3): o N3 daquela rodada dependia da corrida e passou a uma volta do minimo (201 de 2000), e nao isolava o
+termino das outras faixas. Tudo o mais (montagem, voltas, N1, N2, portao 1 e 2) e igual ao criterio original.
+
+N3 (novo): a flag sai de dentro de uma tarefa do Pool, na ultima linha da faixa 0 (linha 15), e toda faixa diferente da 0 gira
+20 us no seu primeiro uso (r >= 16 e r % 16 == 0) antes de escrever, como o N1 e o N2 forcam a janela com 20 us. Assim a
+publicacao acontece com as outras faixas comprovadamente retidas. A saida conta como errada so se alguma linha >= 16 (de outra
+faixa) estiver velha: o erro tem de alcancar uma faixa de outra tarefa, e nao so a linha 15, que ainda e escrita depois do
+retorno do callback. Minimo: 50% das 2.000 voltas, como no N1 e no N2.
+
+Portao (passa se as quatro valem)
+1. Toda chamada do driver devolve CUDA_SUCCESS e o kernel cutile compila e lanca.
+2. Zero saidas erradas nos segmentos de correcao: 31.010 voltas conferidas (30.000 medidas, 1.000 de aquecimento e 10 de
+   compilacao do JIT).
+3. N1, N2 e N3 acusados em pelo menos 50% das 2.000 voltas cada.
+4. Os testes sem_store_nao_temporal (tests/sem_store_nao_temporal.rs: o detector acusa as formas nao temporais e poupa o
+   vmaskmovps, e src nao tem nenhuma) passam.
+
+Previsao: passa, com o N3 perto de 100% (a revisao rev-2 mediu 2.000 de 2.000 em tres execucoes com esta mudanca na copia dela).

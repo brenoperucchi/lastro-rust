@@ -87,19 +87,29 @@ impl Cpu {
         self.pool.threads()
     }
 
-    /// `y = W·x`, W em linhas (`rows × cols`).
-    pub fn gemv(&self, w: &[bf16], rows: usize, cols: usize, x: &[f32], y: &mut [f32]) {
-        assert_eq!(w.len(), rows * cols);
-        assert_eq!(x.len(), cols);
-        assert_eq!(y.len(), rows);
+    /// `y[r] = f(r)` para todas as linhas, em faixas de [`ROWS_PER_TASK`] repartidas pelas threads do `Pool`. É o caminho de
+    /// escrita das saídas da CPU (`gemv` e a soma dos experts): cada tarefa escreve só a sua faixa, com stores comuns (nenhum
+    /// store não temporal em `rust/moe-rt/src`, o que `tests/sem_store_nao_temporal.rs` confere), e `run` só volta quando
+    /// todas terminaram. Quem grava uma flag com `Release` depois deste retorno publica as escritas das threads do `Pool`
+    /// (A1.3b; o conferidor `a1-pool-y` exercita isso com `y` em memória host mapeada lida pela GPU).
+    pub fn fill_rows(&self, y: &mut [f32], f: &(dyn Fn(usize) -> f32 + Sync)) {
+        let rows = y.len();
         let out = Out(y.as_mut_ptr());
         self.pool.run(rows.div_ceil(ROWS_PER_TASK), &|t| {
             let (r0, r1) = (t * ROWS_PER_TASK, ((t + 1) * ROWS_PER_TASK).min(rows));
             for r in r0..r1 {
                 // SAFETY: a tarefa `t` escreve só as linhas `r0..r1`, disjuntas das outras; `y` vive até `run` voltar.
-                unsafe { out.write(r, dot(&w[r * cols..(r + 1) * cols], x)) };
+                unsafe { out.write(r, f(r)) };
             }
         });
+    }
+
+    /// `y = W·x`, W em linhas (`rows × cols`).
+    pub fn gemv(&self, w: &[bf16], rows: usize, cols: usize, x: &[f32], y: &mut [f32]) {
+        assert_eq!(w.len(), rows * cols);
+        assert_eq!(x.len(), cols);
+        assert_eq!(y.len(), rows);
+        self.fill_rows(y, &|r| dot(&w[r * cols..(r + 1) * cols], x));
     }
 
     /// `Σ g_e · down_e(silu(gate_e) ⊙ up_e)` para os experts dados, com `[gate; up] = gate_up_e·x`.
@@ -129,18 +139,28 @@ impl Cpu {
         });
         let a: Vec<Vec<f32>> = h.chunks_exact(2 * inter).map(swiglu).collect();
         // Despacho 2: cada tarefa faz uma faixa de linhas de `y` somando os experts.
-        let out = Out(y.as_mut_ptr());
-        self.pool.run(hidden.div_ceil(ROWS_PER_TASK), &|t| {
-            let (r0, r1) = (t * ROWS_PER_TASK, ((t + 1) * ROWS_PER_TASK).min(hidden));
-            for r in r0..r1 {
-                let mut acc = 0f32;
-                for (e, ae) in list.iter().zip(&a) {
-                    acc += e.weight * dot(&e.down[r * inter..(r + 1) * inter], ae);
-                }
-                // SAFETY: a faixa `r0..r1` é só desta tarefa; `y` vive até `run` voltar.
-                unsafe { out.write(r, acc) };
+        self.fill_rows(&mut y, &|r| {
+            let mut acc = 0f32;
+            for (e, ae) in list.iter().zip(&a) {
+                acc += e.weight * dot(&e.down[r * inter..(r + 1) * inter], ae);
             }
+            acc
         });
         y
+    }
+}
+
+#[cfg(test)]
+mod testes_a13b {
+    use super::*;
+
+    #[test]
+    fn fill_rows_escreve_cada_linha_uma_vez() {
+        let cpu = Cpu::new(4);
+        for n in [0usize, 1, 7, 64, 1536, 1537] {
+            let mut y = vec![-1f32; n];
+            cpu.fill_rows(&mut y, &|r| r as f32 * 2.0);
+            assert!(y.iter().enumerate().all(|(r, v)| *v == r as f32 * 2.0), "n = {n}");
+        }
     }
 }
