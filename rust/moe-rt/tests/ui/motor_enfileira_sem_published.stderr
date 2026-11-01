@@ -1,0 +1,15 @@
+error[E0061]: this method takes 1 argument but 0 arguments were supplied
+  --> tests/ui/motor_enfileira_sem_published.rs:10:7
+   |
+10 |     e.enqueue_token()
+   |       ^^^^^^^^^^^^^-- argument #1 of type `Published` is missing
+   |
+note: method defined here
+  --> src/motor/engine.rs
+   |
+   |     pub fn enqueue_token(&mut self, p: Published) -> R<(), B> {
+   |            ^^^^^^^^^^^^^
+help: provide the argument
+   |
+10 |     e.enqueue_token(/* Published */)
+   |                     +++++++++++++++

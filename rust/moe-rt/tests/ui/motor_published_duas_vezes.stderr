@@ -1,0 +1,9 @@
+error[E0382]: use of moved value: `p`
+  --> tests/ui/motor_published_duas_vezes.rs:11:21
+   |
+ 9 | fn enfileira<B: Backend>(e: &mut Engine<B>, p: Published) -> Result<(), Error<B::Error>> {
+   |                                             - move occurs because `p` has type `Published`, which does not implement the `Copy` trait
+10 |     e.enqueue_token(p)?;
+   |                     - value moved here
+11 |     e.enqueue_token(p)?;
+   |                     ^ value used here after move

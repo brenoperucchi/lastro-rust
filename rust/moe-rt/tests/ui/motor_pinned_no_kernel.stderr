@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/ui/motor_pinned_no_kernel.rs:12:25
+   |
+12 |     b.launch_hits(s, 0, tabela, banco, io)
+   |       -----------       ^^^^^^ expected `&Device<[u32]>`, found `&Pinned<[u32]>`
+   |       |
+   |       arguments to this method are incorrect
+   |
+   = note: expected reference `&Device<[u32]>`
+              found reference `&Pinned<[u32]>`
+note: method defined here
+  --> src/motor/backend.rs
+   |
+   |     fn launch_hits(&self, s: &Self::Stream, layer: usize, table: &Device<[u32]>, bank: &Device<Self::Bank>, io: &Mapped<LayerIo>)
+   |        ^^^^^^^^^^^

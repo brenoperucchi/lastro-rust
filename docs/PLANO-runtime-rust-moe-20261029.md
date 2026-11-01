@@ -2697,6 +2697,127 @@ têm a parada, então um GEQ sem sinal ou sem ciclo daria erro garantido (rev-2,
   `NO_MEMORY_BARRIER`).
 - Uma GPU, sem disputa de CPU.
 
+### A1.1 — o protocolo sem GPU (31/10): aprovado
+
+O protocolo D1 do A0b, escrito em Rust contra um backend falso, sem GPU. Código em `rust/moe-rt/src/motor/`; o estado
+de trabalho está em `rust/moe-rt/src/motor/ESTADO-A1.1.md`. As rodadas: `lastro-rust-1` parcial (só o rev-2) e `lastro-rust-2` com
+mudanças pedidas; na `lastro-rust-3` o rev-2 aprovou e o rev-1 pediu mudanças; na `lastro-rust-4` o rev-2 aprovou de novo
+e o rev-1 pediu o `loom` da falha do serviço sem ajuda da principal. Na `lastro-rust-5` o rev-1 achou a ordem do estado de falha, corrigida.
+Na `lastro-rust-6` os dois revisores aprovaram, sem achados. A unidade está **aprovada** dentro dos limites declarados abaixo.
+
+**O que existe**
+- `Engine` (linha principal) e `Service` (linha de serviço), `Backend` como trait, tipos distintos para memória pinned,
+  mapeada e do device, e a tabela do token que só aceita slot residente.
+- Backend falso (`fake.rs`) com filas FIFO, eventos com a regra da última gravação antes da chamada, um conferidor de
+  violações e um escalonador por semente e pesos por ator. Com ele rodam o `proptest` (invariantes nos dois modos de
+  admissão, saídas de erro, `panic` da linha de serviço) e a paridade com o simulador: 64 fixtures de
+  `tools/a1_fixtures_sim.py` contra os contadores do motor, em 8 intercalações cada.
+- Modelos do `loom` (`loom_tests.rs`) para as ordens de memória e para o encerramento, e 16 casos de `trybuild`
+  (`tests/ui/motor_*.rs`, cada um com o gêmeo em `tests/ui-pass/`).
+
+**Resultados (31/10, depois da rodada 2)**
+- Suíte normal: 20 testes, cerca de 3 s. Suíte do `loom`: 18 testes, cerca de 8 s (os de encerramento levam até 4 s). `trybuild`: os 16 casos novos falham
+  pelo motivo esperado e os gêmeos compilam (cerca de 1 min).
+- Paridade com o simulador: sem diferença de bit nos empates entre `exp2` do Rust e `2.0 ** x` do Python.
+- Bug achado e corrigido: se a linha de serviço dava `panic`, a flag `done` nunca subia e o `join` do motor girava para
+  sempre. Agora uma guarda a sobe também no unwind. A regressão é `panic_da_linha_de_servico_solta_a_principal`, que roda
+  o motor numa thread com teto de 5 s e fica vermelha, em vez de travar, sem a guarda.
+- O escalonador agora é reproduzível: a linha de serviço entra no sorteio desde o `spawn` (antes, só quando a thread
+  começava, e a ordem dependia do tempo real). Com a mesma semente e os mesmos pesos, 10 execuções dão o mesmo resultado
+  (`mesma_semente_mesma_execucao`). Os números abaixo se repetiram em três execuções seguidas.
+
+**Mutantes, e quem acusa cada um** (os testes exigem acusação maior que zero)
+
+| Mutante | Acusado por |
+|---|---|
+| `CopyAtVictim` (cópia na escolha da vítima) | lançamento, 35 de 200 |
+| `NoReadyProtection` (sem as duas proteções do `ready`) | lançamento 6 e tabela 39, de 200 |
+| `PublishedBeforeRecord` (`Published` antes de gravar o `ready`) | lançamento 20 e tabela 66, de 400, com pesos que favorecem a principal |
+| `QueryBeforeRecord` (consulta antes da gravação) | tabela, 18 de 200; o lançamento fica mascarado (0) pela espera da principal |
+| `OldDropOrder` (ordem antiga do `Drop`) | memória liberada com fila, 10 de 200. No `loom` ele é acusado pela falta de drenagem que vem junto (`drain: !OldDropOrder`); a ordem antiga sozinha, com drenagem, sai limpa no modelo |
+| `HeldOneLayerEarly` (cópia guardada solta uma camada cedo) | lançamento, 27 de 200 (em 171 o caso termina em `Err(Config)`, cópia guardada que não saiu; em 2 não há nem acusação nem erro); no `loom`, acesso concorrente ao slot |
+| `SeqRelaxed` (`seq` lida com `Relaxed`) | `loom`: o host lê ids e `x` velhos |
+| `FlagBeforeY` (flag antes do `y`) | `loom`: a GPU lê `y` velho |
+| Linha de serviço sem drenagem (`drain` desligado) | `loom`: memória liberada com cópia pendente |
+| Fechamento sem soltar as flags | `loom`: a GPU fica presa na flag |
+| Falha do serviço sem soltar as flags (`FalhaSemSoltura`) | `loom`: a GPU fica presa na flag |
+| Falha do serviço sem envenenar (`FalhaSemPoison`) | `loom`: a GPU termina o token sem a falha publicada |
+| Falha do serviço sem cancelar (`FalhaSemCancel`) | `loom`: a GPU termina o token sem o cancelamento publicado |
+| Falha do serviço publicando o estado depois da soltura (`FalhaEstadoDepois`) | `loom`: a GPU termina o token com `poison` ainda falso |
+| Linha de serviço sem o sinal de término | `loom`: o `join` não termina |
+
+O mascaramento só vale para o `QueryBeforeRecord`: a gravação vem antes do `Published`, então toda espera da principal
+a captura. No `PublishedBeforeRecord` a gravação vem depois, a espera pode não segurar nada, e o lançamento lê o slot em
+cópia. Por isso gravar o `ready` antes do `Published` é necessário para a segurança (rodada 1, rev-2).
+
+**O `loom`:** o modelo com o `Engine` inteiro e o backend falso (três threads com espera ativa) estoura o limite de
+ramos mesmo com `preemption_bound` 1, porque cada volta de espera ativa é um ramo e ceder a vez não conta como
+preempção. Ficou com modelos pequenos, de duas ou três threads, que chamam a composição de produção: `read_layer` (espera
+`seq` e só então lê ids e `x`), `write_answer`, `release_layer` e `held_due` (a cópia guardada) e `close_order` (a lista
+de passos do fechamento que `Engine::shutdown` percorre). O de encerramento cobre a principal fechando enquanto a linha
+de serviço enfileira uma cópia, sai cedo ou falha, contra uma GPU que espera a flag. Os passos de saída são os de produção (`exit_service`, `release_flags`, `signal_done` e `close_order`), e o modelo exige GPU solta, serviço terminado e memória liberada sem cópia pendente. Esperas do modelo são limitadas: falhar a espera é violação, não estouro de ramos. Isso só vale com uma thread esperando em giro de cada vez (com duas, uma cede à outra até o limite e acusa falsamente); por isso o cenário da falha do serviço sem ajuda da principal deixa a principal só juntando as threads. Nele quem solta a GPU, envenena e cancela é `exit_service`, e o modelo omite cada uma dessas ações para mostrar que pesa (`FalhaSemSoltura`, `FalhaSemPoison`, `FalhaSemCancel`). A principal observa a GPU terminada e confere `poison` e `cancel` antes de juntar o serviço, como `finish_token` faz. A ordem das filas
+e as saídas de erro (`CpuErr`, `CpuPanic`, `MainErr`, queda no meio do token) ficam com o `proptest`. Um mutante só conta
+como acusado se o panic tiver a marca `MOTOR_VIOLACAO` ou for a violação de causalidade do próprio `loom`; estouro de
+ramos reprova o teste. Fora do `loom`: a corrida entre o valor de soltura do `shutdown` e o `answer`.
+
+**Achados da rodada 1 (rev-2) e estado**
+- P1-1, `acusado()` do `loom` aceitava qualquer panic: corrigido pelo filtro de payload acima.
+- P1-2, `vitima_a_frente` não lia o slot da vítima: o teste novo do escalonador usa o roteamento que lê (chave 2 na
+  camada 1) e o `assert!` estrutural virou `Err(Config)`.
+- P1-3, o mascaramento do `PublishedBeforeRecord` não era estrutural: o teste agora exige lançamento acusado.
+- P2-1, travamento depois de `WrongGeneration`: o motor cai e as chamadas seguintes voltam com `Cancelled`; `finish_token`
+  sem token enfileirado é recusado.
+- P3: o `prefill` é validado em `Engine::new`; a regressão do `panic` ganhou teto e a estratégia ganhou `Fault::CpuPanic`.
+
+**Achados da rodada 2 e estado** (rev-1 e rev-2)
+- P1 (rev-1), `Published` de outro motor passava quando a geração coincidia: ele agora leva a identidade do motor de
+  origem e `enqueue_token` o recusa (`Config`, motor derrubado) antes de qualquer operação de backend. Regressão:
+  `published_de_outro_motor_recusado`, vermelha sem a checagem.
+- P2 (rev-2), escalonador não reproduzível: corrigido como descrito acima.
+- P2 (rev-1), `loom` sem o encerramento: modelo novo e dois mutantes, na seção do `loom`.
+- P2 e P3 (os dois), faltavam casos de `trybuild`: entraram sete (virada com `Served` vivo, `answer` duas vezes,
+  `Published` duas vezes, `lookup` depois da virada, `Device` sem acesso do host, doorbell em `Device`, `Pinned` forjado).
+- P3-2 (rev-2), `#[must_use]` não atravessa `Option`: o descarte de `Option<Victim>` (`victim()?;`) continua sem aviso, e o
+  atributo no método era redundante (saiu). A proteção real é o `run` interno; o estado `Evicted` no lugar de `Free`
+  continua não feito. O candidato fora das faltas, ou que já tem slot, volta com `Err(Config)` em `victim` e em
+  `copy_after_reader` (regressão em `line.rs`).
+- P3-3 (rev-2), composição reescrita no modelo: `read_layer`, `held_due` e `close_order` foram extraídos e são usados
+  pela produção e pelo `loom`.
+- P3-4 (rev-2): o comentário de teste voltou ao lugar e a linha do `HeldOneLayerEarly` diz o que acontece nos outros casos.
+
+**Achados da rodada 3 e estado** (rev-1 REQUEST CHANGES, rev-2 APPROVE)
+- P2 (rev-1), `loom` do encerramento reescrevia a saída do serviço: `release_flags`, `exit_service` e `signal_done` foram
+  extraídos e o modelo os chama, com uma GPU esperando a flag; quatro mutantes (ordem antiga, sem drenagem, sem soltura
+  das flags, sem sinal de término).
+- P2 (rev-1), faltavam dois pares de `trybuild` (`upload_de_memoria_pageable`, `enfileira_sem_published`).
+- P3 (rev-2): a chave que já tem slot é recusada em `victim` e `copy_after_reader`; o `#[must_use]` redundante saiu; o
+  texto e o comentário de `close_order` dizem que a ordem antiga só é acusada com a falta de drenagem.
+
+**Achados da rodada 4 e estado** (rev-1 REQUEST CHANGES, rev-2 APPROVE)
+- P2 (rev-1), a soltura da principal mascarava o ramo de falha de `exit_service` no `loom`: cenário novo sem ajuda da
+  principal e três mutantes (acima).
+- P3 (rev-2): a espera limitada só vale com uma thread em giro (comentário e texto acima); a regressão da chave com slot
+  agora também cobre `copy_after_reader` com uma vítima obtida antes da primeira cópia; entrou o par
+  `motor_published_forjado` (campos privados).
+
+**Achados da rodada 5 e estado** (rev-1 REQUEST CHANGES, rev-2 APPROVE)
+- P1 (rev-1), `exit_service` soltava as flags antes de publicar `poison` e `cancel`: a GPU podia terminar o token e a
+  principal devolver `Ok` antes de enxergar a falha. A ordem agora é estado de falha primeiro, soltura depois. O cenário
+  sem ajuda da principal confere `poison` e `cancel` depois de juntar a GPU e antes de juntar o serviço; a ordem inversa
+  é o mutante `FalhaEstadoDepois`. Não foi feito o teste dirigido no backend falso com um portão entre a soltura e o
+  estado (a janela só existia entre duas escritas da guarda; o `loom` a cobre).
+- P3 (rev-2), dois `Victim` do mesmo slot livre passavam: `copy_after_reader` recusa um slot que não está `Free`
+  (regressão em `line.rs`). Os itens soltos da rodada 2 voltaram para a lista dela e a tabela de mutantes ganhou as
+  linhas da falha do serviço.
+
+**Limites que ficam**
+- O motor roda só contra o backend falso; o backend de CUDA está só na interface (`backend.rs`). Fica para o A1.2.
+- Os tipos de memória guardam `Arc<T>` no A1.1, para o backend falso poder ler uma região liberada cedo sem
+  comportamento indefinido e anotar a violação.
+- No `loom` a cópia roda na hora em que é enfileirada; a ordem das filas é coberta só pelo `proptest`.
+- Dois tipos chamados `Victim` e `Pins` agora existem no crate (`cache::core` e `motor`), então dois `.stderr` antigos do
+  `trybuild` mudaram só no nome qualificado do tipo, sem mudar o erro nem a linha.
+
 ## Mudança para o lastro-rust (31/10)
 
 A pedido do Breno, o runtime saiu do strata-opencode (o projeto que liga o OpenCode ao Strata, onde ele nasceu) para um

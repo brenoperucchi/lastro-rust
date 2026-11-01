@@ -1,0 +1,9 @@
+error: cannot construct `LayerView<'_>` with struct literal syntax due to private fields
+  --> tests/ui/motor_view_forjada.rs:13:19
+   |
+13 |     let forjada = LayerView { epoch, layer: 0 };
+   |                   ^^^^^^^^^   -----  -------- private field
+   |                               |
+   |                               private field
+   |
+   = note: ...and other private fields `keys`, `misses`, `x`, `io`, `flag` and `flag_first` that were not provided

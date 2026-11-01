@@ -1,0 +1,9 @@
+error[E0382]: use of moved value: `view`
+  --> tests/ui/motor_answer_duas_vezes.rs:12:21
+   |
+10 |     let view = svc.serve_layer(epoch, 0)?;
+   |         ---- move occurs because `view` has type `LayerView<'_>`, which does not implement the `Copy` trait
+11 |     let _a = answer(view, &[0, 0]);
+   |                     ---- value moved here
+12 |     let _b = answer(view, &[0, 0]);
+   |                     ^^^^ value used here after move

@@ -2,7 +2,7 @@ error[E0382]: use of moved value: `v`
   --> tests/ui/vitima_reusada.rs:13:27
    |
 11 |     let Some(v) = slots.victim(&pins, &idle)? else { return Ok(()) };
-   |              - move occurs because `v` has type `Victim`, which does not implement the `Copy` trait
+   |              - move occurs because `v` has type `moe_rt::cache::core::Victim`, which does not implement the `Copy` trait
 12 |     slots.copy_on_compute(v, 0)?;
    |                           - value moved here
 13 |     slots.copy_on_compute(v, 1)?;

@@ -1,0 +1,9 @@
+error[E0382]: use of moved value: `v`
+  --> tests/ui/motor_vitima_reusada.rs:16:27
+   |
+14 |     let Some(v) = svc.victim(&served, &pins, 3)? else { return Ok(()) };
+   |              - move occurs because `v` has type `moe_rt::motor::Victim`, which does not implement the `Copy` trait
+15 |     svc.copy_after_reader(v, 3, &served)?;
+   |                           - value moved here
+16 |     svc.copy_after_reader(v, 4, &served)?;
+   |                           ^ value used here after move

@@ -1,0 +1,5 @@
+error[E0608]: cannot index into a value of type `&Device<[u32]>`
+  --> tests/ui/motor_device_sem_acesso_do_host.rs:10:6
+   |
+10 |     d[0]
+   |      ^^^

@@ -11,6 +11,7 @@ pub mod cpu;
 pub mod gpu;
 pub mod gpu_model;
 pub mod model;
+pub mod motor;
 pub mod npy;
 pub mod pool;
 pub mod weights;

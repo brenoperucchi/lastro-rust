@@ -1,0 +1,9 @@
+error: cannot construct `Published` with struct literal syntax due to private fields
+ --> tests/ui/motor_published_forjado.rs:7:13
+  |
+7 |     let p = Published { origin: 1, gen: 1 };
+  |             ^^^^^^^^^   ---------  ------ private field
+  |                         |
+  |                         private field
+  |
+  = note: ...and other private fields `side_idx`, `side`, `ready` and `stats` that were not provided

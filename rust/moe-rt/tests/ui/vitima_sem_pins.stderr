@@ -1,4 +1,4 @@
-error: cannot construct `Pins` with struct literal syntax due to private fields
+error: cannot construct `moe_rt::cache::core::Pins` with struct literal syntax due to private fields
   --> tests/ui/vitima_sem_pins.rs:10:16
    |
 10 |     let pins = Pins { clock: 0 };

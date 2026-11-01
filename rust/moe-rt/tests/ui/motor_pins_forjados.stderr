@@ -1,0 +1,7 @@
+error[E0451]: fields `layer` and `keys` of struct `moe_rt::motor::Pins` are private
+  --> tests/ui/motor_pins_forjados.rs:13:23
+   |
+13 |     let pins = Pins { layer: 0, keys: vec![] };
+   |                       ^^^^^     ^^^^ private field
+   |                       |
+   |                       private field

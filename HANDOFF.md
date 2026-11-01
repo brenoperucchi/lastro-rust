@@ -20,9 +20,8 @@ strata-opencode e mudou para cá em 31/10/2026 (seção "Mudança para o lastro-
 ## Estado (31/10, 17h)
 
 - Feitos e aprovados: M0 a M2, B0, C, comparação com o llama.cpp, A0 (A0a/A0b/A0c) e A1.0 (doorbell; commit ff639fd).
-- **Próximo: A1.1** (protocolo sem GPU), parado no meio e sem commit. Estado em `rust/moe-rt/src/motor/ESTADO-A1.1.md`.
-  Os testes do motor travavam (suspeito: escalonador determinístico de `fake.rs`): retomar um teste por vez com
-  `timeout 60`, começando pelos dirigidos; faltam mutantes do backend falso, cenários loom, trybuild e a seção do plano.
+- A1.1 (protocolo sem GPU) aprovado pelos dois revisores na rodada `lastro-rust-6`. Estado em
+  `rust/moe-rt/src/motor/ESTADO-A1.1.md`. **Próximo: A1.2.**
 - Depois: A1.2 (peças de GPU), A1.3 (motor D1), A1.4 (medida final contra lfu_cpu e llama.cpp, mesmas 6 células; a
   janela longa só com o aval do Breno). O plano termina no A1.4.
 - Fora do plano, feitos em 31/10 (commit a4faca6): `qual-runs/PCIE-X8-20261031/` (análise x8/x8 contra x16/x4: ficar
@@ -43,6 +42,6 @@ strata-opencode e mudou para cá em 31/10/2026 (seção "Mudança para o lastro-
   Binários de medida com `cargo build --release --bin <nome>`, e sha256 gravado na pasta da medida.
 - Commit local por passo do A1 aprovado pelos dois revisores, sem perguntar; avisar o Breno só quando a revisão fecha ou
   há decisão dele. Teste curto de GPU livre depois de conferir que a 4090 está ociosa.
-- Revisão pela skill herdr-review, nível 2 (gatilho `protocolo` no A1). Não há remoto: nada é publicado.
+- Revisão pela skill herdr-review, nível 2 (gatilho `protocolo` no A1). Remoto público: https://github.com/brenoperucchi/lastro-rust; push só com o aval do Breno sobre o texto.
 - Bug: teste de regressão permanente que falha antes da correção.
 - Comparação com o Strata adiada até o fim do plano (só llama.cpp como base).

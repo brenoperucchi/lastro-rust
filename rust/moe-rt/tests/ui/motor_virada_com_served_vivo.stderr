@@ -1,0 +1,12 @@
+error[E0505]: cannot move out of `epoch` because it is borrowed
+  --> tests/ui/motor_virada_com_served_vivo.rs:12:34
+   |
+ 9 | fn camada<B: Backend>(svc: &mut Service<B>, epoch: TokenEpoch) -> Result<(), Error<B::Error>> {
+   |                                             ----- binding `epoch` declared here
+10 |     let view = svc.serve_layer(&epoch, 0)?;
+   |                                ------ borrow of `epoch` occurs here
+11 |     let served = answer(view, &[0, 0]);
+12 |     let _proximo = svc.end_token(epoch)?;
+   |                                  ^^^^^ move out of `epoch` occurs here
+13 |     let _pins = svc.pin_layer(&served);
+   |                               ------- borrow later used here

@@ -1,0 +1,9 @@
+error[E0382]: borrow of moved value: `epoch`
+  --> tests/ui/motor_lookup_depois_da_virada.rs:11:17
+   |
+ 9 | fn camada<B: Backend>(svc: &mut Service<B>, epoch: TokenEpoch) -> Result<(), Error<B::Error>> {
+   |                                             ----- move occurs because `epoch` has type `TokenEpoch`, which does not implement the `Copy` trait
+10 |     let _proximo = svc.end_token(epoch)?;
+   |                                  ----- value moved here
+11 |     let _slot = epoch.lookup(0);
+   |                 ^^^^^ value borrowed here after move

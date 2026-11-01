@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/ui/motor_admite_sem_responder.rs:12:25
+   |
+12 |     let _v = svc.victim(&view, pins, 3)?;
+   |                  ------ ^^^^^ expected `&Served<'_>`, found `&LayerView<'_>`
+   |                  |
+   |                  arguments to this method are incorrect
+   |
+   = note: expected reference `&Served<'_>`
+              found reference `&LayerView<'_>`
+note: method defined here
+  --> src/motor/line.rs
+   |
+   |     pub fn victim(&mut self, served: &Served<'_>, pins: &Pins, candidate: u32) -> R<Option<Victim>, B> {
+   |            ^^^^^^
