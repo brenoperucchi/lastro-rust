@@ -54,3 +54,6 @@ GPU: fixe a 4090 por UUID (`CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a42
   3B a 25% por construção, pelos arquivos do C). Corrigido: mesma regra de 0,01% para as quatro linhas; `criterio-v1.txt` guarda a redação revisada na rodada 19 (sha256 no fim do critério);
   arquivos do `--ms-dir` com prefixo por harness (`a1-motor-ms-`, `m2a-ms-`); o `a1-motor` recusa linhas do motor sem `--warmup` (nota do rev-2: o primeiro token paga o `prefill`).
 - **Checkpoint aprovado pelos dois na rodada 21** (rodadas 19 e 20 pediram mudanças). A1.4a e A1.4b commitados localmente. Falta: o roteiro da janela (A1.4c) e o aval do Breno para a janela longa, mais a confirmação dele do limiar de 1,05 x e da consequência de "não passa".
+- **Roteiro da janela escrito (sem commit):** `qual-runs/A1-MEDIDA-20261101/rodar.sh` (modo seco `MEDIDA_SECO=1`: 20 execuções do m2a-cache, 12 do a1-motor, 42 do forcado) e `bin/`
+  com SHA256SUMS e `fonte.txt` (git 20747ab). Tempo medido numa unidade de cada bloco do 3B, fora da pasta de resultados (sem valor de decisão): a1-motor 313 s, m2a-cache backlog 4 270 s, backlog 0 440 s
+  (1B estimado em cerca de 0,6 disso). Estimativa da janela inteira: núcleo 5 x 27 min ≈ 2 h 15, L6 ≈ 5 min, llama.cpp 3 x 27 min ≈ 1 h 20: de 3,5 a 4 h (a estimativa inicial de 1,5 a 3 h estava baixa).
