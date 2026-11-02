@@ -2965,6 +2965,14 @@ do b, revisão final depois do d.
 - Limites: na GPU, `K` potência de dois e `E` par; o bloco denso copia entre buffers por dtod (custo a medir no A1.4); nenhuma
   medida de tempo; o controle da janela da cópia tem poucas cenas; os controles não têm sinal explícito de progresso da linha de serviço (decisão do Breno em 01/11: aceitar; a independência da velocidade vem de repetir com atrasos de 80 e 400 ms, e o mutante da cópia é acusado até sem janela), e a comparação é bit a bit entre as voltas da versão certa e por tolerância contra a CPU, não contra uma referência GPU do expert antigo/novo. `Dense` é interno ao crate (`pub(crate)`), porque os lançamentos não sincronizam.
 
+### Ideia para depois do A1: passo com várias posições (2/11, anotada; não faz parte do A1)
+
+Origem: o projeto Next-Concept Modeling (https://github.com/HazyResearch/ncm), que gera texto por níveis, com muitas posições em paralelo e uma avaliação do modelo por nível. Foi lido só o README; o paper e o código não foram abertos. O NCM em si não serve ao lastro-rust: os checkpoints são pequenos, de tarefas estreitas e não são MoE, e o repositório não tem treino.
+
+A hipótese que fica é do lado do runtime. Com 1 token por passo, cada camada pede cerca de 8 experts e o tempo é decidido pelos misses e pela política de cache. Com M posições por passo, a união dos experts pedidos cresce com M e, nos passos largos, tende a todos os 32 ou 40 experts da camada. Nesse regime não há o que escolher: o custo vira largura de banda do PCIe, amortizada pelas M posições, e a política de cache perde importância. Passos estreitos continuam no regime de hoje. O mesmo vale para decodificação especulativa, prefill em lotes e qualquer decodificador paralelo, então o item tem valor mesmo que o NCM nunca vire MoE. Não foi pesquisado se algum runtime de offload de MoE já trata essa transição entre regimes.
+
+Primeiro passo, barato e sem código novo no motor: no simulador, com os traços atuais dos Granite 1B e 3B, medir como o tamanho da união de experts por camada cresce com M (posições consecutivas agrupadas) e a partir de que M o regime de largura de banda aparece. Só depois decidir se o motor D1 ganha um passo multiposição (hoje ele é por token: `begin_token`, `read_logits`, linha de serviço, doorbell). Não altera a janela do A1.4 nem o critério gravado.
+
 ## Mudança para o lastro-rust (31/10)
 
 A pedido do Breno, o runtime saiu do strata-opencode (o projeto que liga o OpenCode ao Strata, onde ele nasceu) para um
