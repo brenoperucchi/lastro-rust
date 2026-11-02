@@ -1,0 +1,156 @@
+A1.4: a medida final do motor D1 contra o lfu_cpu de hoje e contra o llama.cpp (plano, "A1 - critério de conclusão", item Tempo,
+e "Condição de reabertura da busca antecipada"). Gravado em 01/11 antes de existir o harness do motor D1 sobre o modelo inteiro
+e antes de qualquer medida dele. Nenhum limiar muda depois de ver o número; o que mudar vira um critério novo, com data, e o
+antigo fica de histórico.
+
+Material de referência (sha256, 16 primeiros caracteres)
+  tools/moe_sim.py                                      802ad2061bb15f21
+  qual-runs/A0C-TOKEN-SIM-20261031/token_sim.py         d14ce01e87e7e210
+  qual-runs/A0C-TOKEN-SIM-20261031/moe_sim-rodada51.py  286e06c713556cc1
+  Previsões lidas de qual-runs/A0C-TOKEN-SIM-20261031/decomposicao.txt.
+
+1. O que se mede
+
+Células: Granite 1B e 3B, orçamentos de 10%, 25% e 50% dos experts (6 células), conversas 4 a 7 cronometradas, aquecimento nas
+conversas 0 a 3 (sem cronometrar), decode em batch 1, backlog 4, `taskset -c 0-15`, 4090 por UUID, as mesmas regras do C e da
+comparação com o llama.cpp.
+Linhas, todas na mesma sessão:
+  (L1) motor D1 por evento (Engine + CudaBackend::new_model, AdmitMode::Event, lfu_cpu): a linha principal;
+  (L2) lfu_cpu de hoje (m2a-cache, GpuModel + ExpertCache, admissão por evento): a base;
+  (L3) o residente do m2a-cache, a base de espera de L2;
+  (L4) o motor D1 com slots para todos os experts, preenchido antes das conversas (só acertos): a base de espera de L1;
+  (L5) llama.cpp cache (--cpu-moe --moe-cache-mib 10/25/50%) e -ncmoe (22/18/12 no 1B e 29/24/16 no 3B), tudo na GPU F32,
+       3 repetições, medidas de novo (nada herdado de 30/10);
+  (L6) relatada: o motor D1 em TokenBarrier, 1 execução por célula, comparada só nos contadores (acertos, cópias, experts na CPU) com o
+       simulador no protocolo token com barreira nas mesmas conversas (emenda 2); o tempo não se compara.
+Repetições de L1 a L4: 5, intercaladas (a ordem das linhas alterna a cada repetição). Em cada repetição entram L1, L2, L3, L4
+das 6 células, rodando um modelo por vez. L5 em 3 repetições intercaladas entre si, no fim da sessão, com o mesmo `taskset`.
+Extras para os ajustes (seção 5, emenda 2): lfu_cpu de hoje com backlog 0 (sem cópia), 5 repetições intercaladas e pareadas com as de
+backlog 4 (L2), mesmas células.
+Antes e depois da janela: a 4090 ociosa (nvidia-smi), `ps` com os 15 processos de mais CPU e a carga gravados em `ambiente.txt`.
+Uma execução com outra carga de GPU na 4090, ou cujo binário não confere com o SHA gravado, é descartada e refeita (a decisão e a
+causa vão para o registro).
+
+2. Correção primeiro (portão, conferido antes das conclusões de velocidade)
+
+  - L1 e L4 passam pela conferência de logits do harness: logits do motor contra os da passada residente do mesmo harness,
+    erro relativo máximo 1e-4, em todo token cronometrado, mais o `texto-a` contra o transformers (referência já gravada).
+  - Roteamento (redação da emenda 2 de 01/11, depois da rodada 19): L1 e L4 comparam, fora do cronômetro, os ids que a GPU escolheu
+    em cada camada (`Engine::layer_ids`) com os do traço, como conjunto, em todo token e camada; no máximo 0,01% dos pares
+    (token, camada) podem diferir (os quase empates; 12 de 122.048 no 3B). L2 e L3 (m2a-cache): a mesma regra, lida no `rot.igual` de cada
+    execução (no máximo 0,01% dos pares; 3 de 33.984 no 1B e 12 de 122.048 no 3B). A regra "maior ou igual ao residente" da
+    primeira redação da emenda 2 foi trocada na rodada 20: os arquivos do C mostram o lfu_cpu do 3B a 25% em 122.046 de 122.048 nas
+    cinco execuções quentes, abaixo do residente (122.047), por quase empates, e ela suspenderia a célula por construção. O total de experts pedidos (needed = tokens x camadas x top-k,
+    exato) confere só a janela dos contadores.
+  - Uma célula cuja linha L1 não passa fica suspensa: as afirmações que dependem dela não são confirmadas nem refutadas.
+  - Na L5, o portão do argmax e as conferências de log da comparação de 30/10 (criterio.txt de LLAMACPP-COMPARA-20261030) valem
+    sem mudança.
+
+3. O que se mede de tempo e como se decide
+
+Estatística (emenda 2): o ms/token de uma repetição é a MÉDIA dos tokens cronometrados (a coluna ms/tok dos dois harnesses); o
+valor de uma célula é a mediana das 5 médias. Toda conta sai dos arquivos `--ms-dir` (quatro casas), nunca das tabelas de duas
+casas.
+Espera = ms/token da política menos ms/token da base de espera da mesma repetição (L2 menos L3, e L1 menos L4). Diferença de uma
+repetição i: d_i = espera(L1)_i menos espera(L2)_i. Intervalo da célula: [mín, máx] dos 5 d_i. Resultado também em ms/token total.
+
+3.1 Previsão do simulador (protocolo token, base lfu_cpu runtime), diferença esperada em ms por token (negativo = menos espera):
+
+  célula     cobrança da rodada 51   cobrança de agora
+  1B 10%       -0,040                 -0,040
+  1B 25%       -0,031                 -0,037
+  1B 50%       -0,021                 -0,038
+  3B 10%       -0,067                 -0,070
+  3B 25%       -0,041                 -0,051
+  3B 50%       -0,027                 -0,045
+
+Regra por célula (a mesma do plano, achado do rev-2 na rodada 53):
+  - aponta a cobrança da rodada 51 se o intervalo contém o valor dela e exclui o de agora;
+  - aponta a de agora se contém o dela e exclui o da rodada 51;
+  - inconclusivo se contém os dois (vale o limite sobre a granularidade escrito na A0c);
+  - "nenhuma das duas" se exclui os dois: relatado como desvio do simulador, sem reabrir nada sozinho.
+Emenda 2 (erro de raciocínio corrigido, rodada 19): a regra aponta uma cobrança pela DISTÂNCIA entre as duas previsões, e não pelo
+tamanho da diferença. No 1B a 10% as duas coincidem (-0,040 e -0,040), então essa célula só pode dar inconclusivo ou "nenhuma das
+duas"; no 3B a 10% elas ficam a 0,003 ms. As maiores distâncias são a 50% (0,017 ms no 1B e 0,018 ms no 3B): se alguma célula
+apontar, será a 50%. Limiares e regra não mudam.
+Previsão registrada antes: inconclusivo na maioria das células, porque o ruído registrado entre execuções do mesmo binário (até
+2,7% do ms/token, de 6 a 20 vezes a distância entre as pontas) é maior que as diferenças previstas; espero apontar uma cobrança,
+no máximo, nas células de 50% (ver a emenda 2 acima). Também espero que o motor fique
+acima do previsto pelo simulador em ms/token total, pela parte que o simulador não modela: o doorbell, a linha de serviço do
+host e o bloco denso do motor novo (cópias dtod entre buffers, atenção própria).
+
+3.2 Aceitação do motor contra o lfu_cpu de hoje (ms/token total, mediana das 5 repetições, por célula):
+  - passa se mediana(L1) <= 1,05 x mediana(L2) nas 6 células. A margem de 5% é o dobro do ruído registrado (2,7%) e vale como
+    margem operacional, não como incerteza medida;
+  - uma célula entre 1,05 e 1,15 x é "acima da margem", relatada com a causa; acima de 1,15 x é regressão. Qualquer célula fora
+    da margem torna o resultado "não passa" e a causa vai para o registro. Isso é uma proposta minha para o A1.4: o plano só
+    fixa a regra da seção 3.1; os revisores e o Breno podem trocá-la antes da janela, e a troca fica registrada antes de medir.
+Consequência (emenda 2, decisão do Breno pendente de confirmação): "não passa" significa que o A1 não fecha sozinho; a causa e a
+decisão vão ao Breno.
+Nota de leitura (emenda 2, não decide nada): as duas sanidades do 1B a 25% (uma execução cada, 01/11) deram d = (L1 - L4) - (L2 - L3)
+de cerca de +0,2 ms, contra -0,031 e -0,037 previstos, embora o total do motor ficasse 3,4% abaixo do lfu_cpu. Isso é lido como o
+custo do caminho do host em cada camada com falta (doorbell, linha de serviço, y com a flag), que o simulador do protocolo token não
+modela e que a L4 (só acertos) não paga. Um "nenhuma das duas" com d positivo é lido como HIPÓTESE de explicação, não como causa estabelecida (a L4 também roda o
+protocolo de serviço e a flag em toda camada; o que muda é o custo visível depois da sobreposição com os kernels e a CPU). O
+tamanho é estimado pela latência do doorbell do A1.0 vezes as camadas com falta por token e relatado ao lado de d, separando o
+desvio observado, a estimativa e a hipótese causal.
+Previsão: passa no 3B; no 1B há risco de ficar entre 1,00 e 1,10 x, pelo custo por camada do bloco denso, que o A1.3 declarou
+como a medir.
+
+4. A comparação com o llama.cpp (decisão do Breno de 31/10, "o plano fecha com esse número")
+
+Por célula, motor D1 (5 repetições) contra o cache do llama.cpp e contra o -ncmoe do mesmo orçamento (3 repetições):
+  - "mais rápido" só com faixas mín-máx sem sobreposição; com sobreposição, "empate dentro do ruído";
+  - o -ncmoe, por ser uma linha de base de valor mais baixo, segue a regra da comparação de 30/10 (valor único, 10% de margem)
+    quando medido uma vez; aqui, como são 3 repetições, vale a regra das faixas.
+Previsão: o motor é mais rápido que o cache do llama.cpp nas 6 células (30/10 deu 3,2 a 7,0 x para o lfu_cpu) e que o -ncmoe nas
+6 (1,38 a 1,99 x); a margem sobra mesmo com o motor 15% acima do lfu_cpu.
+
+5. Reabertura da busca antecipada (plano, achados do rev-2 nas rodadas 50 e 51)
+
+Com as execuções lfu_cpu backlog 4 (L2) e backlog 0 (5 repetições pareadas, emenda 2: o ajuste i usa a repetição i de cada uma; são
+cinco ajustes completos e a incerteza é o intervalo desses cinco), refazem-se, por mínimos quadrados e iterando até o ponto fixo como no
+passo 3 do plano:
+  - c_cpu e c_cpu_quiet: ms de CPU por token contra os experts na CPU em camadas com e sem tráfego;
+  - o_layer: a sobra do tempo medido além do simulado contra as camadas com cópia, só nas execuções backlog 4.
+Aceitação de cada ajuste, gravada antes: resíduo máximo de 10% no ms/token de cada célula contra o medido (o ±10% do passo 3),
+com a incerteza do ajuste dada pelo intervalo das 5 intercaladas. O o_layer vale de 0,4% a 3,6% do tempo por token e mal se
+distingue do ruído: se o intervalo cobrir tanto 0 quanto 0,0367 ms, o ajuste conta como inconclusivo e não reabre nada sozinho.
+Se os três ajustes passarem, roda-se de novo o `prefetch_sim.py` da A0a (cerca de 15 minutos de CPU) com os novos parâmetros;
+se o portão da A0a passar, o A2 volta à mesa por decisão do Breno, não automática.
+
+6. Cauda de latência (relatada; não decide nada)
+
+Por célula e linha (L1, L2), a partir dos arquivos `--ms-dir` que os dois harnesses gravam, um valor por token cronometrado
+(emenda 2): mediana, p95, p99, máximo do ms por token cronometrado, e a contagem de tokens acima de 3 x a
+mediana da célula (as "voltas isoladas, provavelmente preempção do host" do plano). Os 10 maiores ficam listados com o índice do
+token, para cruzar com a carga registrada em `ambiente.txt`.
+
+7. Custo do bloco denso e limites do A1.3 (relatados)
+
+  - Diferença líquida entre os dois caminhos totalmente residentes: L4 menos L3, em ms/token e por camada (emenda 2). Ela inclui o
+    top-k na GPU, o doorbell, a linha de serviço, os kernels agrupados e o bloco denso; NÃO é o custo isolado dos dtod nem da
+    atenção, e nenhuma conclusão sobre o bloco denso sai só dela. O custo isolado do bloco denso só se afirma com uma medida
+    pareada própria (fora deste critério); o que o A1.3 deixou como "a medir" fica relatado como diferença líquida.
+  - Os limites do A1.3 (K potência de dois e E par na GPU) valem para os dois Granite: 1B com 32 experts e top-8; 3B com 40
+    experts e top-8. Nenhuma célula fica de fora por esse limite; se alguma ficar, vai para o registro.
+
+8. O que invalida a janela
+
+  - qualquer execução com logits fora de 1e-4 (ou de forma errada), roteamento fora da regra da seção 2 ou erro do motor: o harness
+    termina e sai com código diferente de zero; a execução é refeita uma vez, e se o resultado se repetir a CÉLULA fica suspensa
+    (mesma palavra da seção 2); a janela inteira só é invalidada pelos dois itens abaixo ou pela deriva;
+  - nota do roteiro (rodada 21): o m2a-cache não sai com código diferente de zero por roteamento fora da regra (só por logits); o
+    roteiro da janela confere a coluna `rot.igual` de cada saída dele e trata a reprovação como o harness trataria;
+  - deriva de L3 ou de L4 (o residente e o motor com tudo residente) entre repetições acima de 5% da média, no mesmo modelo: a
+    janela é relatada como ruidosa, e a decisão da seção 3.2 só vale se nenhuma das duas derivar;
+  - o SHA do binário diferente do gravado no início, ou uma recompilação durante a janela.
+
+Emendas de 01/11 depois do checkpoint (rodada 19), todas antes de qualquer medida; a redação anterior (a que a rodada 19 revisou,
+com a emenda 1 do roteamento já dentro) está em `criterio-v1.txt`, nesta pasta, com o sha256 no fim deste arquivo, e em
+.herdr/review/lastro-rust-19/diff.patch. Resumo das emendas (a 12 é a regra do rot.igual de L2/L3, da rodada 20): (1) roteamento por ids contra o traço em L1/L4 e regra do rot.igual em L2/L3; (2) a
+estatística por repetição é a média dos tokens, a célula é a mediana das 5 médias; (3) consequência de "não passa"; (4) justificativa
+da previsão da seção 3.1 corrigida; (5) nota de leitura da sanidade; (6) backlog 0 em 5 repetições pareadas; (7) cauda de L2 e L1 por
+arquivos `--ms-dir`; (8) L4 menos L3 como diferença líquida; (9) deriva de L4 com o mesmo limite de 5%; (10) "célula suspensa" em
+vez de "janela invalidada" para falha de logits ou roteamento; (11) L6 contra o simulador nos contadores; (12) rot.igual de L2/L3 com a mesma regra de 0,01%.
+criterio-v1.txt sha256 7881bc88898d063d2a59e2afd15e195b9a46923800746de7ae1ce2bb6b2d653f

@@ -19,7 +19,7 @@
 //!
 //!   m2a-cache --model <dir> --traces <dir> --ref <dir> --sim <sim.json> [--convs 4,5,6,7] [--budgets 0.1,0.25,0.5,0.75]
 //!             [--policies resident,cache_full,lru_sync,lru_cpu,lfu_cpu] [--threads N] [--backlog N]
-//!             [--admit evento|barreira] [--warmup 0,1,2,3] [--metrics <arquivo>]
+//!             [--admit evento|barreira] [--warmup 0,1,2,3] [--metrics <arquivo>] [--ms-dir <dir>]
 use cutile::prelude::Device;
 use moe_monitor::snapshot::{self, Event, Publisher, Request, Snapshot, State};
 use moe_rt::cache::{AdmitMode, CacheConfig, Policy};
@@ -46,6 +46,7 @@ struct Args {
     backlog: usize,
     admit: AdmitMode,
     metrics: PathBuf,
+    ms_dir: Option<PathBuf>,
 }
 
 fn parse_args() -> Args {
@@ -63,6 +64,7 @@ fn parse_args() -> Args {
         backlog: 4,
         admit: AdmitMode::Event,
         metrics: snapshot::default_path(),
+        ms_dir: None,
     };
     while let Some(k) = a.next() {
         let mut v = || a.next().unwrap_or_else(|| panic!("{k} sem valor"));
@@ -85,6 +87,7 @@ fn parse_args() -> Args {
                 }
             }
             "--metrics" => r.metrics = PathBuf::from(v()),
+            "--ms-dir" => r.ms_dir = Some(PathBuf::from(v())),
             _ => panic!("opção desconhecida: {k}"),
         }
     }
@@ -373,6 +376,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Experts::Resident(_) => format!("{:>9} {:>9} {:>9} {:>9} {:>9}", "–", "–", "–", "–", "–"),
         };
         exact_lines.push(format!("{pname:<10} {budget:>6} | {counts} | {hash:016x}"));
+        // A série de ms por token (A1.4), gravada depois da região cronometrada, com quatro casas.
+        if let Some(d) = &args.ms_dir {
+            std::fs::create_dir_all(d)?;
+            let txt: String = ms.iter().map(|x| format!("{x:.4}\n")).collect();
+            std::fs::write(d.join(format!("m2a-ms-{pname}-{}.txt", budget.trim_end_matches('%'))), txt)?;
+        }
         let line = format!(
             "{pname:<10} {budget:>6} {slots:>5} | {mean:>7.2} {med:>7.2} {:>7.1} | {:>5.1}% {:>5.1}% {sync:>6.2} {bg:>6.2} | {rw:>8.2} {cms:>8.2} | {:>11} | {simtxt:>14} | {} / {}",
             1e3 / mean,

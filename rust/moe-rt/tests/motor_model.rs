@@ -102,3 +102,45 @@ fn erro_na_copia_dos_logits_nao_estraga_os_tokens_seguintes() {
     let Some((pior, _)) = roda_com_falha(&TOKENS[..6], 5, AdmitMode::TokenBarrier, Some(2)) else { return };
     eprintln!("depois da falha injetada: pior erro relativo {pior:e}");
 }
+
+/// A1.4b: `reset_sequence` começa uma conversa nova (posição 0) sem mexer no cache de experts: a mesma sequência passada duas vezes
+/// dá os mesmos logits a 1e-4 da CPU nas duas.
+#[test]
+fn reset_da_sequencia_repete_os_logits_da_cpu() {
+    let _trava = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    let device = match cuda_core::Device::new(0) {
+        Ok(d) => d,
+        Err(e) => {
+            assert!(std::env::var("MOE_RT_REQUIRE_GPU").as_deref() != Ok("1"), "MOE_RT_REQUIRE_GPU=1 e sem GPU: {e:?}");
+            return;
+        }
+    };
+    device.bind_to_thread().unwrap();
+    let (_scratch, m) = common::tiny_model("motor_reset");
+    let cpu_ref = Cpu::new(2);
+    let seq = [3usize, 17, 5, 29, 8];
+    let mut sess = CpuSession::new(&m, &cpu_ref);
+    let want: Vec<Vec<f32>> = seq.iter().map(|&t| sess.step(t).0).collect();
+    let (compute, copy) = (CudaStream(device.new_stream().unwrap()), CudaStream(device.new_stream().unwrap()));
+    let (b, ex) = CudaBackend::new_model(device.clone(), &m, 5, 64, &compute).unwrap();
+    let cfg = Config { layers: m.cfg.layers, experts: m.cfg.experts, topk: m.cfg.k, width: m.cfg.hidden, slots: 5, backlog: 4, admit: AdmitMode::Event, first_token: 1, prefill: vec![] };
+    let parts = b.parts(compute.clone(), copy, b.weights(&ex).unwrap(), cfg.first_token).unwrap();
+    let cpu = CpuServe { cpu: Cpu::new(2), hidden: m.cfg.hidden, inter: m.cfg.inter, experts: m.cfg.experts, weights: ex.clone() };
+    let mut eng = Engine::new(b.clone(), parts, cfg, cpu).unwrap();
+    for volta in 0..2 {
+        b.reset_sequence().unwrap();
+        // O modelo sintético tem logits quase insensíveis ao contexto (a CPU dá os mesmos bits com outro contexto antes), então a
+        // posição é conferida direto: um `reset` que não faz nada deixaria `posicao` em 5 na segunda volta.
+        assert_eq!(b.sequence_position().unwrap(), 0, "volta {volta}: o reset tem de zerar a posição");
+        for (i, &t) in seq.iter().enumerate() {
+            b.begin_token(&compute, t).unwrap();
+            let p = eng.next_published().unwrap();
+            eng.run_token(p).unwrap();
+            let got = b.read_logits(&compute).unwrap();
+            let err = erro_rel(&got, &want[i]);
+            assert!(err <= 1e-4, "volta {volta}, token {i}: erro relativo {err:e}");
+        }
+        assert_eq!(b.sequence_position().unwrap(), seq.len(), "volta {volta}: cada token avança a posição");
+    }
+    eng.close().unwrap();
+}

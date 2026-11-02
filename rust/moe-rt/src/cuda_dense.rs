@@ -156,6 +156,16 @@ impl Dense {
         Ok(x)
     }
 
+    /// A posição do próximo token na sequência.
+    pub fn position(&self) -> usize {
+        self.pos
+    }
+
+    /// Volta ao início da sequência (o cache antigo fica, mas a máscara da atenção não o lê).
+    pub fn reset(&mut self) {
+        self.pos = 0;
+    }
+
     /// A atenção da camada `l` sobre `h` (residual) e a norma de entrada do bloco MoE em `xn`.
     pub fn attn_block(&mut self, s: &Arc<Stream>, l: usize, h: &mut Tensor<f32>, xn: &mut Tensor<f32>) -> Result<(), CudaError> {
         let raw = s.cu_stream();

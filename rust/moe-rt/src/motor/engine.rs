@@ -267,6 +267,12 @@ impl<B: Backend> Engine<B> {
         }
     }
 
+    /// Os ids dos experts que o roteador da GPU escolheu na camada `l` do último token terminado (`run_token` ou `finish_token`
+    /// já voltou). Só vale com o motor parado entre dois tokens: durante um token a área está sendo escrita.
+    pub fn layer_ids(&self, l: usize) -> Vec<u32> {
+        LayerIo::load(&self.sh.io[l].ids)
+    }
+
     /// Encerra na ordem do `Drop` e devolve o resultado da linha de serviço (o cancelamento conta como sucesso).
     pub fn close(mut self) -> R<(), B> {
         self.shutdown();

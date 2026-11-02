@@ -92,6 +92,11 @@ pub fn tiny_model(name: &str) -> (Scratch, HostModel) {
 }
 
 pub fn tiny_model_with(name: &str, json: serde_json::Value) -> (Scratch, HostModel) {
+    tiny_model_attn(name, json, 0.1)
+}
+
+/// Como `tiny_model_with`, com a escala dos pesos q/k/v/o da atenção (0,1 deixa o contexto quase sem efeito nos logits).
+pub fn tiny_model_attn(name: &str, json: serde_json::Value, attn: f32) -> (Scratch, HostModel) {
     let cfg = Config::from_json(&json).unwrap();
     let tmp = scratch(name);
     let (h, i, e, d) = (cfg.hidden, cfg.inter, cfg.experts, cfg.head_dim);
@@ -110,10 +115,10 @@ pub fn tiny_model_with(name: &str, json: serde_json::Value) -> (Scratch, HostMod
         let p = format!("model.layers.{l}");
         t.push((format!("{p}.input_layernorm.weight"), vec![h], norm(w(h, 0.1))));
         t.push((format!("{p}.post_attention_layernorm.weight"), vec![h], norm(w(h, 0.1))));
-        t.push((format!("{p}.self_attn.q_proj.weight"), vec![qd, h], w(qd * h, 0.1)));
-        t.push((format!("{p}.self_attn.k_proj.weight"), vec![kvd, h], w(kvd * h, 0.1)));
-        t.push((format!("{p}.self_attn.v_proj.weight"), vec![kvd, h], w(kvd * h, 0.1)));
-        t.push((format!("{p}.self_attn.o_proj.weight"), vec![h, qd], w(h * qd, 0.1)));
+        t.push((format!("{p}.self_attn.q_proj.weight"), vec![qd, h], w(qd * h, attn)));
+        t.push((format!("{p}.self_attn.k_proj.weight"), vec![kvd, h], w(kvd * h, attn)));
+        t.push((format!("{p}.self_attn.v_proj.weight"), vec![kvd, h], w(kvd * h, attn)));
+        t.push((format!("{p}.self_attn.o_proj.weight"), vec![h, qd], w(h * qd, attn)));
         t.push((format!("{p}.block_sparse_moe.router.layer.weight"), vec![e, h], w(e * h, 0.5)));
         t.push((format!("{p}.block_sparse_moe.input_linear.weight"), vec![e, 2 * i, h], w(e * 2 * i * h, 0.1)));
         t.push((format!("{p}.block_sparse_moe.output_linear.weight"), vec![e, h, i], w(e * h * i, 0.1)));

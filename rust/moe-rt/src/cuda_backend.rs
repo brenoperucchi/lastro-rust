@@ -467,6 +467,17 @@ impl CudaBackend {
         self.set_input(s, &x)
     }
 
+    /// A posição do próximo token na sequência corrente (0 depois de `reset_sequence`).
+    pub fn sequence_position(&self) -> Result<usize, CudaError> {
+        Ok(self.st.lock().unwrap_or_else(|e| e.into_inner()).dense.as_ref().ok_or(CudaError::Config("sem modelo"))?.position())
+    }
+
+    /// Começa uma sequência nova (próxima conversa): a posição volta a 0. Com a stream ociosa, entre dois tokens.
+    pub fn reset_sequence(&self) -> Result<(), CudaError> {
+        self.st.lock().unwrap_or_else(|e| e.into_inner()).dense.as_mut().ok_or(CudaError::Config("sem modelo"))?.reset();
+        Ok(())
+    }
+
     /// Só para o teste de regressão do caminho de erro de `read_logits`.
     #[doc(hidden)]
     pub fn injeta_falha_na_copia_dos_logits(on: bool) {
