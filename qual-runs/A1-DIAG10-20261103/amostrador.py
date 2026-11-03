@@ -53,6 +53,12 @@ def amostra(pid, motor):
     return out
 
 
+def linha(t, s):
+    """Uma linha de freq.txt: <t> <papel> <cpu> <kHz> <tid> <ticks acumulados utime+stime>."""
+    p, c, k, tid, tk = s
+    return f"{t:.1f} {p} {c} {k} {tid} {tk}\n"
+
+
 def coleta(pid, arq):
     t0 = time.time()
     motor = "a1-motor" in open(f"/proc/{pid}/cmdline").read()
@@ -61,8 +67,8 @@ def coleta(pid, arq):
             s = amostra(pid, motor)
             if s is None:
                 return
-            for p, c, k, tid, tk in s:
-                f.write(f"{time.time() - t0:.1f} {p} {c} {k} {tid} {tk}\n")
+            for x in s:
+                f.write(linha(time.time() - t0, x))
             f.flush()
             time.sleep(1.0)
 

@@ -125,6 +125,35 @@ class Ativas(unittest.TestCase):
         b = self.arq(["0.0 chamador 0 5500000 1 5\n", "1.0 chamador 0 5500000 1 9\n", "0.0 trabalhadores 2 5500000 7 1\n", "1.0 trabalhadores 2 5500000 7 4\n"])
         self.assertTrue(any(x.startswith("chamador") for x in A.compara(a, b)))
 
+    def test_ida_e_volta_com_duas_threads_do_mesmo_papel(self):
+        # amostra() -> linha() -> medias(): o tid e os ticks gravados separam as threads; só a ativa (101) conta, e conta a 5500 MHz
+        import tempfile
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "freq.txt")
+        self.addCleanup(lambda: (os.remove(p), os.rmdir(d)))
+        def khz(cpu):
+            return {2: "1000000", 4: "5500000"}.get(cpu, "5000000")
+        def passo(ticks_ociosa, ticks_ativa):
+            threads = {100: ("a1-motor", 5000, 0), 101: ("moe-cpu-1", ticks_ativa, 4), 102: ("moe-cpu-2", ticks_ociosa, 2)}
+            def fake_open(path, *a, **k):
+                for tid, (comm, tk, cpu) in threads.items():
+                    if path == f"/proc/100/task/{tid}/comm":
+                        return io.StringIO(comm + "\n")
+                    if path == f"/proc/100/task/{tid}/stat":
+                        return io.StringIO(stat(tk, cpu))
+                if path.startswith("/sys/devices/system/cpu/cpu"):
+                    return io.StringIO(khz(int(path.split("cpu")[2].split("/")[0])) + "\n")
+                raise OSError(path)
+            with mock.patch("os.listdir", return_value=[str(t) for t in threads]), mock.patch("builtins.open", fake_open):
+                return A.amostra(100, True)
+        with open(p, "w") as f:
+            for t, (o, a) in enumerate([(100, 1), (100, 5), (100, 9)]):
+                for x in passo(o, a):
+                    f.write(A.linha(float(t), x))
+        r = [x for x in passo(100, 9) if x[0] == "trabalhadores"]
+        self.assertEqual(sorted((x[3], x[4]) for x in r), [(101, 9), (102, 100)])      # tid e ticks (utime + stime) no formato certo
+        self.assertAlmostEqual(A.medias(p)["trabalhadores"], 5500)
+
 
 if __name__ == "__main__":
     unittest.main()
