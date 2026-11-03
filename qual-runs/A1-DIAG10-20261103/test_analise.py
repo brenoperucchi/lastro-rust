@@ -24,7 +24,7 @@ def le(path):
         return f.read()
 
 
-def monta(raiz, etapa, ajuste, estragos=None):
+def monta(raiz, etapa, ajuste, estragos=None, integridade="inicio OK\nfim OK\n"):
     """ajuste[(cfg)] = dict(L1=delta, L2=delta, L3=delta, L4=delta) em ms somados à série modelo; estragos[(mod,rep,cfg,bl)] = função (texto)->texto."""
     estragos = estragos or {}
     tent, amo = [], []
@@ -37,9 +37,11 @@ def monta(raiz, etapa, ajuste, estragos=None):
                     os.makedirs(f"{d}/ms")
                     t = le(f"{TPL}/{mod}/{bl}/saida.txt")
                     if cfg == "A1w":
-                        t += "".join(f"CONTROLE A1w x {i}%: 8 participantes, núcleos físicos distintos: ok\n" for i in range(3 if bl == "a1" else 2))
+                        pols_ = ("resident 100", "lfu_cpu 10") if bl == "m2a-b4" else ("motor_cheio 100", "motor_evento 10")
+                        n_ = lambda pol: 1 if pol.startswith("resident") else 8
+                        t += "".join(f"CONTROLE A1w {pl}%: {n_(pl)} participantes, núcleos físicos distintos: ok\n" for pl in pols_)
                     if cfg == "A1m" and bl == "a1":
-                        t += "CONTROLE A1m x 10%: thread principal em 17\n"
+                        t += "CONTROLE A1m motor_cheio 100%: thread principal em 17\nCONTROLE A1m motor_evento 10%: thread principal em 17\n"
                     t = estragos.get((mod, rep, cfg, bl), lambda x: x)(t)
                     escreve(f"{d}/saida.txt", t)
                     aj = ajuste.get(cfg, {})
@@ -63,6 +65,7 @@ def monta(raiz, etapa, ajuste, estragos=None):
         for ts, pid, nm in amo:
             f.write(f"{ts} ok GPU-x, {pid}, {nm}, 1000 MiB;\n")
         f.write(f"{t0 + 100} ok \n")
+    escreve(f"{raiz}/integridade-e{etapa}.txt", integridade)
     return tent
 
 
@@ -80,11 +83,17 @@ class Analise(unittest.TestCase):
     def setUp(self):
         self.raiz = tempfile.mkdtemp(prefix="analise-", dir="/tmp/claude-1000/-home-brenoperucchi-Devs-lastro-rust/46cdbe1b-904f-422b-9a0c-ab7628b69d27/scratchpad")
 
-    def tearDown(self):
-        base = os.path.basename(self.raiz)
-        assert base.startswith("analise-")
-        os.chdir("/tmp/claude-1000/-home-brenoperucchi-Devs-lastro-rust/46cdbe1b-904f-422b-9a0c-ab7628b69d27/scratchpad")
+    PAI = "/tmp/claude-1000/-home-brenoperucchi-Devs-lastro-rust/46cdbe1b-904f-422b-9a0c-ab7628b69d27/scratchpad"
+
+    def limpa(self, raiz):
+        """Apaga só uma pasta analise-* criada por este teste, pelo nome relativo a partir do pai literal."""
+        base = os.path.basename(raiz)
+        assert base.startswith("analise-") and os.path.dirname(raiz) == self.PAI
+        os.chdir(self.PAI)
         shutil.rmtree(base)
+
+    def tearDown(self):
+        self.limpa(self.raiz)
 
     def e1(self, aj, **kw):
         monta(self.raiz, 1, aj, **kw)
@@ -140,7 +149,7 @@ class Analise(unittest.TestCase):
         raiz = self.raiz
         monta(raiz, 2, {"N0": {}, "A1w": {"L1": -0.4}, "A1m": {}})
         for mod in ("1b", "3b"):
-            escreve(f"{raiz}/d-etapa1-{mod}.txt", "0.5\n")
+            escreve(f"{raiz}/d-etapa1-{mod}.txt", "status OK\nd_mediana 0.5\n")
         rc, txt = roda(raiz)
         self.assertEqual(rc, 0, txt)
         self.assertEqual(celula(txt, "1b"), "{'w': 'SUSTENTADA', 'm': 'NAO_SUSTENTADA'}", txt)
@@ -150,16 +159,54 @@ class Analise(unittest.TestCase):
         monta(raiz, 2, {"N0": {}, "A1w": {"L1": -0.4}, "A1m": {}},
               estragos={("1b", 2, "A1w", "a1"): lambda t: t.replace("distintos: ok", "FALHOU", 1)})
         for mod in ("1b", "3b"):
-            escreve(f"{raiz}/d-etapa1-{mod}.txt", "0.5\n")
+            escreve(f"{raiz}/d-etapa1-{mod}.txt", "status OK\nd_mediana 0.5\n")
         rc, txt = roda(raiz)
         self.assertIn("controle da A1w", txt)
         self.assertIn("SEM CONCLUSÃO", celula(txt, "1b") or "", txt)
+
+    def test_integridade_invalida_ou_ausente_nao_conclui(self):
+        for integ in ("inicio OK\nfim INVALIDA\n", "inicio OK\n", ""):
+            raiz = tempfile.mkdtemp(prefix="analise-", dir=os.path.dirname(self.raiz))
+            monta(raiz, 1, {}, integridade=integ)
+            rc, txt = roda(raiz)
+            self.assertIn("SEM CONCLUSÃO (integridade", celula(txt, "1b") or "", (integ, txt))
+            self.assertNotIn("PASSO 0 OK", txt)
+            self.assertTrue(le(f"{raiz}/d-etapa1-1b.txt").startswith("status INVÁLIDA"))
+            self.addCleanup(self.limpa, raiz)
+
+    def test_etapa1_reprovada_nao_libera_a_etapa2(self):
+        # C sem excesso (NAO_REPRODUZIDO) e N0 com excesso: o registro fica "status NAO_REPRODUZIDO"; a etapa 2 com A1w que reduz L1 não pode sustentar H1
+        raiz = self.raiz
+        monta(raiz, 1, {"C": {"L1": -0.6}, "N0": {}, "I": {}})
+        rc, txt = roda(raiz)
+        self.assertEqual(le(f"{raiz}/d-etapa1-1b.txt").strip(), "status NAO_REPRODUZIDO")
+        shutil.rmtree(f"{raiz}/e1")
+        monta(raiz, 2, {"N0": {}, "A1w": {"L1": -0.4}, "A1m": {}})
+        rc, txt = roda(raiz)
+        self.assertIn("a etapa 1 não aprovou", celula(txt, "1b") or "", txt)
+        self.assertNotIn("SUSTENTADA", (celula(txt, "1b") or "") + (celula(txt, "3b") or ""))
+
+    def test_etapa2_sem_registro_da_etapa1_nao_conclui(self):
+        raiz = self.raiz
+        monta(raiz, 2, {"N0": {}, "A1w": {"L1": -0.4}, "A1m": {}})
+        rc, txt = roda(raiz)     # nenhum registro da etapa 1 foi escrito
+        self.assertIn("a etapa 1 não aprovou", celula(txt, "1b") or "", txt)
+
+    def test_referencia_antiga_e_apagada_ao_reanalisar_a_etapa1(self):
+        raiz = self.raiz
+        monta(raiz, 1, {})
+        roda(raiz)
+        self.assertTrue(le(f"{raiz}/d-etapa1-1b.txt").startswith("status OK"))
+        shutil.rmtree(f"{raiz}/e1")
+        monta(raiz, 1, {"C": {"L1": -0.6}})
+        roda(raiz)
+        self.assertFalse(le(f"{raiz}/d-etapa1-1b.txt").startswith("status OK"))
 
     def test_etapa2_l4_movido_e_base(self):
         raiz = self.raiz
         monta(raiz, 2, {"N0": {}, "A1w": {}, "A1m": {"L4": 0.09, "L1": 0.09}})
         for mod in ("1b", "3b"):
-            escreve(f"{raiz}/d-etapa1-{mod}.txt", "0.5\n")
+            escreve(f"{raiz}/d-etapa1-{mod}.txt", "status OK\nd_mediana 0.5\n")
         rc, txt = roda(raiz)
         self.assertIn("SEM_CONCLUSAO_BASE", celula(txt, "1b") or "", txt)
 

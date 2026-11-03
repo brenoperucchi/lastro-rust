@@ -47,10 +47,22 @@ gpu() { nvidia-smi --query-gpu=uuid,utilization.gpu,memory.used,power.draw,clock
 procs() { ps -eo pid,pcpu,comm --sort=-pcpu | awk 'NR == 1 || $2 > 5'; }
 
 TETO=""
-[ -s "$Q/teto.txt" ] && TETO=$(tr -dc 0-9 < "$Q/teto.txt")
+TETO_FILE=${TETO_FILE:-$Q/teto.txt}
+[ -s "$TETO_FILE" ] && TETO=$(tr -dc 0-9 < "$TETO_FILE")
 TIMERS=()
 TIMERS_FILE=${TIMERS_FILE:-$Q/timers.txt}
 [ -s "$TIMERS_FILE" ] && mapfile -t TIMERS < <(grep -v '^[[:space:]]*\(#\|$\)' "$TIMERS_FILE")
+# Falha fechado (rodada 36): a lista de timers é decisão do Breno; sem o arquivo a janela não roda. Um arquivo só com "# nenhum" vale como "nenhum timer".
+if [ "$SECO" = 0 ] && [ "${MEDIDA_SO_TIMERS:-0}" != 1 ] && [ ! -e "$TIMERS_FILE" ]; then
+  echo "falta $TIMERS_FILE: a lista de timers a parar é decisão do Breno (um arquivo só com '# nenhum' vale como nenhum timer); nada foi alterado"; exit 1
+fi
+
+# Etapa 2 só roda com a etapa 1 aprovada nas duas células (arquivos escritos pela análise da etapa 1: primeira linha "status OK").
+if [ "$ETAPA" = 2 ] && [ "$SECO" = 0 ]; then
+  for m in 1b 3b; do
+    [ "$(head -1 "$R/d-etapa1-$m.txt" 2>/dev/null)" = "status OK" ] || { echo "a etapa 1 não aprovou a célula $m (falta $R/d-etapa1-$m.txt com 'status OK'); nada foi alterado"; exit 1; }
+  done
+fi
 
 # --- 0. pré-condições (fora do modo seco) ---
 if [ "$SECO" = 0 ]; then
@@ -59,6 +71,7 @@ if [ "$SECO" = 0 ]; then
   { [ "$util" -le 2 ] && [ "$mem" -le 500 ]; } || { echo "4090 ocupada ($g); nada foi alterado"; exit 1; }
   (cd "$BC" && sha256sum -c SHA256SUMS 2>&1 | grep -E "^(a1-motor|m2a-cache):") > "$R/sha-binarios-e$ETAPA.txt" || { echo "sha dos binários C não confere"; exit 1; }
   (cd "$Q/bin" && sha256sum -c SHA256SUMS) >> "$R/sha-binarios-e$ETAPA.txt" 2>&1 || { echo "sha dos binários N e I não confere"; exit 1; }
+  echo "inicio OK" > "$R/integridade-e$ETAPA.txt"
 fi
 
 # --- 1. timers: captura, parada e restauração em trap (só o que estava ativo volta a ser ativado) ---
@@ -71,6 +84,7 @@ captura_timers() {
   done
 }
 PARADOS=()
+FILHO=; MON=
 restaura_timers() {
   for t in "${PARADOS[@]}"; do
     $SYSTEMCTL --user start "$t" || echo "FALHA ao reativar $t" >&2
@@ -96,9 +110,10 @@ para_timers() {
   done
   [ "${ocupado:-0}" = 0 ] || { echo "serviço de timer ainda em execução depois de 10 min"; exit 1; }
 }
+# Um só lugar arma a restauração, usado nos dois caminhos (o teste muta esta função).
+arma_restauracao() { trap 'kill $FILHO $MON 2>/dev/null || true; restaura_timers' EXIT; trap 'exit 130' INT TERM; }
 if [ "${MEDIDA_SO_TIMERS:-0}" = 1 ]; then      # teste do próprio mecanismo: para, mostra o estado e restaura
-  trap restaura_timers EXIT
-  trap 'exit 130' INT TERM
+  arma_restauracao
   para_timers
   cat "$ESTADO"
   [ "${MEDIDA_SEGURA:-0}" = 1 ] && { echo PARADOS; while :; do sleep 0.2; done; }      # teste: fica parado até receber um sinal
@@ -114,9 +129,7 @@ if [ "$SECO" = 0 ]; then
       sleep 5
     done ) >> "$R/gpu-monitor-e$ETAPA.log" 9>&- &
   MON=$!
-  FILHO=
-  trap 'kill $FILHO $MON 2>/dev/null; restaura_timers' EXIT
-  trap 'exit 130' INT TERM
+  arma_restauracao
   para_timers
   {
     date; head -1 /proc/driver/nvidia/version; uptime
@@ -148,24 +161,30 @@ espera_gpu() {
   done
   return 1
 }
-ociosa() { # 60 s ociosa e, com teto, espera o pacote esfriar até ele (até 30 min)
+ociosa() { # 60 s ociosa; com teto, só libera depois de uma leitura VÁLIDA no teto ou abaixo (até 30 min). Código 1: teto não atendido ou sem leitura (rodada 36).
   [ "$SECO" = 1 ] && return 0
   sleep "$OCIOSA"
-  if [ -n "$TETO" ]; then
-    for k in $(seq 1 90); do
-      t=$(temp); [ "$t" = n/d ] && break
-      awk -v t="$t" -v x="$TETO" 'BEGIN { exit !(t <= x) }' && break
-      sleep 20
-    done
-  fi
+  [ -z "$TETO" ] && return 0
+  for k in $(seq 1 ${MEDIDA_ESPERA_TETO:-90}); do
+    t=$(temp)
+    case $t in ''|n/d) echo "$(date +%T) teto $TETO C: sem leitura válida da temperatura" >> "$R/carga-e$ETAPA.log"; return 1;; esac
+    awk -v t="$t" -v x="$TETO" 'BEGIN { exit !(t <= x) }' && return 0
+    sleep ${MEDIDA_PASSO_TETO:-20}
+  done
+  echo "$(date +%T) teto $TETO C não atendido em 30 min (última leitura $t C)" >> "$R/carga-e$ETAPA.log"
+  return 1
 }
+if [ "${MEDIDA_SO_OCIOSA:-0}" = 1 ]; then r=0; ociosa || r=$?; echo "rc=$r"; exit 0; fi
 bloco() { # nome checa_rot saída comando...
   local nome=$1 checa=$2 out=$3 tentativa rc a t0 pid; shift 3
   for tentativa in 1 2; do
     rc=0
     if [ "$SECO" = 1 ]; then echo "$* > $out"; fim "$nome" 0; return 0; fi
     espera_gpu || { echo "$(date +%T) GPU não liberou antes de $nome: janela interrompida" | tee -a "$R/carga-e$ETAPA.log"; exit 1; }
-    ociosa
+    if ! ociosa; then
+      echo "SUSPENSA $nome (teto de temperatura não atendido ou sem leitura; o bloco NÃO foi lançado)" | tee -a "$R/suspensas-e$ETAPA.txt"
+      return 0
+    fi
     echo "$(date +%T) INICIO $nome temp:$(temp)C" >> "$R/carga-e$ETAPA.log"
     t0=$(date +%s.%N)
     "$@" > "$out" 2>&1 9>&- &
@@ -236,13 +255,17 @@ for n in $(seq 1 ${MEDIDA_REPS:-5}); do
 done
 
 if [ "$SECO" = 0 ]; then
+  fim_ok=1
+  (cd "$BC" && sha256sum -c SHA256SUMS 2>&1 | grep -E "^(a1-motor|m2a-cache):") > "$R/sha-fim-e$ETAPA.txt" 2>&1 || fim_ok=0
+  (cd "$Q/bin" && sha256sum -c SHA256SUMS) >> "$R/sha-fim-e$ETAPA.txt" 2>&1 || fim_ok=0
+  if [ $fim_ok = 1 ]; then echo "fim OK" >> "$R/integridade-e$ETAPA.txt"; else echo "fim INVALIDA" >> "$R/integridade-e$ETAPA.txt"; fi
   {
     date; uptime; echo "GPU no fim: $(gpu)"; echo "temperatura do pacote: $(temp) C"
-    cat "$R/sha-binarios-e$ETAPA.txt"
-    (cd "$BC" && sha256sum -c SHA256SUMS 2>&1 | grep -E "^(a1-motor|m2a-cache):") || echo "INVALIDA A JANELA: sha dos binários C mudou"
-    (cd "$Q/bin" && sha256sum -c SHA256SUMS) 2>&1 || echo "INVALIDA A JANELA: sha dos binários N ou I mudou"
+    cat "$R/sha-binarios-e$ETAPA.txt"; echo "conferência final:"; cat "$R/sha-fim-e$ETAPA.txt"
+    [ $fim_ok = 1 ] || echo "INVALIDA A JANELA: sha dos binários mudou"
     echo "processos acima de 5% de CPU no fim:"; procs
     [ -e "$R/suspensas-e$ETAPA.txt" ] && { echo "blocos suspensos:"; cat "$R/suspensas-e$ETAPA.txt"; } || echo "nenhum bloco suspenso"
   } > "$R/ambiente-fim-e$ETAPA.txt"
+  [ $fim_ok = 1 ] || { echo "sha dos binários mudou durante a janela: etapa INVÁLIDA"; exit 1; }
 fi
 echo "$(date +%T) fim da etapa $ETAPA"

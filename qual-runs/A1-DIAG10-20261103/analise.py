@@ -67,33 +67,41 @@ def valida(t, mod, motor, politicas):
     return bad
 
 
-def controle_afinidade(t, cfg, bl):
-    """Problemas das linhas CONTROLE da afinidade efetiva (P2-1 da rodada 35): na A1w toda linha diz 'ok' e há uma por linha de política; na A1m (só no a1)
-    a thread principal está em 17. Outras configurações não têm linha."""
+def controle_afinidade(t, cfg, bl, mod="1b", etapa=2):
+    """Problemas das linhas CONTROLE da afinidade efetiva, conferidas POR POLÍTICA (rodada 36, P2-1): na A1w cada política que o harness relata tem uma linha
+    'CONTROLE A1w <pol> <b>%: ... ok' (a1: as políticas motor_*; m2a-b4: todas, inclusive o resident); na A1m (só no a1) cada política motor_* tem a
+    principal em 17. Outras configurações não têm linha."""
     ls = [ln for ln in t.splitlines() if ln.startswith("CONTROLE ")]
-    if cfg == "A1w":
-        nec = 3 if bl == "a1" else 2
-        if len(ls) < nec:
-            return [f"só {len(ls)} linhas CONTROLE A1w, esperadas {nec}"]
-        return [f"controle da A1w: {ln}" for ln in ls if not ln.startswith("CONTROLE A1w") or not ln.rstrip().endswith("ok")]
-    if cfg == "A1m" and bl == "a1":
-        if not ls:
-            return ["sem linha CONTROLE A1m"]
-        return [f"controle da A1m: {ln}" for ln in ls if not ln.rstrip().endswith("thread principal em 17")]
-    return []
+    if cfg not in ("A1w", "A1m") or (cfg == "A1m" and bl != "a1"):
+        return []
+    esperadas = [(pol, b) for pol, b in pols(bl, mod, etapa) if bl != "a1" or pol != "resident"]
+    fim = "ok" if cfg == "A1w" else "thread principal em 17"
+    pr = []
+    for pol, b in esperadas:
+        achou = [ln for ln in ls if ln.startswith(f"CONTROLE {cfg} {pol} {b}%:")]
+        if not achou:
+            pr.append(f"falta a linha CONTROLE {cfg} {pol} {b}%")
+        elif not all(ln.rstrip().endswith(fim) for ln in achou):
+            pr.append(f"controle da {cfg}: {achou[0]}")
+    return pr
 
 
 def controles_afinidade():
-    ok = "CONTROLE A1w motor_evento 10%: 8 participantes, núcleos físicos distintos: ok\n"
-    base = ok * 3
-    casos = {
-        "A1w com FALHOU": base.replace("distintos: ok", "FALHOU", 1),
-        "A1w com linha a menos": ok * 2,
-        "A1m com a principal em 0-15": "CONTROLE A1m motor_evento 10%: thread principal em 0-15\n",
+    """Linhas CONTROLE reais da sanidade refeita (san2/a1w-a1.txt, a1w-m2a.txt) e mutações em memória."""
+    a1w_a1 = ("CONTROLE A1w motor_cheio 100%: 8 participantes, núcleos físicos distintos: ok\n"
+              "CONTROLE A1w motor_evento 10%: 8 participantes, núcleos físicos distintos: ok\n")
+    a1w_m2a = ("CONTROLE A1w resident 100%: 1 participantes, núcleos físicos distintos: ok\n"
+               "CONTROLE A1w lfu_cpu 10%: 8 participantes, núcleos físicos distintos: ok\n")
+    a1m_a1 = ("CONTROLE A1m motor_cheio 100%: thread principal em 17\nCONTROLE A1m motor_evento 10%: thread principal em 17\n")
+    res = {
+        "A1w real do a1 passa": controle_afinidade(a1w_a1, "A1w", "a1") == [],
+        "A1w real do m2a passa": controle_afinidade(a1w_m2a, "A1w", "m2a-b4") == [],
+        "A1m real do a1 passa": controle_afinidade(a1m_a1, "A1m", "a1") == [],
+        "A1w com FALHOU": controle_afinidade(a1w_a1.replace("distintos: ok", "FALHOU", 1), "A1w", "a1") != [],
+        "A1w sem a linha do motor_cheio": controle_afinidade(a1w_a1.split("\n", 1)[1], "A1w", "a1") != [],
+        "A1w sem a linha do resident no m2a": controle_afinidade(a1w_m2a.split("\n", 1)[1], "A1w", "m2a-b4") != [],
+        "A1m com a principal em 0-15": controle_afinidade(a1m_a1.replace("em 17", "em 0-15", 1), "A1m", "a1") != [],
     }
-    res = {k: controle_afinidade(v, "A1m" if "A1m" in k else "A1w", "a1") != [] for k, v in casos.items()}
-    res["A1w correta passa"] = controle_afinidade(base, "A1w", "a1") == []
-    res["A1m correta passa"] = controle_afinidade("CONTROLE A1m motor_evento 10%: thread principal em 17\n", "A1m", "a1") == []
     return res
 
 
@@ -204,6 +212,24 @@ def analisa(etapa):
     def p(*a): out.append(" ".join(str(x) for x in a))
     E = f"{R}/e{etapa}"
     p(f"=== A1-DIAG10, etapa {etapa}: portão de correção, carga, frequência, trabalho, instrumentação e decisão (criterio.txt v6) ===")
+    # --- 0. integridade dos binários (começo e fim) registrada pelo rodar.sh ---
+    try:
+        with open(f"{R}/integridade-e{etapa}.txt") as f:
+            integ = f.read().split("\n")
+    except OSError:
+        integ = []
+    integra = "inicio OK" in integ and "fim OK" in integ
+    p("  integridade dos binários (começo e fim):", "ok" if integra else f"FALHOU ou ausente {integ}")
+    if not integra:
+        res = {m: "SEM CONCLUSÃO (integridade dos binários: conferência de começo ou fim ausente ou inválida)" for m in MODS}
+        p("\n=== RESULTADO POR CÉLULA ===")
+        for m in MODS:
+            p(f"  {m} 10%: {res[m]}")
+        if etapa == 1:
+            for m in MODS:
+                with open(f"{R}/d-etapa1-{m}.txt", "w") as f:
+                    f.write("status INVÁLIDA\n")
+        return out, res
     # --- 1. portão de correção ---
     valido, motivo = {}, {}          # (mod, rep, cfg, bl) -> bool ; -> texto
     texto = {}
@@ -220,7 +246,7 @@ def analisa(etapa):
                         valido[k], motivo[k] = False, "saída ausente"
                         continue
                     texto[k] = t
-                    pr = valida(t, mod, bl == "a1", pols(bl, mod, etapa)) + controle_afinidade(t, cfg, bl)
+                    pr = valida(t, mod, bl == "a1", pols(bl, mod, etapa)) + controle_afinidade(t, cfg, bl, mod, etapa)
                     if not pr:
                         for pol, b in pols(bl, mod, etapa):
                             try:
@@ -357,12 +383,16 @@ def analisa(etapa):
             if not all(ls.values()):
                 res[mod] = "SEM CONCLUSÃO (portão de correção, carga ou frequência: blocos inválidos)"
             else:
-                # a etapa 1 vem de outra pasta de resultados; o d(N) dela entra por um arquivo com a mediana (escrito pela análise da etapa 1)
+                # a etapa 1 deixa por célula um registro com o status; só "status OK" libera a etapa 2 (rodada 36, achado 1)
                 try:
-                    d_e1 = float(open(f"{R}/d-etapa1-{mod}.txt").read().split()[0])
+                    with open(f"{R}/d-etapa1-{mod}.txt") as f:
+                        reg = f.read().split("\n")
                 except OSError:
-                    res[mod] = "SEM CONCLUSÃO (falta d-etapa1-" + mod + ".txt, escrito pela análise da etapa 1)"
+                    reg = []
+                if not reg or reg[0] != "status OK" or len(reg) < 2 or not reg[1].startswith("d_mediana "):
+                    res[mod] = f"SEM CONCLUSÃO (a etapa 1 não aprovou a célula {mod}: registro {reg[:1] or 'ausente'})"
                     continue
+                d_e1 = float(reg[1].split()[1])
                 vw = [par_ok(mod, rep, "N0", "A1w") for rep in range(1, 6)]
                 vm = [par_ok(mod, rep, "N0", "A1m") for rep in range(1, 6)]
                 p(f"  controle de trabalho: N0->A1w {sum(vw)}/5 válidos; N0->A1m {sum(vm)}/5 válidos")
@@ -387,10 +417,14 @@ def analisa(etapa):
     if etapa == 2 and res.get("1b") and res.get("3b"):
         p("  Regra do critério: o 3B só confirma o sinal do 1B; se o 1B der SUSTENTADA e o 3B não, vale o resultado do 1B com a nota 'o 3B não confirma'.")
     if etapa == 1:
+        # registro por célula para a etapa 2: "status OK" só se o passo 0 passou e o controle de trabalho C/N0 também; nunca deixa referência antiga
         for mod in MODS:
             ls = lista(mod, "N0")
-            if ls:
-                open(f"{R}/d-etapa1-{mod}.txt", "w").write(f"{st.median(dd(x) for x in ls):.6f}\n")
+            with open(f"{R}/d-etapa1-{mod}.txt", "w") as f:
+                if ls and str(res.get(mod, "")).startswith("PASSO 0 OK"):
+                    f.write(f"status OK\nd_mediana {st.median(dd(x) for x in ls):.6f}\n")
+                else:
+                    f.write(f"status {res.get(mod)}\n")
     return out, res
 
 

@@ -2,25 +2,25 @@ A1-DIAG10: sanidade do harness (03/11/2026, 4090 por UUID, taskset 0-15, 1B, con
 
 1. Testes sem GPU: test_decide.py (32), test_analise.py (10, árvore sintética de saídas reais do A1.4), test_timers.sh (normal em 3 estados, saída por falha, saída por sinal e um mutante sem o trap), cargo test --lib (affinity, pool,
    motor: 28 passam; diag com --features diag: 4 passam).
-2. Afinidade efetiva (linhas AFINIDADE/CONTROLE da saída do N; refeita na rodada 35 depois do achado P2-1: o chamador do Pool agora é fixado onde nasce, a
+2. Afinidade efetiva (sanidade 3: A1w com CONTROLE ok nas 4 linhas por política, A1m com a principal em 17 nas duas linhas do motor; linhas AFINIDADE/CONTROLE da saída do N; refeita na rodada 35 depois do achado P2-1: o chamador do Pool agora é fixado onde nasce, a
    moe-servico no começo da linha de serviço e a thread principal do m2a-cache antes do laço de políticas, e não na primeira Pool::run):
    A1w  motor_cheio e motor_evento: moe-servico em 0 e moe-cpu-1..7 em 2,4,...,14, CONTROLE "núcleos físicos distintos: ok" nas duas; m2a-cache: a thread
         principal em 0 também no resident (CONTROLE com 1 participante) e no lfu_cpu (8 participantes, ok); as threads do CUDA ficam em 0-15; logits e roteamento passam.
         (Na primeira sanidade o motor_cheio saía com a moe-servico em 0-15 e CONTROLE FALHOU; isso não tinha sido relatado.) O analise.py agora exige as linhas CONTROLE.
    A1m  thread principal em 17, demais em 0-15; logits e roteamento passam.
-3. Fidelidade da injeção de 10 us por camada com falta, ALTERNADA por token na mesma execução (tokens ímpares com injeção, pares sem; compara-se token com o vizinho
-   anterior, o que tira a variação entre execuções; 1B: 24,0 faltas/token, esperado 0,24 ms, faixa +-30% = 0,168 a 0,312; 3B: 31,9 faltas/token, esperado 0,32 ms,
-   faixa 0,224 a 0,416). Diferença de médias; mediana dos pares vizinhos:
-   1B  T_cpu +0,285; +0,277 (n=318)      T_livro +0,242; +0,241      espera antes do wait (acumulador próprio) +0,241; +0,241        todos dentro
-   3B  T_cpu +0,160; +0,340 (n=382)      T_livro +0,321; +0,323      espera antes do wait (acumulador próprio) +0,321; +0,321
-       No 3B o T_cpu tem mediana dos pares dentro da faixa e MÉDIA fora (0,160): a cauda do T_cpu do 3B (cerca de 11,8 ms por token) é larga. Registrado como está:
-       a fidelidade do T_cpu do 3B é demonstrada pela mediana, não pela média. Sem limiar novo; os intervalos são descritivos.
+3. Fidelidade da injeção de 10 us por camada com falta, ALTERNADA por token na mesma execução (tokens ímpares com injeção, pares sem). Estatística fixada por escrito
+   (rodada 36): MEDIANA dos pares de tokens vizinhos; média dos pares e diferença de médias só como informação. Calculada por fidelidade.py sobre a sanidade 3, com os
+   binários de bin/SHA256SUMS. 1B: 24,0 faltas/token, esperado 0,240 ms, faixa 0,168 a 0,312; 3B: 31,9 faltas/token, esperado 0,319 ms, faixa 0,224 a 0,415.
+   1B  T_cpu +0,265   T_livro +0,242   espera antes do wait (acumulador próprio) +0,241      todos DENTRO
+   3B  T_cpu +0,393   T_livro +0,320   espera antes do wait (acumulador próprio) +0,321      todos DENTRO
+       No 3B o T_cpu tem mediana +0,393 (dentro, perto do teto 0,415), média dos pares +0,322 e desvio-padrão largo (cauda de cerca de 11,8 ms por token): a fidelidade do
+       T_cpu do 3B é demonstrada pela mediana. Sem limiar novo; os intervalos são descritivos.
 4. A1m e a condição de base: motor_cheio (L4), thread principal no CPU 17 contra A0, dois pares na mesma sessão:
    A0 2,21 e 2,21 ms/token; A1m 2,30 e 2,31 -> dL4 de +0,09 e +0,10 ms, ACIMA do limite 0,05 da condição de base (criterio.txt, seção 5).
    Pelo critério v6, a A1m cairia em SEM CONCLUSÃO (o fator moveu a base) por construção. Levado à revisão e ao Breno, que decidiu MANTER a A1m (o critério v6 fica como está; a A1m deve sair SEM CONCLUSÃO por base, como resultado informativo).
 5. Fumaça do rodar.sh (etapa 2, 1 repetição, 1B, conversa 4, 60 s ociosa trocada por 1 s): os 6 blocos rodam, gravam saida.txt, ms/, freq.txt, TENTATIVA e
    temperatura no carga-e2.log; a regra 0c aprova (chamador e trabalhadores a cerca de 5,48 a 5,50 GHz nas duas linhas); a thread principal da A1m média 4,9 GHz
-   no E-core 17; sha dos binários confere no começo e no fim; nenhum bloco suspenso.
+   no E-core 17; sha dos binários confere no começo e no fim; nenhum bloco suspenso. Sanidade 3 (correções da rodada 36): rc=0, integridade-e2 com inicio OK e fim OK.
 6. Duração estimada da janela, a partir dos blocos do A1.4 (carga.log: 1B a1 176 s, m2a-b4 154 s; 3B a1 302 s, m2a-b4 266 s, com 3 orçamentos; aqui o 1B tem 2
    orçamentos na etapa 1 e o resto 1): por repetição e configuração, 1B cerca de 280 s e 3B cerca de 440 s de GPU, mais 4 blocos x (60 s ociosa + cerca de 20 s
    de espera da GPU) = cerca de 17 min. Etapa 1: 3 configurações x 5 repetições = cerca de 4,3 h. Etapa 2 (só 10%): cerca de 3,8 h com A1w e A1m, cerca de

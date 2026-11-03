@@ -50,15 +50,32 @@ for k in $(seq 1 100); do grep -q PARADOS "$D/saida-sinal.txt" 2>/dev/null && br
 [ "$(cat "$FAKE_DIR/a.timer")" = inactive ] || { echo "caso sinal: o timer ativo não foi parado antes do sinal: FALHOU"; ok=0; }
 kill -TERM $pid; wait $pid 2>/dev/null
 confere sinal active inactive
-# o teste pega a falta de restauração: uma cópia do roteiro sem o trap de restauração tem de reprovar o caso ativo
-sed 's/^  trap restaura_timers EXIT$/  : sem trap/' "$R" > "$D/rodar-sem-trap.sh"
+# o teste pega a falta de restauração: uma cópia do roteiro com a função arma_restauracao sem o trap tem de reprovar o caso ativo (a função serve aos dois caminhos)
+sed 's/^arma_restauracao() { trap .*$/arma_restauracao() { :; }/' "$R" > "$D/rodar-sem-trap.sh"
 if [ "$(diff "$R" "$D/rodar-sem-trap.sh" | wc -l)" -gt 0 ]; then
   prepara mutante active active
-  cp "$D/rodar-sem-trap.sh" qual-runs/A1-DIAG10-20261103/rodar-mutante-tmp.sh; chmod +x qual-runs/A1-DIAG10-20261103/rodar-mutante-tmp.sh
-  env_comum mutante qual-runs/A1-DIAG10-20261103/rodar-mutante-tmp.sh 1 > /dev/null 2>&1
+  chmod +x "$D/rodar-sem-trap.sh"
+  env_comum mutante "$D/rodar-sem-trap.sh" 1 > /dev/null 2>&1
   if [ "$(cat "$FAKE_DIR/a.timer")" = inactive ]; then echo "mutante sem trap: reprovado como esperado: ok"; else echo "mutante sem trap NÃO foi pego: FALHOU"; ok=0; fi
-  rm -f qual-runs/A1-DIAG10-20261103/rodar-mutante-tmp.sh
 else
   echo "mutante: o sed não alterou o roteiro: FALHOU"; ok=0
 fi
+# teto de temperatura (rodada 36): libera só com leitura válida no teto ou abaixo; timeout e leitura ausente não liberam
+teto() { # nome temperatura rc_esperado
+  echo 70 > "$D/teto.txt"; echo "$2" > "$D/temp.txt"
+  r=$(TETO_FILE="$D/teto.txt" TEMP_FILE="$D/temp.txt" MEDIDA_SO_OCIOSA=1 MEDIDA_OCIOSA=0 MEDIDA_ESPERA_TETO=2 MEDIDA_PASSO_TETO=0.05 MEDIDA_DIR="$D/out-$1" TIMERS_FILE="$D/timers.txt" "$R" 1 2>&1 | grep '^rc=')
+  if [ "$r" = "rc=$3" ]; then echo "teto $1 (temperatura $2): $r ok"; else echo "teto $1 (temperatura $2): FALHOU ($r, esperado rc=$3)"; ok=0; fi
+}
+teto abaixo 60.0 0
+teto igual 70.0 0
+teto acima 90.0 1
+teto semleitura n/d 1
+# sem teto só registra
+r=$(TETO_FILE="$D/inexistente" TEMP_FILE="$D/temp.txt" MEDIDA_SO_OCIOSA=1 MEDIDA_OCIOSA=0 MEDIDA_DIR="$D/out-semteto" TIMERS_FILE="$D/timers.txt" "$R" 1 2>&1 | grep '^rc=')
+[ "$r" = "rc=0" ] && echo "sem teto: libera ok" || { echo "sem teto: FALHOU ($r)"; ok=0; }
+# a lista de timers é decisão do Breno: sem o arquivo a janela não roda (falha fechado), e a etapa 2 exige a etapa 1 aprovada
+out=$(TIMERS_FILE="$D/nao-existe.txt" MEDIDA_DIR="$D/out-semlista" "$R" 1 2>&1); rc=$?
+if [ $rc -ne 0 ] && echo "$out" | grep -q "falta .*nao-existe.txt" && [ ! -e "$D/out-semlista/e1" ]; then echo "sem timers.txt: sai antes de tocar em qualquer coisa: ok"; else echo "sem timers.txt: FALHOU (rc=$rc)"; ok=0; fi
+out=$(TIMERS_FILE="$D/timers.txt" MEDIDA_DIR="$D/out-sem-e1" "$R" 2 2>&1); rc=$?
+if [ $rc -ne 0 ] && echo "$out" | grep -q "a etapa 1 não aprovou" && [ ! -e "$D/out-sem-e1/e2" ]; then echo "etapa 2 sem a etapa 1 aprovada: sai antes de tocar em qualquer coisa: ok"; else echo "etapa 2 sem etapa 1: FALHOU (rc=$rc)"; ok=0; fi
 [ $ok = 1 ] && echo "TODOS OS CASOS PASSAM" || { echo "HÁ FALHA"; exit 1; }
