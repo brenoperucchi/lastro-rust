@@ -1,0 +1,67 @@
+A1-DIAG10: diagnóstico do +0,4 a +0,6 ms de espera do motor D1 a 10% de slots (RASCUNHO de 03/11, ainda sem janela e sem aval do Breno).
+Origem: consulta aos revisores (herdr-ask lastro-rust-1, 03/11) depois do A1.4. Nada aqui foi medido. Os limiares abaixo ficam gravados antes de
+qualquer medida; mudar um depois de ver número vira critério novo, com data.
+
+0. O que já se sabe e o que isto NÃO é
+- No A1.4, a espera do motor (L1 menos L4) a 10% é +0,4 a +0,6 ms por token maior que a do lfu_cpu (L2 menos L3), fora das duas previsões do simulador.
+  A 25% e 50% a espera é parecida ou menor; o ganho do motor ali é da base (L4 menos L3), não do protocolo.
+- O handshake seq/flag por camada roda também no motor_cheio (L4) (engine.rs:171-177), então o custo base do doorbell se cancela em L1 menos L4. A
+  estimativa 5,41 us x camadas com falta NÃO explica d. A causa está sem explicação.
+- Isto é um diagnóstico para decidir onde investir. Não é uma nova comparação com o lfu_cpu, não muda o resultado do A1.4 e não reabre a busca antecipada.
+
+1. Hipóteses (a janela escolhe entre elas; pode não escolher nenhuma)
+  H1 disputa de CPU: no motor há mais threads quentes nos núcleos 0 a 15 (8 trabalhadores do Pool, a linha de serviço girando, a thread principal esperando a
+     stream) que no lfu_cpu, e os irmãos de HT (CPU 2k e 2k+1 são o mesmo núcleo físico) se atrapalham. Indício: d cai junto com os experts na CPU por token
+     (1B: d +0,47, +0,18, +0,006 com 144, 96 e 41 experts na CPU por token a 10%, 25%, 50%) enquanto as camadas com falta quase não mudam.
+  H2 caminho do host: a linha de serviço gasta tempo antes de responder (leitura da camada, pin_layer, escolha de vítima, cópias, alocações por camada
+     em line.rs) e isso atrasa a GPU.
+  H3 condição de execução: ordem das linhas, temperatura/frequência, carga alheia de CPU. Se d some em medida pareada e controlada, não há o que consertar.
+  A estimativa do doorbell não é hipótese: está descartada como explicação (seção 0).
+
+2. Instrumentação (código novo; os binários congelados de qual-runs/A1-MEDIDA-20261101/bin/ não são tocados)
+- Binário novo de diagnóstico a partir do a1-motor e do m2a-cache, com acumuladores por token em buffers pré-alocados (nada impresso no caminho quente).
+  Custo da instrumentação medido à parte (mesmas células, com e sem) e subtraído das conclusões; se passar de 5% do tempo por token, a medida não vale.
+- No motor, na linha de serviço: T_espera (do fim da camada anterior até o seq visto), T_cpu (dentro de cpu.compute), T_livro (de pin_layer ao fim das cópias
+  de copy_after_reader). No m2a-cache (lfu_cpu): T_cpu em volta da chamada da CPU, por camada.
+- Nos dois: frequência média dos núcleos 0 a 15 e temperatura por bloco (turbostat ou /proc/cpuinfo e sensors), gravadas junto de cada repetição.
+- Relógios: todos os tempos do mesmo lado (CPU) com o mesmo relógio monotônico; nada de subtrair timestamps de CPU e GPU.
+
+3. Janela
+- Células: 1B e 3B a 10% (as duas que mostraram d positivo) e 1B a 25% (controle de dose: d +0,18). Conversas 4 a 7 cronometradas, aquecimento 0 a 3,
+  backlog 4, 4090 por UUID, as mesmas regras do A1.4.
+- Linhas por célula: motor_evento (L1), motor_cheio (L4), lfu_cpu (L2), resident do m2a (L3), todas instrumentadas, mais as variantes das ablações (seção 4).
+- 5 repetições intercaladas (a ordem alterna a cada repetição). Estimativa de duração e de GPU a fechar quando o harness existir.
+- Antes: parar omabackup-push, omabackup-sync e inventory-collect (systemctl --user stop), com o estado anterior e a hora gravados em ambiente.txt; religar no fim ou
+  em falha (trap). Depende do aval do Breno.
+- Invalida o bloco: falha de correção (logits 1e-4, roteamento, needed como no A1.4), processo alheio na 4090 (monitor como no A1.4), binário diferente do
+  congelado (sha), tentativa com erro.
+
+4. Ablações (mudam só a afinidade/ordem, nunca a política nem o resultado; o mesmo portão de correção vale)
+  A0 referência: taskset -c 0-15 como no A1.4.
+  A1 afinidade por thread (sched_setaffinity): linha de serviço no E-core 16; os 8 trabalhadores um por P-core físico (CPU 0, 2, 4, ..., 14), sem irmão de HT;
+     thread principal no E-core 17.
+  A2 só se A1 não decidir: 7 trabalhadores.
+  B  (só para a regra (b)): mover pin_layer, escolha de vítima e copy_after_reader para depois do seq da camada seguinte, ou para outra thread; mesmo trabalho,
+     outra ordem.
+  Os mesmos binários e as mesmas conversas; só a afinidade/ordem muda e é registrada.
+
+5. Regras de decisão (sobre a mediana de d = espera(L1) menos espera(L2) em ms por token, por célula, 5 repetições)
+  (a) Se T_cpu(motor) menos T_cpu(lfu_cpu), por token, for >= 70% da mediana de d, a causa é a CPU no motor. Confirma se A1 leva d para dentro de +-0,1 ms
+      (na mesma célula); então a correção é de afinidade, não de protocolo.
+  (b) Se essa diferença for <= 30% de d e T_espera + T_livro dominarem a diferença restante, a causa é o caminho do host. Confirma se B reduz d em >= 50%.
+  (c) Entre 30% e 70%, ou A1/B sem efeito: INCONCLUSIVO. O próximo passo é perf sched e perf stat sobre uma repetição só, e o resultado vira outra rodada, não
+      uma conclusão forçada.
+  (d) Se, na repetição pareada e controlada, d ficar abaixo de 0,1 ms nas duas células de 10% sem ablação, a causa é H3 e nada se conserta.
+  As regras não valem se o custo da instrumentação passar de 5% (seção 2) nem se a frequência média dos núcleos 0 a 15 variar mais de 10% entre as linhas de
+  uma mesma repetição; nesse caso o bloco é repetido uma vez e, se persistir, a célula fica SEM CONCLUSÃO.
+
+6. O que este diagnóstico não conclui
+- Não conclui que o motor perde ou ganha do lfu_cpu: isso é o A1.4 (já fechado).
+- Não conclui nada sobre outras células, outros modelos ou o regime multiposição.
+- O 3B só confirma o sinal do 1B (mesma direção da regra); sozinho não decide.
+- Uma melhoria só ganha crédito com logits corretos e ganho total pareado, sem regressão escondida em L4.
+
+7. Pendências antes da janela
+- Breno: aval do critério, da suspensão dos timers e do uso da 4090 (janela curta, a estimar).
+- Construir o harness instrumentado (revisado em nível 2 como as peças do A1) e rodar uma sanidade curta sem janela.
+- Rodada de revisão do critério antes de qualquer medida.
