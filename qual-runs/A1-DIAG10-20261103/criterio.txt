@@ -1,6 +1,6 @@
-A1-DIAG10: diagnóstico do +0,4 a +0,6 ms de espera do motor D1 a 10% de slots. VERSÃO 4 (RASCUNHO de 03/11, depois da rodada 31; ainda sem harness, sem
+A1-DIAG10: diagnóstico do +0,4 a +0,6 ms de espera do motor D1 a 10% de slots. VERSÃO 5 (RASCUNHO de 03/11, depois da rodada 32; ainda sem harness, sem
 janela e sem aval do Breno). Nada aqui foi medido. Os limiares ficam gravados antes de qualquer medida; mudar um depois de ver número vira critério novo, com
-data, e o antigo fica de histórico. As versões 1 (2cce78a), 2 (2313c7e) e 3 (bc35ec9) estão no git.
+data, e o antigo fica de histórico. As versões 1 (2cce78a), 2 (2313c7e), 3 (bc35ec9) e 4 (5e5a562) estão no git.
 Mudança de desenho da v3 (mantida na v4): a DECISÃO sai só do d pareado dos binários SEM instrumentação, sob intervenções de um fator por vez. Os intervalos instrumentados
 (T_cpu, T_servico, T_host, entrada_com_seq) são DESCRIÇÃO e não entram em nenhuma regra: atribuir atraso à GPU por intervalo de CPU não é identificável sem uma
 intervenção controlada (rodadas 29 e 30).
@@ -55,11 +55,14 @@ intervenção controlada (rodadas 29 e 30).
 - Início de cada bloco: 60 s ociosa e temperatura do pacote registrada; um teto X C só vale se o Breno fixar o número (pendente); sem X, é só registro.
 - Invalida o bloco: falha de correção (logits 1e-4, roteamento, needed como no A1.4), processo alheio na 4090 (monitor com PID), sha diferente, tentativa com erro,
   ou contadores fora do limite abaixo. A análise sai de um script com controles negativos próprios, como o analise.py do A1.4.
-- Controle de trabalho (todos os pares: C contra N, N contra I, N@A0 contra N@A1w e N@A1m, na mesma repetição). Acertos e experts na CPU por token: dentro de
-  +-0,1% do par de referência. Cópias e descartes: pelo CUSTO, |diferença de cópias| x c_copy_cpu / tokens <= 0,01 ms por token, com c_copy_cpu = 0,223 ms (1B) e
-  0,335 ms (3B) de tools/moe_sim.py (os 4040 e 7022 cópias do A1.4 tornam +-0,1% = 4 e 7 cópias, estreito demais para um par de afinidade que muda o tempo de
-  propósito). Um par fora do limite é inválido e não entra em nenhuma regra. O motor_evento decide cópias pelo tempo; isso é medido, não suposto. Controle
-  sintético: cópias +12 e o resto igual passa; cópias +300 (cerca de 0,02 ms por token) reprova, mesmo com acertos e experts na CPU iguais.
+- Controle de trabalho (todos os pares: C contra N, N contra I, N@A0 contra N@A1w e N@A1m, na mesma repetição). Uma inequação por contador, sem compensação entre eles:
+    acertos, experts na CPU e adiadas, por token: cada um dentro de +-0,1% do par de referência;
+    cópias: |diferença de cópias| x c_copy_cpu / tokens <= 0,01 ms por token. c_copy_cpu (0,223 ms no 1B, 0,335 ms no 3B) é uma ESCALA CONVENCIONAL do tools/moe_sim.py
+    (banda de 14,1 GB/s, anterior ao x8; em x8 seria cerca de 15% maior, sem efeito no limite); não é o custo medido de uma cópia. Os 4040 e 7022 cópias do A1.4 tornam
+    +-0,1% = 4 e 7 cópias, estreito demais para um par de afinidade que muda o tempo de propósito;
+    descartes: derivados (experts na CPU - cópias - adiadas), logo limitados pelas três inequações acima; reportados, sem inequação própria.
+  Um par fora de qualquer inequação é inválido e não entra em nenhuma regra. O motor_evento decide cópias pelo tempo; isso é medido, não suposto. Controles sintéticos:
+  cópias +12 e o resto igual passa; cópias +300 (cerca de 0,02 ms por token) reprova com acertos e experts na CPU iguais; adiadas muito diferentes com o resto igual reprova.
 
 4. Intervenções (cada comparação muda UM fator)
   A0   afinidade como no A1.4: taskset -c 0-15 para tudo.
@@ -84,11 +87,15 @@ intervenção controlada (rodadas 29 e 30).
   Regra (a), etapa 2 (só se o passo 0 passou para a célula): o portão é reaplicado a N@A0 da etapa 2 (referência contemporânea): 0a com N@A0 (mediana de d >= 0,3 ms e
   5 d_i > 0) e 0b contra a mediana de d(N) da etapa 1, +-0,1 ms. Para cada fator x em {A1w, A1m}:
     r_i = d(N@A0)_i - d(N@A1x)_i  (redução pareada na mesma repetição), R = mediana(r_i) / mediana(d(N@A0)).
-    Condição de base: |mediana_i( L4(A1x)_i - L4(A0)_i )| <= 0,05 ms E o mesmo para L3 (L3 e L4 são as bases; um fator que mova a base pode reduzir d sem mexer na
-    disputa). Fora disso: "SEM CONCLUSÃO (o fator moveu a base)". Reportar sempre a decomposição de r_i em dL1, dL4, dL2 e dL3.
-      R >= 0,7 E os 5 r_i > 0 E base parada E dL1 < 0 -> H1 SUSTENTADA pelo fator x nesta célula (a redução vem da espera do motor, L1).
-      0,3 <= R < 0,7, ou R >= 0,7 com algum r_i <= 0 -> PARCIAL: o fator x contribui; a fração R é reportada; sem confirmar H1.
-      R < 0,3                            -> H1 não sustentada pelo fator x.
+    Convenção: dLk = mediana_i( Lk(N@A1x)_i - Lk(N@A0)_i ). Decomposição: r_i = m_i - c_i, onde m_i = (L1-L4)(A0)_i - (L1-L4)(A1x)_i é a redução da espera do MOTOR e
+    c_i = (L2-L3)(A0)_i - (L2-L3)(A1x)_i é a do comparador (lfu_cpu). A A1w vale nas quatro linhas, então o comparador também pode mudar. Reportar m_i, c_i, dL1, dL2,
+    dL3 e dL4 por par.
+    Condição de base: |dL4| <= 0,05 ms E |dL3| <= 0,05 ms (um fator que mova a base pode reduzir d sem mexer na disputa). Fora disso: "SEM CONCLUSÃO (o fator moveu a base)".
+    Frações (pela mediana de d(N@A0)): R = mediana(r_i) / mediana(d(N@A0)) e Mfr = mediana(m_i) / mediana(d(N@A0)). Partição completa, uma saída por par (R, Mfr):
+      R < 0,3                                              -> H1 NÃO SUSTENTADA pelo fator x (H2 e doorbell seguem abertos).
+      R >= 0,3 e Mfr < 0,3                                 -> SEM CONCLUSÃO (a redução não veio do motor: veio do comparador ou de outro lado).
+      R >= 0,7 e Mfr >= 0,7 e os 5 r_i > 0 e os 5 m_i > 0   -> H1 SUSTENTADA pelo fator x nesta célula.
+      qualquer outro caso com R >= 0,3 e Mfr >= 0,3         -> PARCIAL: o fator x contribui; R e Mfr são reportados; sem confirmar H1.
     Se A1w e A1m moverem d em sentidos opostos, cada um por mais de 0,1 ms: INCONCLUSIVO (efeitos opostos), nunca "sem disputa". Se A0 da etapa 2 não reproduzir:
     "excesso não reproduzido na etapa 2", sem confirmar H1 pela afinidade.
   Resultado final por célula: H1 SUSTENTADA / PARCIAL / NÃO SUSTENTADA (H2 e doorbell seguem abertos) / não reproduzido / SEM CONCLUSÃO / INCONCLUSIVO /
@@ -97,7 +104,8 @@ intervenção controlada (rodadas 29 e 30).
   Nenhuma regra usa o 1B a 25% nem os intervalos instrumentados.
   O script de análise tem de ser testado com dados sintéticos: excesso estável, quase zero, negativo, disperso, A0 da etapa 2 sem excesso (d(A0)=0,05, d(A1w)=0,04
   tem de NÃO confirmar H1), L4 +0,4 ms com L1 igual (tem de dar SEM CONCLUSÃO, base movida, e não SUSTENTADA), fronteiras (0,3, 0,7, 0,1), efeitos opostos, par com
-  contadores fora do limite, menos de 5 pares válidos; cada caso com uma saída única. Na sanidade, rodar a A1m uma vez e conferir dL4 antes da janela.
+  contadores fora do limite, menos de 5 pares válidos; L2 +0,4 ms com L1 igual (R alto, Mfr baixo: SEM CONCLUSÃO, a redução não veio do motor); L1 -0,4 ms com o resto igual (SUSTENTADA); toda combinação (R, Mfr)
+  coberta, uma saída por caso. Na sanidade, rodar a A1m uma vez e conferir dL4 antes da janela.
 
 6. O que este diagnóstico não conclui
 - Não conclui que o motor perde ou ganha do lfu_cpu (A1.4, já fechado).
@@ -111,8 +119,8 @@ intervenção controlada (rodadas 29 e 30).
   injeção tem de subir cerca de (duração x número de injeções, ou seja, camadas com falta por token x 10 us: cerca de 0,24 ms no 1B e 0,32 ms no 3B) com tolerância de
   +-30%. Intervalos temporalmente vizinhos (T_servico quando se injeta em T_cpu; T_espera quando a injeção consome folga) PODEM mudar; o teste não exige invariância
   deles. Delta d é apenas reportado, sem limite, porque a exposição à GPU é desconhecida.
-- Fixture de folga (separada): injeção por camada MENOR que a folga mínima medida na sanidade (metade do p5 de T_espera daquela configuração), antes do wait: aí o
-  teste exige |Delta d| <= 0,05 ms. Sem essa fixture não se infere ausência de exposição pela posição da injeção.
+- Controle de atraso escondido: NÃO faz parte deste critério. Um percentil da folga de uma execução anterior não garante ausência de exposição em cada camada; se
+  for desejado, será uma fixture com folga garantida por camada pelo seu próprio mecanismo de sincronização, descrita e revisada antes de implementar.
 - A árvore: os dados sintéticos da seção 5, com amplitudes calculadas para cair inequivocamente em cada região. Controles negativos do portão de correção: os do A1.4.
 
 8. Pendências antes da janela
