@@ -1,0 +1,7 @@
+forcado: /home/brenoperucchi/models/gguf/granite-3.1-3b-a800m-instruct-bf16.gguf; conversas 4 5 6 7; aquecimento 0 1 2 3; threads 8; n_ctx 2048
+conversa 4: 766 tokens, ms/tok 3.431, mediana 3.427
+conversa 5: 1080 tokens, ms/tok 3.505, mediana 3.541
+conversa 6: 845 tokens, ms/tok 3.456, mediana 3.428
+conversa 7: 1123 tokens, ms/tok 3.517, mediana 3.544
+total: 3814 tokens, ms/tok 3.483, mediana 3.431, tok/s 287.1
+mediana por posição: 0-256 3.304 (1024) 256-512 3.427 (1024) 512-1024 3.550 (1611) 1024+ 3.777 (155)

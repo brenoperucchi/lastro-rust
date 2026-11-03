@@ -1,0 +1,21 @@
+Mon Nov  2 08:23:53 AM -03 2026
+NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  615.78.08  Release Build  (root@omarchy)  
+lrwxrwxrwx 1 root root 20 Oct  8 11:41 /usr/lib/libcuda.so.1 -> libcuda.so.615.78.08
+ 08:23:53 up 1 day, 17:07,  2 users,  load average: 0.25, 0.46, 0.58
+git: a0ed9117fb2c57758c878257c793edd2d28d3e11 (0 arquivos alterados fora desta pasta)
+fonte dos binários:
+20747ab83b9194d1d8ad0a47d00201df197bb520
+rustc 1.97.0 (2d8144b78 2026-07-07) (Homebrew)
+cargo 1.97.0 (c980f4866 2026-06-30) (Homebrew)
+1
+d8b071a3dab6679e8fec07288f89e7059473fca8f10d4200a4691087803feff7  qual-runs/A1-MEDIDA-20261101/criterio.txt
+7881bc88898d063d2a59e2afd15e195b9a46923800746de7ae1ce2bb6b2d653f  qual-runs/A1-MEDIDA-20261101/criterio-v1.txt
+025fd1f73c3223e39336c4b541cdfca0be5e8c48e6f0ce4b93ca1bc8e701b6af  qual-runs/A1-MEDIDA-20261101/rodar.sh
+802ad2061bb15f21e32c91cd3fa2696ae913bbb2b6654135b9886cd1807752f7  tools/moe_sim.py
+llama.cpp: 0893ec98f5eafad36a43a72cd1c3723d72b0d03a
+a79883a3d71d50e3ed508083cc26e75b34d20f7e86ca3b0b02de3793f9511d3f  /home/brenoperucchi/models/gguf/granite-3.1-1b-a400m-instruct-bf16.gguf
+11fced7a00e64ad77c9414c2b0c97c0af7fc951fb3615e9604c6b14a7142a310  /home/brenoperucchi/models/gguf/granite-3.1-3b-a800m-instruct-bf16.gguf
+bibliotecas do forcado (sha) em libs.sha256
+GPU no começo: GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 0 %, 2 MiB, 21.23 W, 210 MHz, 53
+processos acima de 5% de CPU no começo:
+    PID %CPU COMMAND

@@ -1,0 +1,16 @@
+Mon Nov  2 01:38:27 PM -03 2026
+ 13:38:27 up 1 day, 22:22,  2 users,  load average: 2.80, 2.74, 2.98
+GPU no fim: GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 91 %, 2 MiB, 76.50 W, 2850 MHz, 39
+a1-motor: OK
+m2a-cache: OK
+forcado: OK
+/home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libllama-common.so.0: OK
+/home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libllama.so.0: OK
+/home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libggml.so.0: OK
+/home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libggml-base.so.0: OK
+/home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libggml-cpu.so.0: OK
+/home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/libggml-cuda.so.0: OK
+processos acima de 5% de CPU no fim:
+    PID %CPU COMMAND
+2175305 14.9 omabackup
+nenhuma célula suspensa

@@ -1,0 +1,133 @@
+08:26:29 qual-runs/A1-MEDIDA-20261101/runs/rep1/1b/m2a-b4 0
+08:26:29 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 3 %, 2 MiB, 141.74 W, 2850 MHz, 45), esperando
+08:29:45 qual-runs/A1-MEDIDA-20261101/runs/rep1/1b/a1 0
+08:33:34 qual-runs/A1-MEDIDA-20261101/runs/rep1/1b/m2a-b0 0
+08:33:34 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 13 %, 2 MiB, 68.11 W, 2610 MHz, 38), esperando
+08:38:21 qual-runs/A1-MEDIDA-20261101/runs/rep1/3b/m2a-b4 0
+08:38:22 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 84 %, 2 MiB, 118.56 W, 2850 MHz, 43), esperando
+08:43:45 qual-runs/A1-MEDIDA-20261101/runs/rep1/3b/a1 0
+08:43:45 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 5 %, 2 MiB, 112.59 W, 2850 MHz, 43), esperando
+08:51:23 qual-runs/A1-MEDIDA-20261101/runs/rep1/3b/m2a-b0 0
+08:51:23 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 55 %, 2 MiB, 63.02 W, 2610 MHz, 37), esperando
+08:56:45 qual-runs/A1-MEDIDA-20261101/runs/rep2/3b/a1 0
+08:56:45 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 12 %, 2 MiB, 136.45 W, 2850 MHz, 43), esperando
+09:04:22 qual-runs/A1-MEDIDA-20261101/runs/rep2/3b/m2a-b0 0
+09:04:22 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 68 %, 2 MiB, 62.52 W, 2610 MHz, 37), esperando
+09:09:06 qual-runs/A1-MEDIDA-20261101/runs/rep2/3b/m2a-b4 0
+09:09:06 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 91 %, 2 MiB, 122.79 W, 2850 MHz, 43), esperando
+09:12:21 qual-runs/A1-MEDIDA-20261101/runs/rep2/1b/a1 0
+09:16:10 qual-runs/A1-MEDIDA-20261101/runs/rep2/1b/m2a-b0 0
+09:16:10 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 13 %, 2 MiB, 67.03 W, 2610 MHz, 38), esperando
+09:19:09 qual-runs/A1-MEDIDA-20261101/runs/rep2/1b/m2a-b4 0
+09:23:02 qual-runs/A1-MEDIDA-20261101/runs/rep3/1b/m2a-b0 0
+09:23:02 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 65.22 W, 2610 MHz, 37), esperando
+09:25:56 qual-runs/A1-MEDIDA-20261101/runs/rep3/1b/m2a-b4 0
+09:25:56 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 43 %, 2 MiB, 141.86 W, 2850 MHz, 43), esperando
+09:29:16 qual-runs/A1-MEDIDA-20261101/runs/rep3/1b/a1 0
+09:36:41 qual-runs/A1-MEDIDA-20261101/runs/rep3/3b/m2a-b0 0
+09:36:41 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 39 %, 2 MiB, 60.41 W, 2850 MHz, 37), esperando
+09:41:29 qual-runs/A1-MEDIDA-20261101/runs/rep3/3b/m2a-b4 0
+09:41:29 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 65 %, 2 MiB, 115.49 W, 2850 MHz, 43), esperando
+09:46:53 qual-runs/A1-MEDIDA-20261101/runs/rep3/3b/a1 0
+09:51:18 qual-runs/A1-MEDIDA-20261101/runs/rep4/3b/m2a-b4 0
+09:51:18 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 18 %, 2 MiB, 115.19 W, 2850 MHz, 43), esperando
+09:56:39 qual-runs/A1-MEDIDA-20261101/runs/rep4/3b/a1 0
+10:03:58 qual-runs/A1-MEDIDA-20261101/runs/rep4/3b/m2a-b0 0
+10:06:30 qual-runs/A1-MEDIDA-20261101/runs/rep4/1b/m2a-b4 0
+10:06:31 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 63 %, 2 MiB, 144.99 W, 2850 MHz, 45), esperando
+10:09:42 qual-runs/A1-MEDIDA-20261101/runs/rep4/1b/a1 0
+10:09:42 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 16 %, 2 MiB, 136.65 W, 2850 MHz, 43), esperando
+10:13:50 qual-runs/A1-MEDIDA-20261101/runs/rep4/1b/m2a-b0 0
+10:16:45 qual-runs/A1-MEDIDA-20261101/runs/rep5/1b/a1 0
+10:16:46 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 47 %, 2 MiB, 152.96 W, 2850 MHz, 43), esperando
+10:20:55 qual-runs/A1-MEDIDA-20261101/runs/rep5/1b/m2a-b0 0
+10:20:55 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 8 %, 2 MiB, 66.66 W, 2610 MHz, 38), esperando
+10:23:47 qual-runs/A1-MEDIDA-20261101/runs/rep5/1b/m2a-b4 0
+10:23:47 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 6 %, 2 MiB, 116.23 W, 2850 MHz, 42), esperando
+10:29:06 qual-runs/A1-MEDIDA-20261101/runs/rep5/3b/a1 0
+10:29:06 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 9 %, 2 MiB, 138.54 W, 2850 MHz, 44), esperando
+10:36:44 qual-runs/A1-MEDIDA-20261101/runs/rep5/3b/m2a-b0 0
+10:41:10 qual-runs/A1-MEDIDA-20261101/runs/rep5/3b/m2a-b4 0
+10:41:10 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 11 %, 2 MiB, 125.95 W, 2850 MHz, 43), esperando
+10:44:06 qual-runs/A1-MEDIDA-20261101/runs/barreira/1b/a1 0
+10:48:37 qual-runs/A1-MEDIDA-20261101/runs/barreira/3b/a1 0
+10:48:37 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 97.25 W, 2850 MHz, 43), esperando
+10:49:14 llama-1b-gpu32-1 0
+10:49:14 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 210.16 W, 2850 MHz, 45), esperando
+10:56:06 llama-1b-c10-1 0
+10:56:06 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 89 %, 2 MiB, 78.91 W, 2850 MHz, 39), esperando
+11:01:59 llama-1b-c25-1 0
+11:01:59 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 33 %, 2 MiB, 84.57 W, 2835 MHz, 49), esperando
+11:04:19 llama-1b-c50-1 0
+11:04:19 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 90 %, 2 MiB, 96.88 W, 2850 MHz, 43), esperando
+11:05:55 llama-1b-ncm10-1 0
+11:07:00 llama-1b-ncm25-1 0
+11:07:48 llama-1b-ncm50-1 0
+11:07:48 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 28 %, 2 MiB, 93.73 W, 2610 MHz, 53), esperando
+11:08:39 llama-3b-gpu32-1 0
+11:08:39 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 41 %, 2 MiB, 220.54 W, 2835 MHz, 56), esperando
+11:23:04 llama-3b-c10-1 0
+11:23:04 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 90 %, 2 MiB, 77.50 W, 2850 MHz, 39), esperando
+11:34:13 llama-3b-c25-1 0
+11:34:13 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 56 %, 2 MiB, 78.31 W, 2850 MHz, 40), esperando
+11:37:53 llama-3b-c50-1 0
+11:37:54 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 53 %, 2 MiB, 94.47 W, 2850 MHz, 41), esperando
+11:40:50 llama-3b-ncm10-1 0
+11:40:50 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 13 %, 2 MiB, 69.58 W, 2610 MHz, 48), esperando
+11:43:22 llama-3b-ncm25-1 0
+11:43:22 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 18 %, 2 MiB, 81.66 W, 2610 MHz, 55), esperando
+11:45:17 llama-3b-ncm50-1 0
+11:45:17 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 86.98 W, 2835 MHz, 47), esperando
+11:59:42 llama-3b-c10-2 0
+11:59:42 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 90 %, 2 MiB, 77.86 W, 2850 MHz, 39), esperando
+12:10:51 llama-3b-c25-2 0
+12:10:51 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 88 %, 2 MiB, 79.84 W, 2850 MHz, 40), esperando
+12:14:28 llama-3b-c50-2 0
+12:14:28 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 87 %, 2 MiB, 97.07 W, 2850 MHz, 42), esperando
+12:17:14 llama-3b-ncm10-2 0
+12:17:14 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 13 %, 2 MiB, 71.70 W, 2610 MHz, 48), esperando
+12:19:38 llama-3b-ncm25-2 0
+12:19:38 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 18 %, 2 MiB, 81.79 W, 2610 MHz, 55), esperando
+12:21:32 llama-3b-ncm50-2 0
+12:21:32 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 25 %, 2 MiB, 91.44 W, 2610 MHz, 49), esperando
+12:22:19 llama-3b-gpu32-2 0
+12:22:19 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 97 %, 2 MiB, 242.57 W, 2835 MHz, 53), esperando
+12:29:12 llama-1b-c10-2 0
+12:29:12 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 87 %, 2 MiB, 77.50 W, 2850 MHz, 39), esperando
+12:35:06 llama-1b-c25-2 0
+12:35:06 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 96 %, 2 MiB, 85.85 W, 2835 MHz, 49), esperando
+12:37:27 llama-1b-c50-2 0
+12:37:27 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 89 %, 2 MiB, 97.15 W, 2850 MHz, 42), esperando
+12:39:19 llama-1b-ncm10-2 0
+12:39:19 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 12 %, 2 MiB, 69.15 W, 2610 MHz, 46), esperando
+12:40:52 llama-1b-ncm25-2 0
+12:40:52 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 14 %, 2 MiB, 76.64 W, 2610 MHz, 50), esperando
+12:42:03 llama-1b-ncm50-2 0
+12:42:18 llama-1b-gpu32-2 0
+12:42:18 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 97 %, 2 MiB, 246.36 W, 2820 MHz, 63), esperando
+12:48:11 llama-1b-c25-3 0
+12:48:11 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 94 %, 2 MiB, 80.03 W, 2850 MHz, 40), esperando
+12:50:31 llama-1b-c50-3 0
+12:50:31 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 91 %, 2 MiB, 99.92 W, 2850 MHz, 50), esperando
+12:52:12 llama-1b-ncm10-3 0
+12:52:12 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 15 %, 2 MiB, 77.14 W, 2610 MHz, 52), esperando
+12:53:36 llama-1b-ncm25-3 0
+12:54:24 llama-1b-ncm50-3 0
+12:54:24 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 27 %, 2 MiB, 95.33 W, 2610 MHz, 52), esperando
+12:54:59 llama-1b-gpu32-3 0
+13:01:30 llama-1b-c10-3 0
+13:01:30 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 55 %, 2 MiB, 77.91 W, 2850 MHz, 39), esperando
+13:12:39 llama-3b-c25-3 0
+13:12:39 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 87 %, 2 MiB, 79.88 W, 2850 MHz, 40), esperando
+13:16:16 llama-3b-c50-3 0
+13:16:16 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 71 %, 2 MiB, 96.36 W, 2850 MHz, 42), esperando
+13:19:01 llama-3b-ncm10-3 0
+13:19:01 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 14 %, 2 MiB, 70.29 W, 2610 MHz, 48), esperando
+13:21:25 llama-3b-ncm25-3 0
+13:21:25 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 18 %, 2 MiB, 80.92 W, 2610 MHz, 55), esperando
+13:23:17 llama-3b-ncm50-3 0
+13:23:17 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 47 %, 2 MiB, 89.00 W, 2610 MHz, 48), esperando
+13:24:04 llama-3b-gpu32-3 0
+13:24:04 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 96 %, 2 MiB, 242.60 W, 2835 MHz, 56), esperando
+13:38:27 llama-3b-c10-3 0
+13:38:27 fim

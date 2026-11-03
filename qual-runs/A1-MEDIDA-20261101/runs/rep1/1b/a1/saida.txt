@@ -1,0 +1,24 @@
+A1.4b: granite-3.1-1b-a400m-instruct; conversas [4, 5, 6, 7] (3451 tokens); 768 experts; CPU com 8 threads; backlog 4; aquecimento [0, 1, 2, 3]
+
+política       orçam. slots |  ms/tok mediana   tok/s | acerto    CPU   cóp. descart. | needed e roteamento | logits texto-a / conversas
+resident         100%   768 |    2.64    2.63   379.1 |   0.0%   0.0%   0.00   0.00 |           – | 5.6e-6 / referência
+motor_cheio      100%   768 |    2.21    2.20   453.0 | 100.0%   0.0%   0.00   0.00 | true rot 82824/82824 | 7.8e-6 / 4.6e-6
+motor_evento      10%    76 |    7.65    7.59   130.8 |  25.0%  75.0%   1.17 142.71 | true rot 82824/82824 | 5.5e-6 / 5.7e-6
+motor_evento      25%   192 |    5.64    5.53   177.2 |  50.3%  49.7%   1.95  93.46 | true rot 82824/82824 | 6.2e-6 / 8.4e-6
+motor_evento      50%   384 |    3.40    3.21   294.2 |  78.6%  21.4%   1.64  39.34 | true rot 82824/82824 | 6.2e-6 / 9.6e-6
+
+cauda de latência (ms por token):
+resident         100% | p50    2.63 p95    2.69 p99    2.71 max    3.41 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 1381:3.4 1390:2.8 2312:2.8 2316:2.8 1904:2.7 1399:2.7 1392:2.7 2177:2.7 2348:2.7 2459:2.7
+motor_cheio      100% | p50    2.20 p95    2.26 p99    2.27 max    2.45 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 1984:2.5 3434:2.3 3412:2.3 3424:2.3 3431:2.3 3404:2.3 3449:2.3 3448:2.3 3437:2.3 3421:2.3
+motor_evento      10% | p50    7.59 p95    8.52 p99    8.85 max    9.80 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 2917:9.8 2916:9.8 3174:9.5 3170:9.4 3211:9.3 2755:9.3 2930:9.2 3210:9.2 3212:9.1 2933:9.1
+motor_evento      25% | p50    5.53 p95    7.28 p99    7.81 max    9.02 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 3019:9.0 12:8.6 2414:8.5 3163:8.3 3065:8.2 2415:8.2 2445:8.2 14:8.2 7:8.2 2753:8.1
+motor_evento      50% | p50    3.21 p95    4.91 p99    5.54 max    6.42 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 10:6.4 12:6.4 2954:6.3 3270:6.2 3065:6.2 3272:6.1 11:6.1 9:6.0 3450:6.0 22:6.0
+
+contagens exatas nas conversas e hash dos logits (texto-a e conversas):
+resident         100% | needed         0 hits         0 cpu         0 cópias         0 descart.         0 adiadas         0 | 6da9b225cd59de10
+motor_cheio      100% | needed    662592 hits    662592 cpu         0 cópias         0 descart.         0 adiadas         0 | 871363132e4c8718
+motor_evento      10% | needed    662592 hits    165887 cpu    496705 cópias      4040 descart.    492509 adiadas      2205 | 85b5831e08d59263
+motor_evento      25% | needed    662592 hits    333014 cpu    329578 cópias      6730 descart.    322528 adiadas      3701 | f856ff250ec525f2
+motor_evento      50% | needed    662592 hits    520914 cpu    141678 cópias      5675 descart.    135766 adiadas      3066 | 339a9eb7f2113658
+
+resultado: logits dentro da tolerância e experts pedidos certos em todas as configurações

@@ -1,0 +1,21 @@
+A1.4b: granite-3.1-3b-a800m-instruct; conversas [4, 5, 6, 7] (3814 tokens); 1280 experts; CPU com 8 threads; backlog 4; aquecimento [0, 1, 2, 3]
+
+política       orçam. slots |  ms/tok mediana   tok/s | acerto    CPU   cóp. descart. | needed e roteamento | logits texto-a / conversas
+resident         100%  1280 |    4.15    4.14   240.9 |   0.0%   0.0%   0.00   0.00 |           – | 2.9e-6 / referência
+motor_barreira    10%   128 |   13.67   13.56    73.1 |  29.1%  70.9%   1.82 179.75 | true rot 122048/122048 | 2.9e-6 / 4.8e-6
+motor_barreira    25%   320 |    9.51    9.25   105.2 |  55.4%  44.6%   2.58 111.57 | true rot 122048/122048 | 2.7e-6 / 6.7e-6
+motor_barreira    50%   640 |    5.63    5.27   177.5 |  82.5%  17.5%   2.27  42.53 | true rot 122048/122048 | 2.6e-6 / 5.5e-6
+
+cauda de latência (ms por token):
+resident         100% | p50    4.14 p95    4.23 p99    4.25 max    4.30 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 3690:4.3 1569:4.3 3691:4.3 2490:4.3 3809:4.3 3694:4.3 3788:4.3 3693:4.3 3702:4.3 3695:4.3
+motor_barreira    10% | p50   13.56 p95   15.45 p99   16.11 max   18.19 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 299:18.2 3789:17.4 3473:16.9 2809:16.8 2104:16.7 3316:16.7 679:16.5 3212:16.5 797:16.5 3471:16.5
+motor_barreira    25% | p50    9.25 p95   12.69 p99   14.04 max   15.49 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 3813:15.5 3316:15.3 3583:15.1 3471:15.0 3212:15.0 12:14.9 3812:14.7 0:14.7 3413:14.7 28:14.6
+motor_barreira    50% | p50    5.27 p95    8.29 p99   10.18 max   12.24 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 778:12.2 12:11.5 10:11.2 2726:11.2 794:11.2 9:11.2 0:11.1 3498:11.0 2754:10.9 2701:10.9
+
+contagens exatas nas conversas e hash dos logits (texto-a e conversas):
+resident         100% | needed         0 hits         0 cpu         0 cópias         0 descart.         0 adiadas         0 | 162ca54cd7716a68
+motor_barreira    10% | needed    976384 hits    283874 cpu    692510 cópias      6959 descart.    685551 adiadas      3880 | 7a49d053cad4e46f
+motor_barreira    25% | needed    976384 hits    541024 cpu    435360 cópias      9831 descart.    425529 adiadas      5319 | 79b6228d81a3cc1f
+motor_barreira    50% | needed    976384 hits    805506 cpu    170878 cópias      8662 descart.    162216 adiadas      4609 | 9053a280d1998e33
+
+resultado: logits dentro da tolerância e experts pedidos certos em todas as configurações

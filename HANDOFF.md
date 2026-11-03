@@ -23,7 +23,7 @@ strata-opencode e mudou para cá em 31/10/2026 (seção "Mudança para o lastro-
 - A1.1 (protocolo sem GPU) aprovado pelos dois revisores na rodada `lastro-rust-6`. Estado em
   `rust/moe-rt/src/motor/ESTADO-A1.1.md`.
 - A1.2 (peças na GPU) aprovado pelos dois revisores (checkpoint nas rodadas 7 e 8, final na rodada 12). Estado em
-  `rust/moe-rt/src/motor/ESTADO-A1.2.md`. A1.3 (motor D1 completo, estado em `rust/moe-rt/src/motor/ESTADO-A1.3.md`) feito e aprovado pelos dois revisores (rodadas 14, 17 e 18); commits locais 3cce95d, cdd7567 e 55f9ded, ainda sem push. **Próximo: A1.4.**
+  `rust/moe-rt/src/motor/ESTADO-A1.2.md`. A1.3 (motor D1 completo, estado em `rust/moe-rt/src/motor/ESTADO-A1.3.md`) feito e aprovado pelos dois revisores (rodadas 14, 17 e 18); commits locais 3cce95d, cdd7567 e 55f9ded, ainda sem push. A1.4 (medida final) com a janela de 2/11 feita e analisada: o motor passa em 1,05 x o `lfu_cpu` nas 6 células, ganha de 4,7 a 9,3 x do cache do llama.cpp e de 1,4 a 2,2 x do `-ncmoe`; a busca antecipada continua fora (portão da A0a não passa). Resultados em `qual-runs/A1-MEDIDA-20261101/resultado.txt`; estado em `rust/moe-rt/src/motor/ESTADO-A1.4.md`. **O plano do A1 termina aqui; falta a confirmação do Breno sobre o limite de 1,05 x e o push.**
 - Depois: A1.2 (peças de GPU), A1.3 (motor D1), A1.4 (medida final contra lfu_cpu e llama.cpp, mesmas 6 células; a
   janela longa só com o aval do Breno). O plano termina no A1.4.
 - Fora do plano, feitos em 31/10 (commit a4faca6): `qual-runs/PCIE-X8-20261031/` (análise x8/x8 contra x16/x4: ficar

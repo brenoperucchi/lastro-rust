@@ -1,0 +1,99 @@
+conjunto: cinco parâmetros novos: {'1b': {'c_cpu': 0.0492, 'c_cpu_quiet': 0.0393, 'o_layer': 0.1314}, '3b': {'c_cpu': 0.0684, 'c_cpu_quiet': 0.0584, 'o_layer': 0.087}}
+simulador 802ad2061bb15f21, critério b979b9b2e46eed71
+
+== 1b: 24 camadas × 32 experts, k 8
+escolha no treino (redução média da espera nos 3 orçamentos; as 5 melhores):
+  anterior  d=8 admissão lfu   espera não:  +0.65%
+  anterior  d=8 admissão lfu   espera sim:  +0.65%
+  frequente d=8 admissão lfu   espera não:  +0.61%
+  frequente d=8 admissão lfu   espera sim:  +0.61%
+  frequente d=4 admissão lfu   espera não:  +0.26%
+
+1b 10% (76 slots): lfu_cpu espera 5.003 ms/token
+  lfu_cpu com espera do evento       espera  5.003 ms/token ( +0.00%)  acerto  24.9%  cópias bg   1.5 + busca   0.0/token, úteis   0.0  camadas com tráfego  6.2%
+  escolhida: anterior d=8 lfu        espera  4.974 ms/token ( +0.59%)  acerto  24.9%  cópias bg   1.3 + busca   0.0/token, úteis   0.0  camadas com tráfego  5.7%
+  oráculo d=1 livre (limite)         espera  9.239 ms/token (-84.67%)  acerto  24.8%  cópias bg  29.7 + busca  25.1/token, úteis   3.6  camadas com tráfego 100.0%
+  oráculo d=1 lfu (limite)           espera  5.003 ms/token ( +0.00%)  acerto  24.9%  cópias bg   1.5 + busca   0.0/token, úteis   0.0  camadas com tráfego  6.2%
+  oráculo d=2 livre (limite)         espera  8.379 ms/token (-67.47%)  acerto  34.0%  cópias bg  28.0 + busca  23.0/token, úteis  21.6  camadas com tráfego 100.0%
+  oráculo d=2 lfu (limite)           espera  4.995 ms/token ( +0.17%)  acerto  24.9%  cópias bg   1.5 + busca   0.0/token, úteis   0.0  camadas com tráfego  6.1%
+  oráculo d=4 livre (limite)         espera  8.385 ms/token (-67.59%)  acerto  34.4%  cópias bg  28.2 + busca  22.8/token, úteis  22.8  camadas com tráfego 100.0%
+  oráculo d=4 lfu (limite)           espera  4.976 ms/token ( +0.55%)  acerto  24.9%  cópias bg   1.4 + busca   0.0/token, úteis   0.0  camadas com tráfego  5.7%
+  oráculo d=8 livre (limite)         espera  8.494 ms/token (-69.78%)  acerto  33.3%  cópias bg  28.6 + busca  22.9/token, úteis  22.9  camadas com tráfego 100.0%
+  oráculo d=8 lfu (limite)           espera  4.938 ms/token ( +1.31%)  acerto  25.0%  cópias bg   1.2 + busca   0.0/token, úteis   0.0  camadas com tráfego  5.0%
+
+1b 25% (192 slots): lfu_cpu espera 3.209 ms/token
+  lfu_cpu com espera do evento       espera  3.209 ms/token ( +0.00%)  acerto  50.1%  cópias bg   2.3 + busca   0.0/token, úteis   0.0  camadas com tráfego  9.1%
+  escolhida: anterior d=8 lfu        espera  3.194 ms/token ( +0.47%)  acerto  50.1%  cópias bg   2.1 + busca   0.0/token, úteis   0.0  camadas com tráfego  8.8%
+  oráculo d=1 livre (limite)         espera  6.918 ms/token (-115.56%)  acerto  49.6%  cópias bg  21.1 + busca  23.3/token, úteis   1.0  camadas com tráfego 100.0%
+  oráculo d=1 lfu (limite)           espera  3.209 ms/token ( +0.00%)  acerto  50.1%  cópias bg   2.2 + busca   0.0/token, úteis   0.0  camadas com tráfego  9.1%
+  oráculo d=2 livre (limite)         espera  6.275 ms/token (-95.52%)  acerto  55.0%  cópias bg  20.1 + busca  21.4/token, úteis  13.6  camadas com tráfego 100.0%
+  oráculo d=2 lfu (limite)           espera  3.201 ms/token ( +0.27%)  acerto  50.1%  cópias bg   2.2 + busca   0.0/token, úteis   0.0  camadas com tráfego  8.9%
+  oráculo d=4 livre (limite)         espera  5.882 ms/token (-83.26%)  acerto  59.1%  cópias bg  19.7 + busca  20.0/token, úteis  19.9  camadas com tráfego 100.0%
+  oráculo d=4 lfu (limite)           espera  3.182 ms/token ( +0.86%)  acerto  50.2%  cópias bg   2.1 + busca   0.0/token, úteis   0.0  camadas com tráfego  8.6%
+  oráculo d=8 livre (limite)         espera  5.925 ms/token (-84.61%)  acerto  58.8%  cópias bg  19.7 + busca  20.3/token, úteis  20.3  camadas com tráfego 100.0%
+  oráculo d=8 lfu (limite)           espera  3.148 ms/token ( +1.92%)  acerto  50.2%  cópias bg   1.9 + busca   0.0/token, úteis   0.0  camadas com tráfego  7.9%
+
+1b 50% (384 slots): lfu_cpu espera 1.141 ms/token
+  lfu_cpu com espera do evento       espera  1.141 ms/token ( +0.00%)  acerto  78.5%  cópias bg   1.8 + busca   0.0/token, úteis   0.0  camadas com tráfego  7.4%
+  escolhida: anterior d=8 lfu        espera  1.134 ms/token ( +0.57%)  acerto  78.6%  cópias bg   1.7 + busca   0.0/token, úteis   0.0  camadas com tráfego  7.3%
+  oráculo d=1 livre (limite)         espera  3.809 ms/token (-233.84%)  acerto  78.2%  cópias bg   7.0 + busca  22.3/token, úteis   0.9  camadas com tráfego 96.3%
+  oráculo d=1 lfu (limite)           espera  1.141 ms/token ( +0.00%)  acerto  78.5%  cópias bg   1.8 + busca   0.0/token, úteis   0.0  camadas com tráfego  7.4%
+  oráculo d=2 livre (limite)         espera  3.445 ms/token (-201.94%)  acerto  80.1%  cópias bg   7.4 + busca  20.7/token, úteis   6.3  camadas com tráfego 97.4%
+  oráculo d=2 lfu (limite)           espera  1.137 ms/token ( +0.34%)  acerto  78.6%  cópias bg   1.8 + busca   0.0/token, úteis   0.0  camadas com tráfego  7.3%
+  oráculo d=4 livre (limite)         espera  2.666 ms/token (-133.62%)  acerto  85.0%  cópias bg   7.9 + busca  17.2/token, úteis  14.9  camadas com tráfego 99.0%
+  oráculo d=4 lfu (limite)           espera  1.130 ms/token ( +0.96%)  acerto  78.6%  cópias bg   1.7 + busca   0.0/token, úteis   0.0  camadas com tráfego  7.2%
+  oráculo d=8 livre (limite)         espera  2.466 ms/token (-116.10%)  acerto  86.1%  cópias bg   8.1 + busca  16.2/token, úteis  16.2  camadas com tráfego 99.3%
+  oráculo d=8 lfu (limite)           espera  1.116 ms/token ( +2.20%)  acerto  78.6%  cópias bg   1.7 + busca   0.0/token, úteis   0.0  camadas com tráfego  6.8%
+
+== 3b: 32 camadas × 40 experts, k 8
+escolha no treino (redução média da espera nos 3 orçamentos; as 5 melhores):
+  anterior  d=8 admissão lfu   espera não:  +0.18%
+  anterior  d=8 admissão lfu   espera sim:  +0.18%
+  frequente d=8 admissão lfu   espera não:  +0.12%
+  frequente d=8 admissão lfu   espera sim:  +0.12%
+  anterior  d=4 admissão lfu   espera não:  +0.07%
+
+3b 10% (128 slots): lfu_cpu espera 9.634 ms/token
+  lfu_cpu com espera do evento       espera  9.634 ms/token ( +0.00%)  acerto  28.9%  cópias bg   2.3 + busca   0.0/token, úteis   0.0  camadas com tráfego  7.0%
+  escolhida: anterior d=8 lfu        espera  9.612 ms/token ( +0.23%)  acerto  28.9%  cópias bg   2.1 + busca   0.0/token, úteis   0.0  camadas com tráfego  6.7%
+  oráculo d=1 livre (limite)         espera 13.999 ms/token (-45.31%)  acerto  28.3%  cópias bg  32.9 + busca  23.3/token, úteis   0.3  camadas com tráfego 100.0%
+  oráculo d=1 lfu (limite)           espera  9.634 ms/token ( +0.00%)  acerto  28.9%  cópias bg   2.3 + busca   0.0/token, úteis   0.0  camadas com tráfego  7.0%
+  oráculo d=2 livre (limite)         espera 13.176 ms/token (-36.76%)  acerto  32.0%  cópias bg  31.9 + busca  21.9/token, úteis  12.8  camadas com tráfego 100.0%
+  oráculo d=2 lfu (limite)           espera  9.628 ms/token ( +0.07%)  acerto  28.9%  cópias bg   2.2 + busca   0.0/token, úteis   0.0  camadas com tráfego  6.9%
+  oráculo d=4 livre (limite)         espera 12.647 ms/token (-31.27%)  acerto  36.0%  cópias bg  31.0 + busca  21.2/token, úteis  21.2  camadas com tráfego 100.0%
+  oráculo d=4 lfu (limite)           espera  9.613 ms/token ( +0.22%)  acerto  28.9%  cópias bg   2.2 + busca   0.0/token, úteis   0.0  camadas com tráfego  6.7%
+  oráculo d=8 livre (limite)         espera 12.735 ms/token (-32.18%)  acerto  35.5%  cópias bg  31.0 + busca  21.5/token, úteis  21.5  camadas com tráfego 100.0%
+  oráculo d=8 lfu (limite)           espera  9.580 ms/token ( +0.57%)  acerto  29.0%  cópias bg   2.0 + busca   0.0/token, úteis   0.0  camadas com tráfego  6.1%
+
+3b 25% (320 slots): lfu_cpu espera 5.809 ms/token
+  lfu_cpu com espera do evento       espera  5.809 ms/token ( +0.00%)  acerto  55.3%  cópias bg   3.0 + busca   0.0/token, úteis   0.0  camadas com tráfego 10.5%
+  escolhida: anterior d=8 lfu        espera  5.797 ms/token ( +0.20%)  acerto  55.3%  cópias bg   2.9 + busca   0.0/token, úteis   0.0  camadas com tráfego 10.3%
+  oráculo d=1 livre (limite)         espera  9.326 ms/token (-60.55%)  acerto  54.9%  cópias bg  22.1 + busca  20.2/token, úteis   0.3  camadas com tráfego 100.0%
+  oráculo d=1 lfu (limite)           espera  5.809 ms/token ( -0.00%)  acerto  55.3%  cópias bg   3.0 + busca   0.0/token, úteis   0.0  camadas com tráfego 10.5%
+  oráculo d=2 livre (limite)         espera  9.125 ms/token (-57.08%)  acerto  55.6%  cópias bg  21.7 + busca  20.0/token, úteis   3.3  camadas com tráfego 100.0%
+  oráculo d=2 lfu (limite)           espera  5.803 ms/token ( +0.10%)  acerto  55.3%  cópias bg   2.9 + busca   0.0/token, úteis   0.0  camadas com tráfego 10.4%
+  oráculo d=4 livre (limite)         espera  8.150 ms/token (-40.30%)  acerto  61.0%  cópias bg  20.5 + busca  18.3/token, úteis  16.9  camadas com tráfego 100.0%
+  oráculo d=4 lfu (limite)           espera  5.791 ms/token ( +0.31%)  acerto  55.3%  cópias bg   2.9 + busca   0.0/token, úteis   0.0  camadas com tráfego 10.1%
+  oráculo d=8 livre (limite)         espera  8.095 ms/token (-39.36%)  acerto  61.5%  cópias bg  20.4 + busca  18.2/token, úteis  18.2  camadas com tráfego 100.0%
+  oráculo d=8 lfu (limite)           espera  5.768 ms/token ( +0.70%)  acerto  55.3%  cópias bg   2.8 + busca   0.0/token, úteis   0.0  camadas com tráfego  9.7%
+
+3b 50% (640 slots): lfu_cpu espera 2.048 ms/token
+  lfu_cpu com espera do evento       espera  2.048 ms/token ( +0.00%)  acerto  82.4%  cópias bg   2.5 + busca   0.0/token, úteis   0.0  camadas com tráfego 12.1%
+  escolhida: anterior d=8 lfu        espera  2.043 ms/token ( +0.24%)  acerto  82.5%  cópias bg   2.5 + busca   0.0/token, úteis   0.0  camadas com tráfego 12.0%
+  oráculo d=1 livre (limite)         espera  4.162 ms/token (-103.21%)  acerto  82.2%  cópias bg   7.5 + busca  18.8/token, úteis   0.6  camadas com tráfego 97.3%
+  oráculo d=1 lfu (limite)           espera  2.048 ms/token ( -0.00%)  acerto  82.4%  cópias bg   2.5 + busca   0.0/token, úteis   0.0  camadas com tráfego 12.1%
+  oráculo d=2 livre (limite)         espera  4.112 ms/token (-100.76%)  acerto  82.3%  cópias bg   7.6 + busca  18.6/token, úteis   1.5  camadas com tráfego 97.8%
+  oráculo d=2 lfu (limite)           espera  2.046 ms/token ( +0.10%)  acerto  82.4%  cópias bg   2.5 + busca   0.0/token, úteis   0.0  camadas com tráfego 12.0%
+  oráculo d=4 livre (limite)         espera  3.574 ms/token (-74.47%)  acerto  84.5%  cópias bg   7.9 + busca  16.9/token, úteis   8.1  camadas com tráfego 98.5%
+  oráculo d=4 lfu (limite)           espera  2.040 ms/token ( +0.41%)  acerto  82.5%  cópias bg   2.5 + busca   0.0/token, úteis   0.0  camadas com tráfego 11.9%
+  oráculo d=8 livre (limite)         espera  2.860 ms/token (-39.62%)  acerto  87.8%  cópias bg   7.9 + busca  14.9/token, úteis  14.8  camadas com tráfego 99.3%
+  oráculo d=8 lfu (limite)           espera  2.029 ms/token ( +0.93%)  acerto  82.5%  cópias bg   2.4 + busca   0.0/token, úteis   0.0  camadas com tráfego 11.6%
+
+== Portão (≥ 5% de redução da espera sobre a base em pelo menos uma célula do teste)
+  1b 10%: +0.59%
+  1b 25%: +0.47%
+  1b 50%: +0.57%
+  3b 10%: +0.23%
+  3b 25%: +0.20%
+  3b 50%: +0.24%
+portão: NÃO PASSA (a busca antecipada sai do caminho; o A1 segue sem ela)

@@ -1,0 +1,206 @@
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep1/1b/m2a-b4 n=1 pid=1203261 inicio=1793618637.629590653 fim=1793618789.908024745 rc_harness=0 rc=0
+08:26:29 qual-runs/A1-MEDIDA-20261101/runs/rep1/1b/m2a-b4 7.55 3.38 1.66 gpu:3%,2MiB,141.74W,2850MHz,45
+08:26:29 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 3 %, 2 MiB, 141.74 W, 2850 MHz, 45), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep1/1b/a1 n=1 pid=1230164 inicio=1793618810.030176017 fim=1793618985.826678182 rc_harness=0 rc=0
+08:29:45 qual-runs/A1-MEDIDA-20261101/runs/rep1/1b/a1 8.59 5.41 2.73 gpu:0%,2MiB,143.63W,2850MHz,44
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep1/1b/m2a-b0 n=1 pid=1254565 inicio=1793618985.898010290 fim=1793619214.574589444 rc_harness=0 rc=0
+08:33:34 qual-runs/A1-MEDIDA-20261101/runs/rep1/1b/m2a-b0 9.39 7.39 4.10 gpu:13%,2MiB,68.11W,2610MHz,38
+08:33:34 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 13 %, 2 MiB, 68.11 W, 2610 MHz, 38), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep1/3b/m2a-b4 n=1 pid=1293204 inicio=1793619234.684750650 fim=1793619501.924824840 rc_harness=0 rc=0
+08:38:21 qual-runs/A1-MEDIDA-20261101/runs/rep1/3b/m2a-b4 8.16 7.69 5.07 gpu:84%,2MiB,118.56W,2850MHz,43
+08:38:22 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 84 %, 2 MiB, 118.56 W, 2850 MHz, 43), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep1/3b/a1 n=1 pid=1327604 inicio=1793619522.042775798 fim=1793619825.892180290 rc_harness=0 rc=0
+08:43:45 qual-runs/A1-MEDIDA-20261101/runs/rep1/3b/a1 8.85 8.17 5.96 gpu:5%,2MiB,112.59W,2850MHz,43
+08:43:45 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 5 %, 2 MiB, 112.59 W, 2850 MHz, 43), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep1/3b/m2a-b0 n=1 pid=1367298 inicio=1793619846.016330753 fim=1793620283.500439098 rc_harness=0 rc=0
+08:51:23 qual-runs/A1-MEDIDA-20261101/runs/rep1/3b/m2a-b0 9.48 8.81 7.06 gpu:55%,2MiB,63.02W,2610MHz,37
+08:51:23 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 55 %, 2 MiB, 63.02 W, 2610 MHz, 37), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep2/3b/a1 n=1 pid=1438631 inicio=1793620303.612173483 fim=1793620605.079507111 rc_harness=0 rc=0
+08:56:45 qual-runs/A1-MEDIDA-20261101/runs/rep2/3b/a1 9.17 8.46 7.30 gpu:12%,2MiB,136.45W,2850MHz,43
+08:56:45 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 12 %, 2 MiB, 136.45 W, 2850 MHz, 43), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep2/3b/m2a-b0 n=1 pid=1482064 inicio=1793620625.188311282 fim=1793621062.549173665 rc_harness=0 rc=0
+09:04:22 qual-runs/A1-MEDIDA-20261101/runs/rep2/3b/m2a-b0 9.47 8.87 7.85 gpu:68%,2MiB,62.52W,2610MHz,37
+09:04:22 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 68 %, 2 MiB, 62.52 W, 2610 MHz, 37), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep2/3b/m2a-b4 n=1 pid=1546466 inicio=1793621082.664021794 fim=1793621346.527695390 rc_harness=0 rc=0
+09:09:06 qual-runs/A1-MEDIDA-20261101/runs/rep2/3b/m2a-b4 7.71 8.07 7.74 gpu:91%,2MiB,122.79W,2850MHz,43
+09:09:06 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 91 %, 2 MiB, 122.79 W, 2850 MHz, 43), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep2/1b/a1 n=1 pid=1580302 inicio=1793621366.642169715 fim=1793621541.582745061 rc_harness=0 rc=0
+09:12:21 qual-runs/A1-MEDIDA-20261101/runs/rep2/1b/a1 11.84 8.71 7.95 gpu:1%,2MiB,145.77W,2850MHz,43
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep2/1b/m2a-b0 n=1 pid=1601956 inicio=1793621541.662762056 fim=1793621770.767031051 rc_harness=0 rc=0
+09:16:10 qual-runs/A1-MEDIDA-20261101/runs/rep2/1b/m2a-b0 9.60 9.17 8.30 gpu:13%,2MiB,67.03W,2610MHz,38
+09:16:10 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 13 %, 2 MiB, 67.03 W, 2610 MHz, 38), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep2/1b/m2a-b4 n=1 pid=1642104 inicio=1793621790.887746135 fim=1793621949.447320815 rc_harness=0 rc=0
+09:19:09 qual-runs/A1-MEDIDA-20261101/runs/rep2/1b/m2a-b4 10.66 9.39 8.49 gpu:0%,2MiB,126.01W,2850MHz,42
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep3/1b/m2a-b0 n=1 pid=1670224 inicio=1793621949.533022440 fim=1793622182.148296543 rc_harness=0 rc=0
+09:23:02 qual-runs/A1-MEDIDA-20261101/runs/rep3/1b/m2a-b0 9.52 9.34 8.66 gpu:7%,2MiB,65.22W,2610MHz,37
+09:23:02 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 65.22 W, 2610 MHz, 37), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep3/1b/m2a-b4 n=1 pid=1706687 inicio=1793622202.259822683 fim=1793622356.191725986 rc_harness=0 rc=0
+09:25:56 qual-runs/A1-MEDIDA-20261101/runs/rep3/1b/m2a-b4 9.55 8.99 8.60 gpu:43%,2MiB,141.86W,2850MHz,43
+09:25:56 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 43 %, 2 MiB, 141.86 W, 2850 MHz, 43), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep3/1b/a1 n=1 pid=1731126 inicio=1793622376.314099314 fim=1793622556.452768604 rc_harness=0 rc=0
+09:29:16 qual-runs/A1-MEDIDA-20261101/runs/rep3/1b/a1 10.15 9.04 8.62 gpu:0%,2MiB,126.59W,2850MHz,42
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep3/3b/m2a-b0 n=1 pid=1754611 inicio=1793622556.535661819 fim=1793623001.575746213 rc_harness=0 rc=0
+09:36:41 qual-runs/A1-MEDIDA-20261101/runs/rep3/3b/m2a-b0 9.48 9.45 8.93 gpu:39%,2MiB,60.41W,2850MHz,37
+09:36:41 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 39 %, 2 MiB, 60.41 W, 2850 MHz, 37), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep3/3b/m2a-b4 n=1 pid=1827901 inicio=1793623021.687764989 fim=1793623289.178222320 rc_harness=0 rc=0
+09:41:29 qual-runs/A1-MEDIDA-20261101/runs/rep3/3b/m2a-b4 8.79 8.87 8.76 gpu:65%,2MiB,115.49W,2850MHz,43
+09:41:29 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 65 %, 2 MiB, 115.49 W, 2850 MHz, 43), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep3/3b/a1 n=1 pid=1867307 inicio=1793623309.293830549 fim=1793623613.978731092 rc_harness=0 rc=0
+09:46:53 qual-runs/A1-MEDIDA-20261101/runs/rep3/3b/a1 10.74 8.92 8.64 gpu:0%,2MiB,101.41W,2850MHz,43
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep4/3b/m2a-b4 n=1 pid=1917500 inicio=1793623614.054950353 fim=1793623878.614228520 rc_harness=0 rc=0
+09:51:18 qual-runs/A1-MEDIDA-20261101/runs/rep4/3b/m2a-b4 8.78 8.80 8.64 gpu:18%,2MiB,115.19W,2850MHz,43
+09:51:18 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 18 %, 2 MiB, 115.19 W, 2850 MHz, 43), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep4/3b/a1 n=1 pid=1956731 inicio=1793623898.749088272 fim=1793624199.998227413 rc_harness=0 rc=0
+09:56:39 qual-runs/A1-MEDIDA-20261101/runs/rep4/3b/a1 10.07 8.62 8.46 gpu:0%,2MiB,102.94W,2850MHz,43
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep4/3b/m2a-b0 n=1 pid=1998848 inicio=1793624200.080084703 fim=1793624638.925033219 rc_harness=0 rc=0
+10:03:58 qual-runs/A1-MEDIDA-20261101/runs/rep4/3b/m2a-b0 8.99 9.29 8.87 gpu:1%,2MiB,61.56W,2610MHz,37
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep4/1b/m2a-b4 n=1 pid=2068645 inicio=1793624638.996647013 fim=1793624790.944930807 rc_harness=0 rc=0
+10:06:30 qual-runs/A1-MEDIDA-20261101/runs/rep4/1b/m2a-b4 9.33 9.16 8.87 gpu:63%,2MiB,144.99W,2850MHz,45
+10:06:31 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 63 %, 2 MiB, 144.99 W, 2850 MHz, 45), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep4/1b/a1 n=1 pid=2092228 inicio=1793624811.059781959 fim=1793624982.169152717 rc_harness=0 rc=0
+10:09:42 qual-runs/A1-MEDIDA-20261101/runs/rep4/1b/a1 10.09 8.81 8.71 gpu:16%,2MiB,136.65W,2850MHz,43
+10:09:42 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 16 %, 2 MiB, 136.65 W, 2850 MHz, 43), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep4/1b/m2a-b0 n=1 pid=2119404 inicio=1793625002.281089557 fim=1793625230.040828789 rc_harness=0 rc=0
+10:13:50 qual-runs/A1-MEDIDA-20261101/runs/rep4/1b/m2a-b0 8.60 8.42 8.53 gpu:0%,2MiB,62.58W,2610MHz,37
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep5/1b/a1 n=1 pid=2149897 inicio=1793625230.109779578 fim=1793625405.931659979 rc_harness=0 rc=0
+10:16:45 qual-runs/A1-MEDIDA-20261101/runs/rep5/1b/a1 10.50 8.99 8.69 gpu:47%,2MiB,152.96W,2850MHz,43
+10:16:46 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 47 %, 2 MiB, 152.96 W, 2850 MHz, 43), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep5/1b/m2a-b0 n=1 pid=2185767 inicio=1793625426.041990938 fim=1793625655.317701835 rc_harness=0 rc=0
+10:20:55 qual-runs/A1-MEDIDA-20261101/runs/rep5/1b/m2a-b0 9.63 8.81 8.62 gpu:8%,2MiB,66.66W,2610MHz,38
+10:20:55 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 8 %, 2 MiB, 66.66 W, 2610 MHz, 38), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep5/1b/m2a-b4 n=1 pid=2219918 inicio=1793625675.437101420 fim=1793625827.038092902 rc_harness=0 rc=0
+10:23:47 qual-runs/A1-MEDIDA-20261101/runs/rep5/1b/m2a-b4 8.36 8.29 8.42 gpu:63%,2MiB,145.21W,2850MHz,45
+10:23:47 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 6 %, 2 MiB, 116.23 W, 2850 MHz, 42), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep5/3b/a1 n=1 pid=2240526 inicio=1793625847.153377935 fim=1793626146.481578668 rc_harness=0 rc=0
+10:29:06 qual-runs/A1-MEDIDA-20261101/runs/rep5/3b/a1 9.18 8.37 8.31 gpu:9%,2MiB,138.54W,2850MHz,44
+10:29:06 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 9 %, 2 MiB, 138.54 W, 2850 MHz, 44), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep5/3b/m2a-b0 n=1 pid=2281978 inicio=1793626166.589104725 fim=1793626604.561341185 rc_harness=0 rc=0
+10:36:44 qual-runs/A1-MEDIDA-20261101/runs/rep5/3b/m2a-b0 11.49 10.26 9.10 gpu:1%,2MiB,60.76W,2610MHz,37
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/rep5/3b/m2a-b4 n=1 pid=2346359 inicio=1793626604.630057387 fim=1793626870.493065037 rc_harness=0 rc=0
+10:41:10 qual-runs/A1-MEDIDA-20261101/runs/rep5/3b/m2a-b4 9.07 9.36 8.98 gpu:11%,2MiB,125.95W,2850MHz,43
+10:41:10 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 11 %, 2 MiB, 125.95 W, 2850 MHz, 43), esperando
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/barreira/1b/a1 n=1 pid=2382097 inicio=1793626890.619023580 fim=1793627046.237630279 rc_harness=0 rc=0
+10:44:06 qual-runs/A1-MEDIDA-20261101/runs/barreira/1b/a1 9.04 8.81 8.79 gpu:0%,2MiB,124.15W,2850MHz,42
+TENTATIVA qual-runs/A1-MEDIDA-20261101/runs/barreira/3b/a1 n=1 pid=2401638 inicio=1793627046.308205438 fim=1793627317.655495513 rc_harness=0 rc=0
+10:48:37 qual-runs/A1-MEDIDA-20261101/runs/barreira/3b/a1 9.70 9.25 8.95 gpu:0%,2MiB,140.04W,2850MHz,43
+10:48:37 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 97.25 W, 2850 MHz, 43), esperando
+TENTATIVA llama-1b-gpu32-1 n=1 pid=2446147 inicio=1793627337.773301340 fim=1793627354.396053395 rc_harness=0 rc=0
+10:49:14 llama-1b-gpu32-1 6.53 8.49 8.70 gpu:7%,2MiB,210.16W,2850MHz,45
+10:49:14 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 210.16 W, 2850 MHz, 45), esperando
+TENTATIVA llama-1b-c10-1 n=1 pid=2451821 inicio=1793627374.504611978 fim=1793627766.396024565 rc_harness=0 rc=0
+10:56:06 llama-1b-c10-1 1.71 3.56 6.30 gpu:89%,2MiB,78.91W,2850MHz,39
+10:56:06 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 89 %, 2 MiB, 78.91 W, 2850 MHz, 39), esperando
+TENTATIVA llama-1b-c25-1 n=1 pid=2508710 inicio=1793627786.506314319 fim=1793628119.273762779 rc_harness=0 rc=0
+11:01:59 llama-1b-c25-1 2.07 2.55 4.93 gpu:33%,2MiB,84.57W,2835MHz,49
+11:01:59 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 33 %, 2 MiB, 84.57 W, 2835 MHz, 49), esperando
+TENTATIVA llama-1b-c50-1 n=1 pid=2566400 inicio=1793628139.386666599 fim=1793628259.509139316 rc_harness=0 rc=0
+11:04:19 llama-1b-c50-1 2.06 2.39 4.54 gpu:90%,2MiB,96.88W,2850MHz,43
+11:04:19 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 90 %, 2 MiB, 96.88 W, 2850 MHz, 43), esperando
+TENTATIVA llama-1b-ncm10-1 n=1 pid=2586964 inicio=1793628279.627672642 fim=1793628355.775243317 rc_harness=0 rc=0
+11:05:55 llama-1b-ncm10-1 4.58 3.09 4.57 gpu:0%,2MiB,69.90W,2610MHz,45
+TENTATIVA llama-1b-ncm25-1 n=1 pid=2597952 inicio=1793628355.852939947 fim=1793628420.235799084 rc_harness=0 rc=0
+11:07:00 llama-1b-ncm25-1 4.59 3.41 4.58 gpu:16%,2MiB,77.91W,2610MHz,49
+TENTATIVA llama-1b-ncm50-1 n=1 pid=2607077 inicio=1793628420.318105017 fim=1793628468.513382039 rc_harness=0 rc=0
+11:07:48 llama-1b-ncm50-1 6.12 3.99 4.72 gpu:28%,2MiB,93.73W,2610MHz,53
+11:07:48 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 28 %, 2 MiB, 93.73 W, 2610 MHz, 53), esperando
+TENTATIVA llama-3b-gpu32-1 n=1 pid=2616600 inicio=1793628488.618584679 fim=1793628519.328754875 rc_harness=0 rc=0
+11:08:39 llama-3b-gpu32-1 3.44 3.58 4.54 gpu:41%,2MiB,220.54W,2835MHz,56
+11:08:39 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 41 %, 2 MiB, 220.54 W, 2835 MHz, 56), esperando
+TENTATIVA llama-3b-c10-1 n=1 pid=2624633 inicio=1793628539.440775818 fim=1793629384.186905963 rc_harness=0 rc=0
+11:23:04 llama-3b-c10-1 1.92 2.11 2.95 gpu:90%,2MiB,77.50W,2850MHz,39
+11:23:04 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 90 %, 2 MiB, 77.50 W, 2850 MHz, 39), esperando
+TENTATIVA llama-3b-c25-1 n=1 pid=2747157 inicio=1793629404.303374206 fim=1793630053.467216685 rc_harness=0 rc=0
+11:34:13 llama-3b-c25-1 3.62 3.25 3.21 gpu:56%,2MiB,78.31W,2850MHz,40
+11:34:13 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 56 %, 2 MiB, 78.31 W, 2850 MHz, 40), esperando
+TENTATIVA llama-3b-c50-1 n=1 pid=3216933 inicio=1793630073.579803818 fim=1793630273.969559770 rc_harness=0 rc=0
+11:37:53 llama-3b-c50-1 4.78 4.07 3.54 gpu:53%,2MiB,94.47W,2850MHz,41
+11:37:54 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 53 %, 2 MiB, 94.47 W, 2850 MHz, 41), esperando
+TENTATIVA llama-3b-ncm10-1 n=1 pid=3400401 inicio=1793630294.098455418 fim=1793630450.768937269 rc_harness=0 rc=0
+11:40:50 llama-3b-ncm10-1 8.26 6.03 4.39 gpu:13%,2MiB,69.58W,2610MHz,48
+11:40:50 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 13 %, 2 MiB, 69.58 W, 2610 MHz, 48), esperando
+TENTATIVA llama-3b-ncm25-1 n=1 pid=3458045 inicio=1793630470.888721963 fim=1793630602.089535272 rc_harness=0 rc=0
+11:43:22 llama-3b-ncm25-1 7.27 6.30 4.72 gpu:18%,2MiB,81.66W,2610MHz,55
+11:43:22 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 18 %, 2 MiB, 81.66 W, 2610 MHz, 55), esperando
+TENTATIVA llama-3b-ncm50-1 n=1 pid=3495114 inicio=1793630622.207206253 fim=1793630717.876876224 rc_harness=0 rc=0
+11:45:17 llama-3b-ncm50-1 5.72 5.91 4.76 gpu:26%,2MiB,90.46W,2610MHz,48
+11:45:17 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 86.98 W, 2835 MHz, 47), esperando
+TENTATIVA llama-3b-c10-2 n=1 pid=3522708 inicio=1793630737.987670960 fim=1793631582.238467401 rc_harness=0 rc=0
+11:59:42 llama-3b-c10-2 4.79 3.51 3.63 gpu:90%,2MiB,77.86W,2850MHz,39
+11:59:42 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 90 %, 2 MiB, 77.86 W, 2850 MHz, 39), esperando
+TENTATIVA llama-3b-c25-2 n=1 pid=3686509 inicio=1793631602.352337092 fim=1793632251.226396481 rc_harness=0 rc=0
+12:10:51 llama-3b-c25-2 1.92 2.46 3.12 gpu:88%,2MiB,79.84W,2850MHz,40
+12:10:51 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 88 %, 2 MiB, 79.84 W, 2850 MHz, 40), esperando
+TENTATIVA llama-3b-c50-2 n=1 pid=3826895 inicio=1793632271.339941805 fim=1793632468.195923768 rc_harness=0 rc=0
+12:14:28 llama-3b-c50-2 1.83 2.05 2.81 gpu:87%,2MiB,97.07W,2850MHz,42
+12:14:28 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 87 %, 2 MiB, 97.07 W, 2850 MHz, 42), esperando
+TENTATIVA llama-3b-ncm10-2 n=1 pid=3861932 inicio=1793632488.327066400 fim=1793632634.408384069 rc_harness=0 rc=0
+12:17:14 llama-3b-ncm10-2 6.77 4.14 3.47 gpu:13%,2MiB,71.70W,2610MHz,48
+12:17:14 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 13 %, 2 MiB, 71.70 W, 2610 MHz, 48), esperando
+TENTATIVA llama-3b-ncm25-2 n=1 pid=3895840 inicio=1793632654.532657085 fim=1793632778.186923123 rc_harness=0 rc=0
+12:19:38 llama-3b-ncm25-2 6.78 4.86 3.81 gpu:18%,2MiB,81.79W,2610MHz,55
+12:19:38 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 18 %, 2 MiB, 81.79 W, 2610 MHz, 55), esperando
+TENTATIVA llama-3b-ncm50-2 n=1 pid=3919360 inicio=1793632798.307188971 fim=1793632892.453903093 rc_harness=0 rc=0
+12:21:32 llama-3b-ncm50-2 6.10 5.10 4.01 gpu:25%,2MiB,91.44W,2610MHz,49
+12:21:32 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 25 %, 2 MiB, 91.44 W, 2610 MHz, 49), esperando
+TENTATIVA llama-3b-gpu32-2 n=1 pid=3937606 inicio=1793632912.574137459 fim=1793632939.761066825 rc_harness=0 rc=0
+12:22:19 llama-3b-gpu32-2 3.19 4.44 3.84 gpu:97%,2MiB,242.57W,2835MHz,53
+12:22:19 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 97 %, 2 MiB, 242.57 W, 2835 MHz, 53), esperando
+TENTATIVA llama-1b-c10-2 n=1 pid=3945275 inicio=1793632959.880745843 fim=1793633352.659170414 rc_harness=0 rc=0
+12:29:12 llama-1b-c10-2 2.64 2.93 3.29 gpu:87%,2MiB,77.50W,2850MHz,39
+12:29:12 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 87 %, 2 MiB, 77.50 W, 2850 MHz, 39), esperando
+TENTATIVA llama-1b-c25-2 n=1 pid=4159346 inicio=1793633372.773280669 fim=1793633706.399401972 rc_harness=0 rc=0
+12:35:06 llama-1b-c25-2 2.72 3.04 3.24 gpu:96%,2MiB,85.85W,2835MHz,49
+12:35:06 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 96 %, 2 MiB, 85.85 W, 2835 MHz, 49), esperando
+TENTATIVA llama-1b-c50-2 n=1 pid=329685 inicio=1793633726.527488454 fim=1793633847.240490839 rc_harness=0 rc=0
+12:37:27 llama-1b-c50-2 4.19 3.52 3.39 gpu:89%,2MiB,97.15W,2850MHz,42
+12:37:27 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 89 %, 2 MiB, 97.15 W, 2850 MHz, 42), esperando
+TENTATIVA llama-1b-ncm10-2 n=1 pid=526382 inicio=1793633867.379272990 fim=1793633959.394496160 rc_harness=0 rc=0
+12:39:19 llama-1b-ncm10-2 11.12 5.95 4.27 gpu:12%,2MiB,69.15W,2610MHz,46
+12:39:19 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 12 %, 2 MiB, 69.15 W, 2610 MHz, 46), esperando
+TENTATIVA llama-1b-ncm25-2 n=1 pid=694340 inicio=1793633979.518936870 fim=1793634052.430254909 rc_harness=0 rc=0
+12:40:52 llama-1b-ncm25-2 9.28 6.54 4.62 gpu:14%,2MiB,76.64W,2610MHz,50
+12:40:52 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 14 %, 2 MiB, 76.64 W, 2610 MHz, 50), esperando
+TENTATIVA llama-1b-ncm50-2 n=1 pid=780789 inicio=1793634072.566454748 fim=1793634123.708981861 rc_harness=0 rc=0
+12:42:03 llama-1b-ncm50-2 6.63 6.29 4.68 gpu:0%,2MiB,89.67W,2610MHz,53
+TENTATIVA llama-1b-gpu32-2 n=1 pid=816282 inicio=1793634123.805260864 fim=1793634138.467873321 rc_harness=0 rc=0
+12:42:18 llama-1b-gpu32-2 5.91 6.14 4.65 gpu:97%,2MiB,246.36W,2820MHz,63
+12:42:18 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 97 %, 2 MiB, 246.36 W, 2820 MHz, 63), esperando
+TENTATIVA llama-1b-c25-3 n=1 pid=857920 inicio=1793634158.610527068 fim=1793634491.456188925 rc_harness=0 rc=0
+12:48:11 llama-1b-c25-3 2.71 3.78 4.06 gpu:94%,2MiB,80.03W,2850MHz,40
+12:48:11 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 94 %, 2 MiB, 80.03 W, 2850 MHz, 40), esperando
+TENTATIVA llama-1b-c50-3 n=1 pid=1108359 inicio=1793634511.569786226 fim=1793634631.563833607 rc_harness=0 rc=0
+12:50:31 llama-1b-c50-3 3.37 3.70 3.99 gpu:91%,2MiB,99.92W,2850MHz,50
+12:50:31 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 91 %, 2 MiB, 99.92 W, 2850 MHz, 50), esperando
+TENTATIVA llama-1b-ncm10-3 n=1 pid=1235582 inicio=1793634651.675043067 fim=1793634732.216767619 rc_harness=0 rc=0
+12:52:12 llama-1b-ncm10-3 6.13 4.50 4.24 gpu:15%,2MiB,77.14W,2610MHz,52
+12:52:12 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 15 %, 2 MiB, 77.14 W, 2610 MHz, 52), esperando
+TENTATIVA llama-1b-ncm25-3 n=1 pid=1298704 inicio=1793634752.327855590 fim=1793634816.272955394 rc_harness=0 rc=0
+12:53:36 llama-1b-ncm25-3 5.41 4.60 4.30 gpu:0%,2MiB,82.40W,2610MHz,55
+TENTATIVA llama-1b-ncm50-3 n=1 pid=1308756 inicio=1793634816.352713944 fim=1793634864.531132693 rc_harness=0 rc=0
+12:54:24 llama-1b-ncm50-3 6.26 4.98 4.44 gpu:27%,2MiB,95.33W,2610MHz,52
+12:54:24 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 27 %, 2 MiB, 95.33 W, 2610 MHz, 52), esperando
+TENTATIVA llama-1b-gpu32-3 n=1 pid=1319840 inicio=1793634884.657639050 fim=1793634899.319791698 rc_harness=0 rc=0
+12:54:59 llama-1b-gpu32-3 3.99 4.54 4.32 gpu:0%,2MiB,214.16W,2835MHz,51
+TENTATIVA llama-1b-c10-3 n=1 pid=1322032 inicio=1793634899.398171366 fim=1793635290.880837939 rc_harness=0 rc=0
+13:01:30 llama-1b-c10-3 2.04 2.68 3.50 gpu:55%,2MiB,77.91W,2850MHz,39
+13:01:30 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 55 %, 2 MiB, 77.91 W, 2850 MHz, 39), esperando
+TENTATIVA llama-3b-c25-3 n=1 pid=1405348 inicio=1793635310.993228995 fim=1793635959.791422116 rc_harness=0 rc=0
+13:12:39 llama-3b-c25-3 1.97 1.90 2.58 gpu:87%,2MiB,79.88W,2850MHz,40
+13:12:39 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 87 %, 2 MiB, 79.88 W, 2850 MHz, 40), esperando
+TENTATIVA llama-3b-c50-3 n=1 pid=1515261 inicio=1793635979.910438658 fim=1793636176.908791674 rc_harness=0 rc=0
+13:16:16 llama-3b-c50-3 1.72 2.06 2.52 gpu:71%,2MiB,96.36W,2850MHz,42
+13:16:16 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 71 %, 2 MiB, 96.36 W, 2850 MHz, 42), esperando
+TENTATIVA llama-3b-ncm10-3 n=1 pid=1557828 inicio=1793636197.023894087 fim=1793636341.216988032 rc_harness=0 rc=0
+13:19:01 llama-3b-ncm10-3 6.20 3.93 3.15 gpu:14%,2MiB,70.29W,2610MHz,48
+13:19:01 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 14 %, 2 MiB, 70.29 W, 2610 MHz, 48), esperando
+TENTATIVA llama-3b-ncm25-3 n=1 pid=1584468 inicio=1793636361.327195365 fim=1793636485.674136805 rc_harness=0 rc=0
+13:21:25 llama-3b-ncm25-3 4.84 4.15 3.34 gpu:18%,2MiB,80.92W,2610MHz,55
+13:21:25 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 18 %, 2 MiB, 80.92 W, 2610 MHz, 55), esperando
+TENTATIVA llama-3b-ncm50-3 n=1 pid=1607630 inicio=1793636505.785977596 fim=1793636597.410263811 rc_harness=0 rc=0
+13:23:17 llama-3b-ncm50-3 7.12 5.31 3.85 gpu:26%,2MiB,91.57W,2610MHz,49
+13:23:17 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 47 %, 2 MiB, 89.00 W, 2610 MHz, 48), esperando
+TENTATIVA llama-3b-gpu32-3 n=1 pid=1625590 inicio=1793636617.523326756 fim=1793636644.684622511 rc_harness=0 rc=0
+13:24:04 llama-3b-gpu32-3 4.34 4.82 3.76 gpu:96%,2MiB,242.60W,2835MHz,56
+13:24:04 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 96 %, 2 MiB, 242.60 W, 2835 MHz, 56), esperando
+TENTATIVA llama-3b-c10-3 n=1 pid=1634151 inicio=1793636664.795749990 fim=1793637507.744771013 rc_harness=0 rc=0
+13:38:27 llama-3b-c10-3 2.80 2.74 2.98 gpu:91%,2MiB,76.50W,2850MHz,39

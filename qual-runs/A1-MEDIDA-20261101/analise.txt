@@ -1,0 +1,137 @@
+=== 2. Portão de correção ===
+  controles negativos em memória (a saída do rep1/1b/a1 passa; cada mutação tem de reprovar): dados atuais passam resumo FALHOU: reprova; linha ausente: reprova; roteamento fora: reprova; logits 2e-4: reprova; needed falso: reprova
+  blocos com falha de logits, roteamento ou needed: 0 de 30
+  L6 1b: ok
+  L6 3b: ok
+  L5 argmax (confere_argmax.py contra gpu32, todas as posições, mínimo 99%) e logs do llama.cpp (3 repetições):
+    1b c10: PASSA 99.40%
+    1b c25: PASSA 99.40%
+    1b c50: PASSA 99.40%
+    1b ncm10: PASSA 99.34%
+    1b ncm25: PASSA 99.34%
+    1b ncm50: PASSA 99.31%
+    1b logs (FA desligado, K e V em f32, cache com um grupo e os slots certos, hit rate): 0 problemas 
+    3b c10: PASSA 99.68%
+    3b c25: PASSA 99.68%
+    3b c50: PASSA 99.68%
+    3b ncm10: PASSA 99.76%
+    3b ncm25: PASSA 99.79%
+    3b ncm50: PASSA 99.65%
+    3b logs (FA desligado, K e V em f32, cache com um grupo e os slots certos, hit rate): 0 problemas 
+  GPU: 3747 amostras válidas, 0 falhas de consulta, 0 com processo que não é do nosso bin/; 3514 amostras dentro de tentativas (74 tentativas no carga.log); tentativas descartadas por carga: 0 
+  controles negativos da GPU (em memória): erro de consulta: ok; outro programa: ok; outro PID do mesmo binário: ok; sem observação: ok; processo alheio só fora do intervalo (não pode descartar): ok
+
+=== 3. Tempo: espera e d_i (ms por token; média dos tokens por repetição) ===
+1b 10%: L1 med 7.6184 [7.5705,7.8014]  L2 med 7.6102 [7.5481,7.6433]  razão L1/L2 1.0011
+        espera L1 5.4025  espera L2 4.9402  d_i = +0.4991, +0.3999, +0.6006, +0.4457, +0.4734  intervalo [+0.3999,+0.6006]  previsões -0.040/-0.040 -> nenhuma das duas
+1b 25%: L1 med 5.5606 [5.5251,6.0796]  L2 med 5.8429 [5.7763,6.2323]  razão L1/L2 0.9517
+        espera L1 3.3470  espera L2 3.1729  d_i = +0.2647, -0.2535, +0.6178, +0.1721, +0.1780  intervalo [-0.2535,+0.6178]  previsões -0.031/-0.037 -> inconclusivo (contém as duas)
+1b 50%: L1 med 3.4280 [3.3850,3.5440]  L2 med 3.8958 [3.8456,4.1770]  razão L1/L2 0.8799
+        espera L1 1.2183  espera L2 1.2513  d_i = +0.0021, -0.3692, +0.0302, +0.0058, +0.0144  intervalo [-0.3692,+0.0302]  previsões -0.021/-0.038 -> inconclusivo (contém as duas)
+3b 10%: L1 med 13.6894 [13.5807,13.7335]  L2 med 13.6474 [13.6255,13.7552]  razão L1/L2 1.0031
+        espera L1 10.0314  espera L2 9.5006  d_i = +0.5435, +0.5633, +0.3861, +0.5827, +0.4245  intervalo [+0.3861,+0.5827]  previsões -0.067/-0.070 -> nenhuma das duas
+3b 25%: L1 med 9.4939 [9.3449,9.6018]  L2 med 10.0450 [9.9118,10.1108]  razão L1/L2 0.9451
+        espera L1 5.8522  espera L2 5.8820  d_i = -0.0657, -0.0629, -0.0450, +0.0417, -0.0298  intervalo [-0.0657,+0.0417]  previsões -0.041/-0.051 -> inconclusivo (contém as duas)
+3b 50%: L1 med 5.5974 [5.5690,5.7269]  L2 med 6.2056 [6.1831,6.3975]  razão L1/L2 0.9020
+        espera L1 1.9393  espera L2 2.0582  d_i = -0.1478, -0.1042, -0.0010, -0.0478, -0.3072  intervalo [-0.3072,-0.0010]  previsões -0.027/-0.045 -> inconclusivo (contém as duas)
+
+3.2 aceitação (mediana L1 <= 1,05 x mediana L2):
+  1b 10%: 1.0011  passa
+  1b 25%: 0.9517  passa
+  1b 50%: 0.8799  passa
+  3b 10%: 1.0031  passa
+  3b 25%: 0.9451  passa
+  3b 50%: 0.9020  passa
+  resultado: PASSA nas 6 células
+  ruído entre repetições (máx-mín)/mediana de L1 e L2 por célula:
+    1b 10% L1: 3.03%
+    1b 10% L2: 1.25%
+    1b 25% L1: 9.97%
+    1b 25% L2: 7.80%
+    1b 50% L1: 4.64%
+    1b 50% L2: 8.51%
+    3b 10% L1: 1.12%
+    3b 10% L2: 0.95%
+    3b 25% L1: 2.71%
+    3b 25% L2: 1.98%
+    3b 50% L1: 2.82%
+    3b 50% L2: 3.46%
+  deriva de L3 e L4 entre repetições (critério 8: acima de 5% da média invalida a decisão):
+    1b L3: 1.44%  médias 2.6700, 2.6317, 2.6555, 2.6331, 2.6445
+    1b L4: 0.39%  médias 2.2073, 2.2089, 2.2131, 2.2098, 2.2160
+    3b L3: 0.92%  médias 4.1249, 4.1621, 4.1264, 4.1610, 4.1629
+    3b L4: 0.80%  médias 3.6709, 3.6581, 3.6625, 3.6644, 3.6416
+
+=== 6. Cauda de latência (ms por token, 5 repetições juntas) ===
+1b 10% L1: mediana 7.586 p95 8.534 p99 8.899 máx 32.779 acima de 3x: 1  maiores (rep:índice=ms) 5:52=32.8 3:2642=10.8 3:2097=10.8 2:3341=10.5 2:2752=10.3 5:2752=10.1 2:2765=9.8 1:2917=9.8 1:2916=9.8 5:48=9.7
+1b 10% L2: mediana 7.541 p95 8.384 p99 8.888 máx 47.989 acima de 3x: 3  maiores (rep:índice=ms) 4:2033=48.0 3:606=30.4 4:2147=23.2 5:1082=11.8 3:3212=10.6 1:3064=10.6 5:1078=10.6 1:3065=10.6 3:3129=10.5 5:1134=10.5
+1b 25% L1: mediana 5.563 p95 7.374 p99 8.020 máx 9.735 acima de 3x: 0  maiores (rep:índice=ms) 5:2753=9.7 3:3348=9.4 3:7=9.2 3:21=9.2 3:19=9.1 3:3347=9.1 1:3019=9.0 3:30=9.0 3:22=9.0 3:41=8.9
+1b 25% L2: mediana 5.830 p95 7.438 p99 8.056 máx 15.105 acima de 3x: 0  maiores (rep:índice=ms) 2:1203=15.1 2:2388=10.8 2:653=10.4 2:1075=10.2 2:2380=10.0 5:1384=9.9 2:2387=9.8 2:703=9.7 1:833=9.5 2:2379=9.4
+1b 50% L1: mediana 3.254 p95 4.967 p99 5.667 máx 6.913 acima de 3x: 0  maiores (rep:índice=ms) 4:22=6.9 5:12=6.8 3:27=6.8 4:28=6.8 4:12=6.7 3:10=6.7 5:2=6.7 3:12=6.7 4:27=6.7 5:11=6.7
+1b 50% L2: mediana 3.778 p95 5.402 p99 6.159 máx 7.388 acima de 3x: 0  maiores (rep:índice=ms) 5:568=7.4 3:3319=7.2 2:12=7.2 2:10=7.1 2:22=7.0 3:10=7.0 2:11=6.9 3:12=6.9 2:27=6.9 3:650=6.8
+3b 10% L1: mediana 13.555 p95 15.519 p99 16.239 máx 40.714 acima de 3x: 1  maiores (rep:índice=ms) 5:2278=40.7 5:2595=21.3 3:2800=19.2 3:1215=18.7 1:3471=18.7 1:3473=18.6 3:3694=18.5 5:3766=18.5 1:3472=18.3 4:3473=18.2
+3b 10% L2: mediana 13.575 p95 15.259 p99 15.886 máx 20.306 acima de 3x: 0  maiores (rep:índice=ms) 1:3570=20.3 5:3729=18.0 3:3214=17.9 4:3678=17.7 5:1874=17.7 4:788=17.2 3:1839=17.1 3:1819=17.0 3:1799=17.0 5:1248=17.0
+3b 25% L1: mediana 9.220 p95 12.699 p99 14.062 máx 17.346 acima de 3x: 0  maiores (rep:índice=ms) 3:3471=17.3 3:3473=17.1 3:3413=16.8 3:3472=16.5 3:12=16.3 1:12=16.1 3:2725=16.1 2:3813=16.0 3:2719=16.0 1:3764=15.9
+3b 25% L2: mediana 9.769 p95 13.025 p99 14.149 máx 50.798 acima de 3x: 1  maiores (rep:índice=ms) 5:2235=50.8 5:3364=18.4 3:2969=18.1 5:3360=17.5 5:3766=17.4 5:2324=17.4 3:2971=17.2 3:2970=17.2 3:3100=16.8 1:3813=16.5
+3b 50% L1: mediana 5.270 p95 8.289 p99 10.196 máx 26.105 acima de 3x: 1  maiores (rep:índice=ms) 1:1839=26.1 5:778=13.3 2:778=12.9 3:778=12.9 4:3583=12.6 4:3473=12.4 4:778=12.3 5:777=12.3 3:12=12.1 1:778=12.1
+3b 50% L2: mediana 5.888 p95 8.895 p99 10.687 máx 13.430 acima de 3x: 0  maiores (rep:índice=ms) 3:12=13.4 3:10=13.2 3:778=12.5 1:12=12.5 5:778=12.5 2:12=12.4 4:12=12.4 1:778=12.4 4:778=12.3 3:28=12.3
+
+=== 7. Diferença líquida L4 - L3 (motor todo residente menos o residente do m2a), ms/token ===
+1b: L4-L3 mediana -0.4285 [-0.4627,-0.4228] por camada -17.86 us; (a1 residente - m2a residente, mesma base de comparação: -0.0043)
+3b: L4-L3 mediana -0.4966 [-0.5213,-0.4540] por camada -15.52 us; (a1 residente - m2a residente, mesma base de comparação: +0.0067)
+
+=== 5. Insumos do ajuste (lfu_cpu backlog 4 e 0, ms/token, mediana das 5 médias) ===
+1b 10%: backlog4 7.6102  backlog0 9.1312  diferença -1.5210
+1b 25%: backlog4 5.8429  backlog0 9.1348  diferença -3.2919
+1b 50%: backlog4 3.8958  backlog0 9.1923  diferença -5.2965
+1b residente backlog0 2.6349
+3b 10%: backlog4 13.6474  backlog0 17.5970  diferença -3.9496
+3b 25%: backlog4 10.0450  backlog0 17.5218  diferença -7.4768
+3b 50%: backlog4 6.2056  backlog0 17.4861  diferença -11.2805
+3b residente backlog0 4.1385
+
+=== 4. llama.cpp (forcado) contra o motor D1 e o lfu_cpu; ms/token, faixa [mín,máx] ===
+1b tudo na GPU (F32): 1.866 [1.864,1.868]
+1b 10%: motor [7.570,7.801]  lfu_cpu [7.548,7.643]  llama cache [53.182,53.327]  llama -ncmoe [10.090,12.522]
+        llama cache/motor 6.98x (motor mais rápido);  llama -ncmoe/motor 1.37x (motor mais rápido);  llama cache/lfu_cpu 6.99x
+1b 25%: motor [5.525,6.080]  lfu_cpu [5.776,6.232]  llama cache [45.068,45.177]  llama -ncmoe [8.615,9.744]
+        llama cache/motor 8.11x (motor mais rápido);  llama -ncmoe/motor 1.55x (motor mais rápido);  llama cache/lfu_cpu 7.72x
+1b 50%: motor [3.385,3.544]  lfu_cpu [3.846,4.177]  llama cache [16.151,16.259]  llama -ncmoe [6.405,6.709]
+        llama cache/motor 4.72x (motor mais rápido);  llama -ncmoe/motor 1.88x (motor mais rápido);  llama cache/lfu_cpu 4.15x
+3b tudo na GPU (F32): 3.485 [3.483,3.488]
+3b 10%: motor [13.581,13.733]  lfu_cpu [13.625,13.755]  llama cache [113.401,113.693]  llama -ncmoe [19.155,21.059]
+        llama cache/motor 8.30x (motor mais rápido);  llama -ncmoe/motor 1.42x (motor mais rápido);  llama cache/lfu_cpu 8.33x
+3b 25%: motor [9.345,9.602]  lfu_cpu [9.912,10.111]  llama cache [88.611,88.653]  llama -ncmoe [16.480,17.521]
+        llama cache/motor 9.34x (motor mais rápido);  llama -ncmoe/motor 1.75x (motor mais rápido);  llama cache/lfu_cpu 8.82x
+3b 50%: motor [5.569,5.727]  lfu_cpu [6.183,6.398]  llama cache [26.195,26.708]  llama -ncmoe [12.202,12.759]
+        llama cache/motor 4.68x (motor mais rápido);  llama -ncmoe/motor 2.24x (motor mais rápido);  llama cache/lfu_cpu 4.22x
+
+=== L6. Motor em barreira por token: contadores (uma execução por modelo) ===
+1b: motor_barreira    10% | needed    662592 hits    166075 cpu    496517 cópias      4037 descart.    492480 adiadas      2212 | af4d72641d2896cb
+1b: motor_barreira    25% | needed    662592 hits    333350 cpu    329242 cópias      6672 descart.    322570 adiadas      3707 | 39e2a6ddb1d66a50
+1b: motor_barreira    50% | needed    662592 hits    521125 cpu    141467 cópias      5639 descart.    135828 adiadas      3035 | e5931436f97c64a2
+1b: motor_barreira    10%    76 |    7.65    7.59   130.7 |  25.1%  74.9%   1.17 142.71 | true rot 82824/82824 | 6.8e-6 / 5.8e-6
+1b: motor_barreira    25%   192 |    5.57    5.47   179.6 |  50.3%  49.7%   1.93  93.47 | true rot 82824/82824 | 3.0e-6 / 8.7e-6
+1b: motor_barreira    50%   384 |    3.45    3.27   289.6 |  78.6%  21.4%   1.63  39.36 | true rot 82824/82824 | 4.6e-6 / 1.0e-5
+3b: motor_barreira    10% | needed    976384 hits    283874 cpu    692510 cópias      6959 descart.    685551 adiadas      3880 | 7a49d053cad4e46f
+3b: motor_barreira    25% | needed    976384 hits    541024 cpu    435360 cópias      9831 descart.    425529 adiadas      5319 | 79b6228d81a3cc1f
+3b: motor_barreira    50% | needed    976384 hits    805506 cpu    170878 cópias      8662 descart.    162216 adiadas      4609 | 9053a280d1998e33
+3b: motor_barreira    10%   128 |   13.67   13.56    73.1 |  29.1%  70.9%   1.82 179.75 | true rot 122048/122048 | 2.9e-6 / 4.8e-6
+3b: motor_barreira    25%   320 |    9.51    9.25   105.2 |  55.4%  44.6%   2.58 111.57 | true rot 122048/122048 | 2.7e-6 / 6.7e-6
+3b: motor_barreira    50%   640 |    5.63    5.27   177.5 |  82.5%  17.5%   2.27  42.53 | true rot 122048/122048 | 2.6e-6 / 5.5e-6
+
+=== L6 contra o simulador (needed hits cpu cópias descartadas adiadas; aquecimento 0-3, medida 4-7) ===
+1b 10%: motor (662592, 166075, 496517, 4037, 492480, 2212)  simulador (662592, 166075, 496517, 4037, 492480, 2212)  -> iguais
+1b 25%: motor (662592, 333350, 329242, 6672, 322570, 3707)  simulador (662592, 333350, 329242, 6672, 322570, 3707)  -> iguais
+1b 50%: motor (662592, 521125, 141467, 5639, 135828, 3035)  simulador (662592, 521125, 141467, 5639, 135828, 3035)  -> iguais
+3b 10%: motor (976384, 283874, 692510, 6959, 685551, 3880)  simulador (976384, 283874, 692510, 6959, 685551, 3880)  -> iguais
+3b 25%: motor (976384, 541024, 435360, 9831, 425529, 5319)  simulador (976384, 541024, 435360, 9831, 425529, 5319)  -> iguais
+3b 50%: motor (976384, 805506, 170878, 8662, 162216, 4609)  simulador (976384, 805506, 170878, 8662, 162216, 4609)  -> iguais
+
+=== 3 (nota de leitura, emenda 5): estimativa do custo do caminho do host, doorbell do A1.0 (5,41 us) x camadas com falta por token ===
+1b 10%: estimativa 0.130 ms por token; d observado [+0.400,+0.601] (mediana +0.473); a estimativa cobre 27% da mediana de d
+1b 25%: estimativa 0.128 ms por token; d observado [-0.253,+0.618] (mediana +0.178); a estimativa cobre 72% da mediana de d
+1b 50%: estimativa 0.103 ms por token; d observado [-0.369,+0.030] (mediana +0.006); mediana de d positiva mas perto de zero, percentual sem sentido
+3b 10%: estimativa 0.173 ms por token; d observado [+0.386,+0.583] (mediana +0.543); a estimativa cobre 32% da mediana de d
+3b 25%: estimativa 0.169 ms por token; d observado [-0.066,+0.042] (mediana -0.045); mediana de d não positiva
+3b 50%: estimativa 0.124 ms por token; d observado [-0.307,-0.001] (mediana -0.104); mediana de d não positiva
