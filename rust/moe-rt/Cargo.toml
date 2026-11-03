@@ -14,6 +14,10 @@ cuda-async = { git = "https://github.com/NVIDIA/cuda-rust", rev = "5759cb3" }
 moe-monitor = { path = "../moe-monitor" }
 serde_json = "1"
 
+[features]
+# A1-DIAG10, harness I: intervalos descritivos da linha de serviço (src/diag.rs). Sem a feature o código é o do binário N.
+diag = []
+
 [workspace]
 
 [dev-dependencies]

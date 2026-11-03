@@ -106,14 +106,16 @@ def combina(res_w, res_m):
 
 def celula(C, N0_e1, e2, tokens, c_copy_cpu):
     """Pipeline completo de uma célula (1B 10% ou 3B 10%): passo 0 -> controle de trabalho -> condição de base -> regra (a).
-    e2 = {"N0": [...], "A1w": [...], "A1m": [...], "cont": {"N0": [...], "A1w": [...], "A1m": [...]}} com contadores por repetição."""
+    e2 = {"N0": [...], "A1w": [...], "A1m": [...], "cont": {"N0": [...], "A1w": [...], "A1m": [...]}} com contadores por repetição
+    (ou "valid": {"A1w": [bool x5], "A1m": [bool x5]} no lugar de "cont")."""
     p0 = passo0_etapa1(C, N0_e1)
     if p0 != "OK":
         return p0
     d_e1 = median(d_list(N0_e1))
     resultados = {}
     for x in ("A1w", "A1m"):
-        v = pares_validos(e2["cont"]["N0"], e2["cont"][x], tokens, c_copy_cpu)
+        # "valid" (opcional): a validade dos pares já calculada por quem lê os arquivos (duas linhas por par, L1 e L2); sem ele, os contadores de uma linha.
+        v = e2["valid"][x] if "valid" in e2 else pares_validos(e2["cont"]["N0"], e2["cont"][x], tokens, c_copy_cpu)
         if sum(v) < NPAIRS:
             resultados[x] = (SEM_CONCLUSAO_TRABALHO, {})
             continue

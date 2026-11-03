@@ -255,11 +255,15 @@ impl<B: Backend> Service<B> {
     /// Espera `seq[l] >= t` e lê ids e `x` (por [`read_layer`]), consultando o cancelamento.
     fn wait_layer(&self, l: usize, t: u32) -> R<(Vec<u32>, Vec<u32>, Vec<u32>), B> {
         let relaxed = self.cfg.is(Mutant::SeqRelaxed);
+        let since = crate::diag::now();
+        let mut first = true;
         loop {
             if let Some((ids, x)) = read_layer(&self.sh.seq[l], &self.sh.io[l], t, relaxed) {
+                crate::diag::wait_done(since, first);
                 // Os pesos vêm da mesma publicação: lidos depois do `Acquire` de `seq`, como ids e `x`.
                 return Ok((ids, LayerIo::load(&self.sh.io[l].w), x));
             }
+            first = false;
             if self.sh.cancel.load(Ordering::Acquire) {
                 return Err(Error::Cancelled);
             }
@@ -609,16 +613,27 @@ fn run<B: Backend, C: HostExperts>(svc: &mut Service<B>, cpu: &mut C) -> R<(), B
         for l in 0..layers {
             let view = svc.serve_layer(&epoch, l)?;
             let mut y = vec![0u32; width];
-            cpu.compute(l, &view.cpu_keys(), &view.cpu_weights(), view.x(), &mut y).map_err(|e| Error::Cpu(format!("{e:?}")))?;
+            let ck = view.cpu_keys();
+            let has_cpu = !ck.is_empty();
+            cpu.compute(l, &ck, &view.cpu_weights(), view.x(), &mut y).map_err(|e| Error::Cpu(format!("{e:?}")))?;
             let served = answer(view, &y);
+            crate::diag::answered();
+            if has_cpu {
+                crate::diag::inject(crate::diag::Site::Livro);
+            }
             let pins = svc.pin_layer(&served);
             for &key in served.misses() {
                 if let Some(v) = svc.victim(&served, &pins, key)? {
                     svc.copy_after_reader(v, key, &served)?;
                 }
             }
+            crate::diag::layer_end(has_cpu);
+            if has_cpu {
+                crate::diag::inject(crate::diag::Site::AntesDoWait);
+            }
         }
         epoch = svc.end_token(epoch)?;
+        crate::diag::token_end();
     }
 }
 

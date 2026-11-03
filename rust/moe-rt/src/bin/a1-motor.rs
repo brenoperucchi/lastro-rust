@@ -47,6 +47,10 @@ struct Args {
     sem_aquecimento: bool,
     /// A1-DIAG10: colocação das threads (a0 não fixa nada; a1w os 8 do cálculo, um por núcleo físico; a1m a principal no E-core 17).
     afin: moe_rt::affinity::Afin,
+    /// A1-DIAG10, harness I: pasta dos intervalos por token. Só com `--features diag`.
+    diag_dir: Option<PathBuf>,
+    /// Sanidade (criterio.txt, seção 7): `cpu`, `livro` ou `espera` e os microssegundos, por camada com falta. Só com `--features diag`.
+    inject: Option<(String, u64)>,
 }
 
 fn parse_args() -> Args {
@@ -64,6 +68,8 @@ fn parse_args() -> Args {
         ms_dir: None,
         sem_aquecimento: false,
         afin: moe_rt::affinity::Afin::A0,
+        diag_dir: None,
+        inject: None,
     };
     while let Some(k) = a.next() {
         let mut v = || a.next().unwrap_or_else(|| panic!("{k} pede um valor"));
@@ -79,6 +85,16 @@ fn parse_args() -> Args {
             "--backlog" => r.backlog = v().parse().expect("--backlog"),
             "--ms-dir" => r.ms_dir = Some(PathBuf::from(v())),
             "--sem-aquecimento" => r.sem_aquecimento = true,
+            "--diag-dir" => {
+                assert!(cfg!(feature = "diag"), "--diag-dir pede o binário compilado com --features diag");
+                r.diag_dir = Some(PathBuf::from(v()))
+            }
+            "--inject" => {
+                assert!(cfg!(feature = "diag"), "--inject pede o binário compilado com --features diag");
+                let x = v();
+                let (site, us) = x.split_once(':').expect("--inject sitio:microssegundos");
+                r.inject = Some((site.to_string(), us.parse().expect("--inject microssegundos")));
+            }
             "--afin" => r.afin = moe_rt::affinity::Afin::parse(&v()).unwrap_or_else(|e| panic!("{e}")),
             _ => panic!("opção desconhecida: {k}"),
         }
@@ -201,6 +217,21 @@ impl Motor {
     }
 }
 
+/// Um arquivo por configuração: os intervalos por token (ms; o registro do primeiro token medido pode faltar se a espera dele
+/// começou antes do `reset`). A telemetria de frequência e temperatura é externa (amostrador.py, rodar.sh). Descritivo: nada daqui entra em regra de decisão.
+#[cfg(feature = "diag")]
+fn escreve_diag(d: &Path, pname: &str, budget: &str, recs: Vec<moe_rt::diag::Rec>, n_ms: usize) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all(d)?;
+    let mut t = String::new();
+    t.push_str(&format!("# registros {} de {} tokens medidos\n", recs.len(), n_ms));
+    t.push_str("# token camadas faltas entrada_com_seq t_espera_ms t_servico_ms t_cpu_ms t_conv_ms t_livro_ms t_inj_ms\n");
+    for (i, r) in recs.iter().enumerate() {
+        t.push_str(&format!("{i} {} {} {} {:.4} {:.4} {:.4} {:.4} {:.4} {:.4}\n", r.layers, r.faltas, r.entrada_com_seq, r.t_espera, r.t_servico, r.t_cpu, r.t_conv, r.t_livro, r.t_inj));
+    }
+    std::fs::write(d.join(format!("diag-{pname}-{}.txt", budget.trim_end_matches('%'))), t)?;
+    Ok(())
+}
+
 fn sub(a: &Stats, b: &Stats) -> Stats {
     Stats { needed: a.needed - b.needed, hits: a.hits - b.hits, cpu: a.cpu - b.cpu, copies: a.copies - b.copies, dropped: a.dropped - b.dropped, deferred: a.deferred - b.deferred }
 }
@@ -295,6 +326,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             moe_rt::affinity::relata(pname, &budget, args.afin, args.threads, false);
+            #[cfg(feature = "diag")]
+            if let Some((site, us)) = &args.inject {
+                use moe_rt::diag::Site;
+                let s = match site.as_str() {
+                    "cpu" => Site::Cpu,
+                    "livro" => Site::Livro,
+                    "espera" => Site::AntesDoWait,
+                    o => panic!("--inject: cpu, livro ou espera, não {o}"),
+                };
+                moe_rt::diag::set_injection(Some((s, *us)));
+            }
+            #[cfg(feature = "diag")]
+            if args.diag_dir.is_some() {
+                moe_rt::diag::reset(total_tokens);
+            }
             // Os contadores do `Published` valem até o fim do token anterior: o do primeiro token medido é o ponto de partida.
             let mut base: Option<Stats> = None;
             let mut idx = 0usize;
@@ -327,6 +373,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let fim = m.eng.next_published().d().map(|p| p.stats().clone())?;
             stats = sub(&fim, &base.unwrap_or_default());
             m.eng.close().d()?;
+            #[cfg(feature = "diag")]
+            if let Some(d) = &args.diag_dir {
+                escreve_diag(d, pname, &budget, moe_rt::diag::take(), ms.len())?;
+            }
             moe_rt::affinity::set_current(&mascara_antes)?;
         } else {
             let stream = device.new_stream()?;

@@ -688,6 +688,7 @@ impl HostExperts for CpuServe {
     type Error = String;
 
     fn compute(&mut self, layer: usize, keys: &[u32], weights: &[u32], x: &[u32], y: &mut [u32]) -> Result<(), String> {
+        let t0 = crate::diag::now();
         let xf: Vec<f32> = x.iter().map(|&b| f32::from_bits(b)).collect();
         let refs: Vec<crate::cpu::ExpertRef> = keys
             .iter()
@@ -702,10 +703,14 @@ impl HostExperts for CpuServe {
             y.iter_mut().for_each(|v| *v = 0);
             return Ok(());
         }
+        let t1 = crate::diag::now();
+        crate::diag::inject(crate::diag::Site::Cpu);
         let out = self.cpu.experts(&xf, &refs, self.hidden, self.inter);
+        let t2 = crate::diag::now();
         for (d, v) in y.iter_mut().zip(out) {
             *d = v.to_bits();
         }
+        crate::diag::compute_parts(t0, t1, t2, crate::diag::now());
         Ok(())
     }
 }

@@ -190,6 +190,15 @@ class Trabalho(unittest.TestCase):
         self.assertEqual(r["m"], D.SUSTENTADA)
 
 
+class ValidadeDeFora(unittest.TestCase):
+    def test_valid_externo_substitui_os_contadores(self):
+        N0 = cfg()
+        e2 = {"N0": N0, "A1w": cfg(l1=7.2), "A1m": cfg(l1=7.2), "valid": {"A1w": [True] * 4 + [False], "A1m": [True] * 5}}
+        r = D.celula(com_d(0.5), com_d(0.5), e2, TOK, CC)
+        self.assertEqual(r["w"], D.SEM_CONCLUSAO_TRABALHO)
+        self.assertEqual(r["m"], D.SUSTENTADA)
+
+
 class Pipeline(unittest.TestCase):
     def test_passo0_bloqueia_as_regras(self):
         e2 = {"N0": cfg(), "A1w": cfg(l1=7.2), "A1m": cfg(l1=7.2), "cont": {"N0": [CONT] * 5, "A1w": [CONT] * 5, "A1m": [CONT] * 5}}

@@ -9,6 +9,7 @@ pub mod affinity;
 pub mod block;
 pub mod cache;
 pub mod cpu;
+pub mod diag;
 #[cfg(not(motor_loom))]
 pub mod cuda_backend;
 #[cfg(not(motor_loom))]
