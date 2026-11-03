@@ -1,7 +1,7 @@
-A1-DIAG10: diagnóstico do +0,4 a +0,6 ms de espera do motor D1 a 10% de slots. VERSÃO 3 (RASCUNHO de 03/11, depois da rodada 30; ainda sem harness, sem
+A1-DIAG10: diagnóstico do +0,4 a +0,6 ms de espera do motor D1 a 10% de slots. VERSÃO 4 (RASCUNHO de 03/11, depois da rodada 31; ainda sem harness, sem
 janela e sem aval do Breno). Nada aqui foi medido. Os limiares ficam gravados antes de qualquer medida; mudar um depois de ver número vira critério novo, com
-data, e o antigo fica de histórico. As versões 1 (2cce78a) e 2 (2313c7e) estão no git.
-Mudança de desenho da v3: a DECISÃO sai só do d pareado dos binários SEM instrumentação, sob intervenções de um fator por vez. Os intervalos instrumentados
+data, e o antigo fica de histórico. As versões 1 (2cce78a), 2 (2313c7e) e 3 (bc35ec9) estão no git.
+Mudança de desenho da v3 (mantida na v4): a DECISÃO sai só do d pareado dos binários SEM instrumentação, sob intervenções de um fator por vez. Os intervalos instrumentados
 (T_cpu, T_servico, T_host, entrada_com_seq) são DESCRIÇÃO e não entram em nenhuma regra: atribuir atraso à GPU por intervalo de CPU não é identificável sem uma
 intervenção controlada (rodadas 29 e 30).
 
@@ -44,7 +44,7 @@ intervenção controlada (rodadas 29 e 30).
 - Etapa 1 (reprodução e descrição). Cada repetição roda C, N (afinidade A0) e I, L1 a L4, em ordem que alterna entre repetições; 5 repetições; células de decisão
   1B e 3B a 10%. O 1B a 25% sai no mesmo bloco (cada bloco roda os 3 orçamentos) e é DESCRITIVO: d_i de -0,25 a +0,62 no A1.4 (amplitude 0,87 ms), 5 repetições não
   resolvem +-0,1 ms; ele não entra em nenhuma regra. Conversas 4 a 7 cronometradas, aquecimento 0 a 3, backlog 4, 4090 por UUID, as regras do A1.4.
-- Etapa 2 (intervenções), só se o passo 0 da seção 5 passar nas duas células: cada repetição roda N@A0, N@A1w e N@A1m, L1 a L4, em ordem que alterna; 5 repetições.
+- Etapa 2 (intervenções), só se o passo 0 da seção 5 passar nas duas células: cada repetição roda N@A0, N@A1w e N@A1m, L1 a L4, em ordem que alterna; 5 repetições. Nada além disso roda (A2 está fora).
   Todas as comparações da etapa 2 usam o binário N (o C não aceita afinidade por thread).
 - Duração: fixada só depois da sanidade do harness. Ordem de grandeza pelo A1.4 (blocos de 2 a 5 minutos; 2 blocos por configuração, modelo e repetição): etapa 1
   de 3 a 4 h de GPU; etapa 2 de 2 a 3 h. O Breno autoriza as etapas separadamente.
@@ -55,18 +55,22 @@ intervenção controlada (rodadas 29 e 30).
 - Início de cada bloco: 60 s ociosa e temperatura do pacote registrada; um teto X C só vale se o Breno fixar o número (pendente); sem X, é só registro.
 - Invalida o bloco: falha de correção (logits 1e-4, roteamento, needed como no A1.4), processo alheio na 4090 (monitor com PID), sha diferente, tentativa com erro,
   ou contadores fora do limite abaixo. A análise sai de um script com controles negativos próprios, como o analise.py do A1.4.
-- Controle de trabalho (todos os pares: C contra N, N contra I, N@A0 contra N@A1w e N@A1m, na mesma repetição): acertos, experts na CPU, cópias e descartes por
-  token, cada um dentro de +-0,1% do par de referência. Fora disso o bloco não entra em nenhuma regra (o motor_evento decide cópias pelo tempo; isso é medido, não
-  suposto). Um controle sintético com acertos e experts na CPU iguais mas cópias muito diferentes tem de invalidar o par.
+- Controle de trabalho (todos os pares: C contra N, N contra I, N@A0 contra N@A1w e N@A1m, na mesma repetição). Acertos e experts na CPU por token: dentro de
+  +-0,1% do par de referência. Cópias e descartes: pelo CUSTO, |diferença de cópias| x c_copy_cpu / tokens <= 0,01 ms por token, com c_copy_cpu = 0,223 ms (1B) e
+  0,335 ms (3B) de tools/moe_sim.py (os 4040 e 7022 cópias do A1.4 tornam +-0,1% = 4 e 7 cópias, estreito demais para um par de afinidade que muda o tempo de
+  propósito). Um par fora do limite é inválido e não entra em nenhuma regra. O motor_evento decide cópias pelo tempo; isso é medido, não suposto. Controle
+  sintético: cópias +12 e o resto igual passa; cópias +300 (cerca de 0,02 ms por token) reprova, mesmo com acertos e experts na CPU iguais.
 
 4. Intervenções (cada comparação muda UM fator)
   A0   afinidade como no A1.4: taskset -c 0-15 para tudo.
-  A1w  só a colocação dos 8 participantes do cálculo: um por núcleo físico (CPU 0, 2, 4, ..., 14), com quem chama incluído, nas quatro linhas. Quem chama e as
-       demais threads (a principal do motor, o monitor) ficam livres em 0-15. Isola a disputa de HT entre os participantes do cálculo.
+  A1w  só a colocação dos 8 participantes do cálculo, nas quatro linhas: quem chama o Pool (a linha de serviço no motor; a thread principal no m2a-cache) fixo no
+       CPU 0 e os 7 trabalhadores moe-cpu-* fixos em 2, 4, 6, 8, 10, 12 e 14, um por núcleo físico. As threads que NÃO calculam (a principal do motor, que gira na
+       stream, e o monitor) ficam livres em 0-15. Isola a disputa de HT entre os participantes do cálculo. Controle do harness: as máscaras efetivas dos 8
+       participantes mapeiam para 8 núcleos físicos distintos; uma versão que fixe só os 7 trabalhadores tem de falhar esse controle.
   A1m  só a thread principal do motor (a que gira na stream, uma thread a mais que o lfu_cpu) vai para o E-core 17; só nas linhas do motor (L1 e L4). No m2a-cache
        não há equivalente, a linha não muda e isso fica registrado. A linha de serviço NÃO é movida (mover quem calcula para um E-core de 4,3 GHz mudaria a capacidade
        de cálculo, um segundo fator; isso seria outro critério).
-  A2   (ablação de CONTAGEM de threads, não de afinidade; só depois de A1w e A1m, se não decidirem): --threads 7 (6 trabalhadores e quem chama) nas quatro linhas.
+  A2   (ablação de CONTAGEM de threads, --threads 7) fica FORA desta janela: passo posterior, sujeito a critério próprio, se A1w e A1m não decidirem.
   B (mover pin_layer, escolha de vítima e cópias para depois do seq da camada seguinte) NÃO faz parte deste critério: muda o protocolo e a trajetória do cache;
   seria uma peça nova, com testes de protocolo (loom e mutantes) e revisão própria antes de qualquer medida.
 
@@ -77,17 +81,23 @@ intervenção controlada (rodadas 29 e 30).
     0b. Se C reproduz e N (A0) não reproduz, ou |mediana d(N) - mediana d(C)| > 0,1 ms: a build mudou o fenômeno; célula SEM CONCLUSÃO.
     0c. Frequência efetiva média por papel: tolerância de 2% entre as linhas da MESMA configuração e do MESMO papel; fora disso o bloco é repetido uma vez e, se
         persistir, a célula fica SEM CONCLUSÃO. O controle de trabalho (seção 3) vale para todo par.
-  Regra (a), etapa 2 (só se o passo 0 passou para a célula): o portão 0a-0b é reaplicado a N@A0 da etapa 2 (referência contemporânea). Para cada fator x em {A1w, A1m}:
+  Regra (a), etapa 2 (só se o passo 0 passou para a célula): o portão é reaplicado a N@A0 da etapa 2 (referência contemporânea): 0a com N@A0 (mediana de d >= 0,3 ms e
+  5 d_i > 0) e 0b contra a mediana de d(N) da etapa 1, +-0,1 ms. Para cada fator x em {A1w, A1m}:
     r_i = d(N@A0)_i - d(N@A1x)_i  (redução pareada na mesma repetição), R = mediana(r_i) / mediana(d(N@A0)).
-      R >= 0,7 E os 5 r_i > 0           -> H1 SUSTENTADA pelo fator x nesta célula.
+    Condição de base: |mediana_i( L4(A1x)_i - L4(A0)_i )| <= 0,05 ms E o mesmo para L3 (L3 e L4 são as bases; um fator que mova a base pode reduzir d sem mexer na
+    disputa). Fora disso: "SEM CONCLUSÃO (o fator moveu a base)". Reportar sempre a decomposição de r_i em dL1, dL4, dL2 e dL3.
+      R >= 0,7 E os 5 r_i > 0 E base parada E dL1 < 0 -> H1 SUSTENTADA pelo fator x nesta célula (a redução vem da espera do motor, L1).
       0,3 <= R < 0,7, ou R >= 0,7 com algum r_i <= 0 -> PARCIAL: o fator x contribui; a fração R é reportada; sem confirmar H1.
       R < 0,3                            -> H1 não sustentada pelo fator x.
     Se A1w e A1m moverem d em sentidos opostos, cada um por mais de 0,1 ms: INCONCLUSIVO (efeitos opostos), nunca "sem disputa". Se A0 da etapa 2 não reproduzir:
     "excesso não reproduzido na etapa 2", sem confirmar H1 pela afinidade.
-  Resultado final por célula: H1 SUSTENTADA / PARCIAL / NÃO SUSTENTADA (H2 e doorbell seguem abertos) / não reproduzido / SEM CONCLUSÃO / INCONCLUSIVO. Precedência:
-  passo 0 -> regra (a). O 3B só confirma o sinal do 1B; sozinho não decide. Nenhuma regra usa o 1B a 25% nem os intervalos instrumentados.
+  Resultado final por célula: H1 SUSTENTADA / PARCIAL / NÃO SUSTENTADA (H2 e doorbell seguem abertos) / não reproduzido / SEM CONCLUSÃO / INCONCLUSIVO /
+  SEM CONCLUSÃO (trabalho diferente entre os pares: menos de 5 pares válidos sobraram para a regra). Precedência: passo 0 -> controle de trabalho -> condição de base
+  -> regra (a). Se o 1B der SUSTENTADA e o 3B não: vale o resultado do 1B, com a nota "o 3B não confirma", e o texto não generaliza. O 3B sozinho não decide.
+  Nenhuma regra usa o 1B a 25% nem os intervalos instrumentados.
   O script de análise tem de ser testado com dados sintéticos: excesso estável, quase zero, negativo, disperso, A0 da etapa 2 sem excesso (d(A0)=0,05, d(A1w)=0,04
-  tem de NÃO confirmar H1), fronteiras (0,3, 0,7, 0,1), efeitos opostos, par com contadores fora do limite; cada caso com uma saída única.
+  tem de NÃO confirmar H1), L4 +0,4 ms com L1 igual (tem de dar SEM CONCLUSÃO, base movida, e não SUSTENTADA), fronteiras (0,3, 0,7, 0,1), efeitos opostos, par com
+  contadores fora do limite, menos de 5 pares válidos; cada caso com uma saída única. Na sanidade, rodar a A1m uma vez e conferir dL4 antes da janela.
 
 6. O que este diagnóstico não conclui
 - Não conclui que o motor perde ou ganha do lfu_cpu (A1.4, já fechado).
@@ -96,10 +106,13 @@ intervenção controlada (rodadas 29 e 30).
 - Uma melhoria só ganha crédito com logits corretos e ganho total pareado, sem regressão escondida em L4.
 
 7. Controles do harness (na sanidade, antes da janela; separam a fidelidade dos relógios da árvore de decisão)
-- Fidelidade dos intervalos: espera ativa de 10 us por camada com falta injetada (i) dentro de T_cpu do motor, (ii) depois da resposta (em T_livro) e (iii) antes do wait
-  do seq, em I+inj contra I (mesma repetição). Cada intervalo afetado tem de subir cerca de (duração x número de injeções) com tolerância de +-30%; os outros não. O
-  detector aprova a injeção de 0,24 ms (24 camadas x 10 us) mesmo que a razão final com d caia na região "R < 0,3" ou outra: a árvore não faz parte deste teste.
-  Delta d é apenas reportado (0 a duração x número, conforme a exposição); em (iii) |Delta d| <= 0,05 ms.
+- Fidelidade dos intervalos (teste genérico): espera ativa de 10 us por camada com falta, injetada (i) dentro de T_cpu do motor, (ii) depois da resposta (em
+  T_livro) e (iii) antes do wait do seq, em I+inj contra I (mesma repetição), com um acumulador próprio para a espera injetada antes do wait. O intervalo que contém a
+  injeção tem de subir cerca de (duração x número de injeções, ou seja, camadas com falta por token x 10 us: cerca de 0,24 ms no 1B e 0,32 ms no 3B) com tolerância de
+  +-30%. Intervalos temporalmente vizinhos (T_servico quando se injeta em T_cpu; T_espera quando a injeção consome folga) PODEM mudar; o teste não exige invariância
+  deles. Delta d é apenas reportado, sem limite, porque a exposição à GPU é desconhecida.
+- Fixture de folga (separada): injeção por camada MENOR que a folga mínima medida na sanidade (metade do p5 de T_espera daquela configuração), antes do wait: aí o
+  teste exige |Delta d| <= 0,05 ms. Sem essa fixture não se infere ausência de exposição pela posição da injeção.
 - A árvore: os dados sintéticos da seção 5, com amplitudes calculadas para cair inequivocamente em cada região. Controles negativos do portão de correção: os do A1.4.
 
 8. Pendências antes da janela
