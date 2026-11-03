@@ -67,6 +67,36 @@ def valida(t, mod, motor, politicas):
     return bad
 
 
+def controle_afinidade(t, cfg, bl):
+    """Problemas das linhas CONTROLE da afinidade efetiva (P2-1 da rodada 35): na A1w toda linha diz 'ok' e há uma por linha de política; na A1m (só no a1)
+    a thread principal está em 17. Outras configurações não têm linha."""
+    ls = [ln for ln in t.splitlines() if ln.startswith("CONTROLE ")]
+    if cfg == "A1w":
+        nec = 3 if bl == "a1" else 2
+        if len(ls) < nec:
+            return [f"só {len(ls)} linhas CONTROLE A1w, esperadas {nec}"]
+        return [f"controle da A1w: {ln}" for ln in ls if not ln.startswith("CONTROLE A1w") or not ln.rstrip().endswith("ok")]
+    if cfg == "A1m" and bl == "a1":
+        if not ls:
+            return ["sem linha CONTROLE A1m"]
+        return [f"controle da A1m: {ln}" for ln in ls if not ln.rstrip().endswith("thread principal em 17")]
+    return []
+
+
+def controles_afinidade():
+    ok = "CONTROLE A1w motor_evento 10%: 8 participantes, núcleos físicos distintos: ok\n"
+    base = ok * 3
+    casos = {
+        "A1w com FALHOU": base.replace("distintos: ok", "FALHOU", 1),
+        "A1w com linha a menos": ok * 2,
+        "A1m com a principal em 0-15": "CONTROLE A1m motor_evento 10%: thread principal em 0-15\n",
+    }
+    res = {k: controle_afinidade(v, "A1m" if "A1m" in k else "A1w", "a1") != [] for k, v in casos.items()}
+    res["A1w correta passa"] = controle_afinidade(base, "A1w", "a1") == []
+    res["A1m correta passa"] = controle_afinidade("CONTROLE A1m motor_evento 10%: thread principal em 17\n", "A1m", "a1") == []
+    return res
+
+
 def controles_negativos(t, mod):
     """Cada mutação de uma saída real do a1-motor tem de reprovar; a saída em si tem de passar."""
     ok = valida(t, mod, True, POL_A1) == []
@@ -190,7 +220,7 @@ def analisa(etapa):
                         valido[k], motivo[k] = False, "saída ausente"
                         continue
                     texto[k] = t
-                    pr = valida(t, mod, bl == "a1", pols(bl, mod, etapa))
+                    pr = valida(t, mod, bl == "a1", pols(bl, mod, etapa)) + controle_afinidade(t, cfg, bl)
                     if not pr:
                         for pol, b in pols(bl, mod, etapa):
                             try:
@@ -207,6 +237,9 @@ def analisa(etapa):
     p("  controles negativos em memória (uma saída real passa; cada mutação tem de reprovar):", "saída real passa" if ok0 else "SAÍDA REAL NÃO PASSA",
       "; ".join(f"{k}: {'reprova' if v else 'NÃO REPROVA'}" for k, v in neg.items()))
     assert ok0 and all(neg.values()), "controle negativo do portão falhou"
+    caf = controles_afinidade()
+    p("  controles da afinidade efetiva (em memória): " + "; ".join(f"{k}: {'ok' if v else 'FALHOU'}" for k, v in caf.items()))
+    assert all(caf.values()), "controle da afinidade falhou"
     ruins = {k: m for k, m in motivo.items() if not valido[k] and m}
     p(f"  blocos com falha de logits, roteamento, needed ou arquivos: {sum(1 for k in valido if not valido[k])} de {len(valido)}")
     for k, m in sorted(ruins.items()):

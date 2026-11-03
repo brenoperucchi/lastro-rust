@@ -50,7 +50,7 @@ struct Args {
     /// A1-DIAG10, harness I: pasta dos intervalos por token. Só com `--features diag`.
     diag_dir: Option<PathBuf>,
     /// Sanidade (criterio.txt, seção 7): `cpu`, `livro` ou `espera` e os microssegundos, por camada com falta. Só com `--features diag`.
-    inject: Option<(String, u64)>,
+    inject: Option<(String, u64, bool)>,
 }
 
 fn parse_args() -> Args {
@@ -92,8 +92,9 @@ fn parse_args() -> Args {
             "--inject" => {
                 assert!(cfg!(feature = "diag"), "--inject pede o binário compilado com --features diag");
                 let x = v();
-                let (site, us) = x.split_once(':').expect("--inject sitio:microssegundos");
-                r.inject = Some((site.to_string(), us.parse().expect("--inject microssegundos")));
+                let mut it = x.splitn(3, ':');
+                let (site, us, alt) = (it.next().unwrap(), it.next().expect("--inject sitio:microssegundos[:alt]"), it.next() == Some("alt"));
+                r.inject = Some((site.to_string(), us.parse().expect("--inject microssegundos"), alt));
             }
             "--afin" => r.afin = moe_rt::affinity::Afin::parse(&v()).unwrap_or_else(|e| panic!("{e}")),
             _ => panic!("opção desconhecida: {k}"),
@@ -224,9 +225,9 @@ fn escreve_diag(d: &Path, pname: &str, budget: &str, recs: Vec<moe_rt::diag::Rec
     std::fs::create_dir_all(d)?;
     let mut t = String::new();
     t.push_str(&format!("# registros {} de {} tokens medidos\n", recs.len(), n_ms));
-    t.push_str("# token camadas faltas entrada_com_seq t_espera_ms t_servico_ms t_cpu_ms t_conv_ms t_livro_ms t_inj_ms\n");
+    t.push_str("# token camadas faltas entrada_com_seq t_espera_ms t_servico_ms t_cpu_ms t_conv_ms t_livro_ms t_inj_ms injetado\n");
     for (i, r) in recs.iter().enumerate() {
-        t.push_str(&format!("{i} {} {} {} {:.4} {:.4} {:.4} {:.4} {:.4} {:.4}\n", r.layers, r.faltas, r.entrada_com_seq, r.t_espera, r.t_servico, r.t_cpu, r.t_conv, r.t_livro, r.t_inj));
+        t.push_str(&format!("{i} {} {} {} {:.4} {:.4} {:.4} {:.4} {:.4} {:.4} {}\n", r.layers, r.faltas, r.entrada_com_seq, r.t_espera, r.t_servico, r.t_cpu, r.t_conv, r.t_livro, r.t_inj, r.injetado as u8));
     }
     std::fs::write(d.join(format!("diag-{pname}-{}.txt", budget.trim_end_matches('%'))), t)?;
     Ok(())
@@ -327,7 +328,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             moe_rt::affinity::relata(pname, &budget, args.afin, args.threads, false);
             #[cfg(feature = "diag")]
-            if let Some((site, us)) = &args.inject {
+            if let Some((site, us, alt)) = &args.inject {
                 use moe_rt::diag::Site;
                 let s = match site.as_str() {
                     "cpu" => Site::Cpu,
@@ -335,7 +336,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "espera" => Site::AntesDoWait,
                     o => panic!("--inject: cpu, livro ou espera, não {o}"),
                 };
-                moe_rt::diag::set_injection(Some((s, *us)));
+                moe_rt::diag::set_injection(Some((s, *us)), *alt);
             }
             #[cfg(feature = "diag")]
             if args.diag_dir.is_some() {

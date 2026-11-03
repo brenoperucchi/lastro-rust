@@ -69,6 +69,8 @@ mod on {
         pub t_livro: f64,
         /// Espera injetada antes do wait do seq (acumulador próprio; só no teste de fidelidade).
         pub t_inj: f64,
+        /// Houve injeção neste token (com `alt`, só nos tokens ímpares).
+        pub injetado: bool,
     }
 
     fn epoch() -> Instant {
@@ -90,9 +92,12 @@ mod on {
 
     static INJ_SITE: AtomicU64 = AtomicU64::new(u64::MAX);
     static INJ_NS: AtomicU64 = AtomicU64::new(0);
+    /// Com `alt`, a injeção só ocorre nos tokens ímpares: o par (par, ímpar) vizinho da MESMA execução tira a variação entre execuções (rodada 35, P3-1).
+    static INJ_ALT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
     /// Liga a injeção de `us` microssegundos em `site`; `None` desliga.
-    pub fn set_injection(site: Option<(Site, u64)>) {
+    pub fn set_injection(site: Option<(Site, u64)>, alt: bool) {
+        INJ_ALT.store(alt, Ordering::Release);
         match site {
             Some((s, us)) => {
                 INJ_NS.store(us * 1000, Ordering::Release);
@@ -108,6 +113,10 @@ mod on {
         if INJ_SITE.load(Ordering::Relaxed) != site as u64 {
             return;
         }
+        if INJ_ALT.load(Ordering::Relaxed) && ACC.with(|a| a.borrow().n % 2 == 0) {
+            return;
+        }
+        ACC.with(|a| a.borrow_mut().tok.injetado = true);
         let d = INJ_NS.load(Ordering::Relaxed);
         let t0 = Instant::now();
         while (t0.elapsed().as_nanos() as u64) < d {
@@ -138,6 +147,8 @@ mod on {
 
     #[derive(Default)]
     struct Acc {
+        /// Tokens fechados nesta thread (paridade da injeção alternada).
+        n: u64,
         tok: Rec,
         /// Começo da espera da primeira camada do token; um token que começou antes do `reset` é descartado.
         tok_start: Option<Instant>,
@@ -220,6 +231,7 @@ mod on {
         ACC.with(|a| {
             let a = &mut *a.borrow_mut();
             let rec = std::mem::take(&mut a.tok);
+            a.n += 1;
             let start = a.tok_start.take();
             if start.is_some_and(|s| ns(s) >= RESET_NS.load(Ordering::Acquire)) {
                 RECS.lock().unwrap_or_else(|e| e.into_inner()).push(rec);
@@ -288,7 +300,7 @@ mod testes {
     #[test]
     fn a_injecao_sobe_so_o_intervalo_que_a_contem() {
         let _g = TRAVA.lock().unwrap_or_else(|e| e.into_inner());
-        set_injection(Some((Site::AntesDoWait, 200)));
+        set_injection(Some((Site::AntesDoWait, 200)), false);
         std::thread::spawn(|| {
             reset(4);
             camada(0, 0, true, true);
@@ -298,9 +310,28 @@ mod testes {
         })
         .join()
         .unwrap();
-        set_injection(None);
+        set_injection(None, false);
         let r = take();
         assert!(r[0].t_inj >= 0.2 && r[0].t_inj < 2.0, "{:?}", r[0]);
         assert!(r[0].t_cpu < 0.2, "{:?}", r[0]);
+    }
+
+    #[test]
+    fn injecao_alternada_so_nos_tokens_impares() {
+        let _g = TRAVA.lock().unwrap_or_else(|e| e.into_inner());
+        set_injection(Some((Site::Livro, 100)), true);
+        std::thread::spawn(|| {
+            reset(8);
+            for _ in 0..4 {
+                camada(0, 0, true, true);
+                inject(Site::Livro);
+                token_end();
+            }
+        })
+        .join()
+        .unwrap();
+        set_injection(None, false);
+        let r = take();
+        assert_eq!(r.iter().map(|x| x.injetado).collect::<Vec<_>>(), vec![false, true, false, true]);
     }
 }

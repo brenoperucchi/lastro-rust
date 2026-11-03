@@ -259,6 +259,8 @@ mod testes_afinidade {
             })
         };
         caller.join().unwrap();
+        let vistos: std::collections::HashSet<String> = seen.lock().unwrap().iter().map(|(n, _)| n.clone()).collect();
+        assert!(vistos.contains("moe-cpu-1") && vistos.contains("moe-cpu-2"), "os dois trabalhadores têm de ter pego tarefa: {vistos:?}");
         for (nome, m) in seen.lock().unwrap().iter() {
             let want = match nome.as_str() {
                 "moe-cpu-1" => plan[1],

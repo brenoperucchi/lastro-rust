@@ -248,6 +248,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "\n{:<10} {:>6} {:>5} | {:>7} {:>7} {:>7} | {:>6} {:>6} {:>6} {:>6} | {:>8} {:>8} | {:>11} | {:>14} | {}",
         "política", "orçam.", "slots", "ms/tok", "mediana", "tok/s", "acerto", "CPU", "cóp.s", "cóp.bg", "roteador", "CPU ms", "rot.igual", "sim ms/acerto", "logits texto-a / conversas"
     );
+    // A1w: a thread principal é quem chama o Pool; fixada aqui, depois de `Device::new`, para as threads do CUDA que já existem ficarem em 0-15,
+    // e antes das políticas, para valer também no `resident` (que não tem Pool).
+    if let Some(p) = moe_rt::affinity::compute_plan() {
+        moe_rt::affinity::set_current(&[p[0]])?;
+    }
     for (pname, cc) in &configs {
         let stream = device.new_stream()?;
         let (mut g, slots) = match cc {
@@ -270,9 +275,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             text_check.add(&lg, &ref_logits[t * vocab..(t + 1) * vocab]);
         }
 
-        if cc.is_some() {
-            moe_rt::affinity::relata(pname, &format!("{:.0}%", cc.unwrap().0 * 100.0), args.afin, args.threads, true);
-        }
+        // Também no `resident` (sem Pool): ele só relata a principal; os 7 trabalhadores não existem nele e o controle fica como informação.
+        let orc = cc.map(|c| format!("{:.0}%", c.0 * 100.0)).unwrap_or_else(|| "100%".into());
+        moe_rt::affinity::relata(pname, &orc, args.afin, if cc.is_some() { args.threads } else { 1 }, true);
 
         // 2. Conversas, com o cache vazio no começo (cheio, em `cache_full`).
         if let Experts::Cached(c) = &mut g.experts {

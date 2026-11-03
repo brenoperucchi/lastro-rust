@@ -36,6 +36,10 @@ def monta(raiz, etapa, ajuste, estragos=None):
                     d = f"{raiz}/e{etapa}/rep{rep}/{mod}/{cfg}/{bl}"
                     os.makedirs(f"{d}/ms")
                     t = le(f"{TPL}/{mod}/{bl}/saida.txt")
+                    if cfg == "A1w":
+                        t += "".join(f"CONTROLE A1w x {i}%: 8 participantes, núcleos físicos distintos: ok\n" for i in range(3 if bl == "a1" else 2))
+                    if cfg == "A1m" and bl == "a1":
+                        t += "CONTROLE A1m x 10%: thread principal em 17\n"
                     t = estragos.get((mod, rep, cfg, bl), lambda x: x)(t)
                     escreve(f"{d}/saida.txt", t)
                     aj = ajuste.get(cfg, {})
@@ -140,6 +144,16 @@ class Analise(unittest.TestCase):
         rc, txt = roda(raiz)
         self.assertEqual(rc, 0, txt)
         self.assertEqual(celula(txt, "1b"), "{'w': 'SUSTENTADA', 'm': 'NAO_SUSTENTADA'}", txt)
+
+    def test_etapa2_controle_de_afinidade_falhou_invalida_o_bloco(self):
+        raiz = self.raiz
+        monta(raiz, 2, {"N0": {}, "A1w": {"L1": -0.4}, "A1m": {}},
+              estragos={("1b", 2, "A1w", "a1"): lambda t: t.replace("distintos: ok", "FALHOU", 1)})
+        for mod in ("1b", "3b"):
+            escreve(f"{raiz}/d-etapa1-{mod}.txt", "0.5\n")
+        rc, txt = roda(raiz)
+        self.assertIn("controle da A1w", txt)
+        self.assertIn("SEM CONCLUSÃO", celula(txt, "1b") or "", txt)
 
     def test_etapa2_l4_movido_e_base(self):
         raiz = self.raiz

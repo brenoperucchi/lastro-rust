@@ -141,6 +141,10 @@ impl<B: Backend> Engine<B> {
             .spawn(move || {
                 // `done` sobe também quando a linha de serviço sai por `panic`; senão o `join` girava para sempre.
                 let _done = DoneOnExit(d);
+                // A1w: quem chama o Pool é fixado onde nasce, e não na primeira `run` (sem experts na CPU, como no motor_cheio, ela nunca roda).
+                if let Some(p) = crate::affinity::compute_plan() {
+                    crate::affinity::set_current(&[p[0]]).expect("afinidade da linha de serviço");
+                }
                 service_main(svc, cpu)
             })
             .expect("thread da linha de serviço");

@@ -10,7 +10,7 @@
 #   configs da etapa 1: C (binários congelados do A1.4), N0 (N com --afin a0), I (a1-motor com --features diag, m2a-cache do N)
 #   configs da etapa 2: N0, A1w (a1-motor e m2a-cache com --afin a1w), A1m (a1-motor com --afin a1m; o m2a-cache não tem equivalente e roda a0)
 # Cada bloco: 60 s ociosa antes, temperatura do pacote no começo e no fim em carga.log; tentativa com falha refaz uma vez (a primeira saída fica como .falha1).
-# MEDIDA_REPS, MEDIDA_MODS, MEDIDA_CONVS, MEDIDA_WARMUP, MEDIDA_OCIOSA (fumaça curta), MEDIDA_DIR, MEDIDA_SECO=1 (imprime os comandos e não executa), MEDIDA_SO_TIMERS=1, TIMERS_FILE, SYSTEMCTL e TEMP_FILE só servem ao teste deste roteiro.
+# MEDIDA_REPS, MEDIDA_MODS, MEDIDA_CONVS, MEDIDA_WARMUP, MEDIDA_OCIOSA (fumaça curta), MEDIDA_DIR, MEDIDA_SECO=1 (imprime os comandos e não executa), MEDIDA_SO_TIMERS=1, MEDIDA_SEGURA, MEDIDA_ESPERA_TIMERS, MEDIDA_PASSO_TIMERS, TIMERS_FILE, SYSTEMCTL e TEMP_FILE só servem ao teste deste roteiro.
 set -euo pipefail
 ETAPA=${1:?uso: rodar.sh 1|2}
 case $ETAPA in 1|2) ;; *) echo "etapa 1 ou 2"; exit 1;; esac
@@ -86,20 +86,22 @@ para_timers() {
     fi
   done
   # espera os serviços em execução terminarem (até 10 min)
-  for k in $(seq 1 120); do
+  for k in $(seq 1 ${MEDIDA_ESPERA_TIMERS:-120}); do
     ocupado=0
     for t in "${TIMERS[@]}"; do
       case "$($SYSTEMCTL --user is-active "${t%.timer}.service" 2>/dev/null || true)" in active|activating) ocupado=1;; esac
     done
     [ $ocupado = 0 ] && break
-    sleep 5
+    sleep ${MEDIDA_PASSO_TIMERS:-5}
   done
   [ "${ocupado:-0}" = 0 ] || { echo "serviço de timer ainda em execução depois de 10 min"; exit 1; }
 }
 if [ "${MEDIDA_SO_TIMERS:-0}" = 1 ]; then      # teste do próprio mecanismo: para, mostra o estado e restaura
   trap restaura_timers EXIT
+  trap 'exit 130' INT TERM
   para_timers
   cat "$ESTADO"
+  [ "${MEDIDA_SEGURA:-0}" = 1 ] && { echo PARADOS; while :; do sleep 0.2; done; }      # teste: fica parado até receber um sinal
   exit 0
 fi
 

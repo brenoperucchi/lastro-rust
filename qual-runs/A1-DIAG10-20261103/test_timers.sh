@@ -1,12 +1,15 @@
 #!/bin/bash
-# Teste do mecanismo de timers do rodar.sh com um systemctl falso (nada do sistema é tocado): estado inicial ativo e inativo, e saída
-# por falha. Em cada caso o estado final tem de ser o inicial: o que estava ativo volta a ser ativado, o que estava parado NÃO é ativado.
+# Teste do mecanismo de timers do rodar.sh com um systemctl falso (nada do sistema é tocado). Casos: saída normal com estado inicial ativo, parado e misto; saída por
+# falha (serviço de timer que não termina); saída por sinal TERM no meio. Em todos o estado final tem de ser o inicial: o que estava ativo volta a ser ativado e o
+# que estava parado NÃO é ativado. Um caso extra confere que o teste PEGA a falha: um rodar.sh sem o trap de restauração tem de reprovar o caso ativo.
 set -u
-cd /home/brenoperucchi/Devs/lastro-rust
-D=$(mktemp -d /tmp/claude-1000/-home-brenoperucchi-Devs-lastro-rust/46cdbe1b-904f-422b-9a0c-ab7628b69d27/scratchpad/timers.XXXXXX)
+cd /home/brenoperucchi/Devs/lastro-rust || exit 1
+D=$(mktemp -d) || exit 1
+[ -d "$D" ] || exit 1
+R=qual-runs/A1-DIAG10-20261103/rodar.sh
 cat > "$D/fake-systemctl" <<'F'
 #!/bin/bash
-# uso: fake-systemctl --user <ação> <unidade>; o estado de cada unidade é um arquivo em $FAKE_DIR/<unidade>
+# fake-systemctl --user <ação> <unidade>; o estado de cada unidade é um arquivo em $FAKE_DIR/<unidade>
 [ "$1" = --user ] && shift
 a=$1; u=${2:-}
 case $a in
@@ -19,16 +22,43 @@ F
 chmod +x "$D/fake-systemctl"
 printf 'a.timer\nb.timer\n' > "$D/timers.txt"
 ok=1
-caso() { # nome ativo_a ativo_b
-  export FAKE_DIR=$D/$1; mkdir -p "$FAKE_DIR"; rm -f "$FAKE_DIR"/*
-  echo "$2" > "$FAKE_DIR/a.timer"; echo "$3" > "$FAKE_DIR/b.timer"; echo inactive > "$FAKE_DIR/a.service"; echo inactive > "$FAKE_DIR/b.service"
-  SYSTEMCTL="$D/fake-systemctl" TIMERS_FILE="$D/timers.txt" MEDIDA_SO_TIMERS=1 MEDIDA_DIR="$D/out-$1" qual-runs/A1-DIAG10-20261103/rodar.sh 1 > "$D/saida-$1.txt" 2>&1
+prepara() { # nome ativo_a ativo_b serviço_a
+  export FAKE_DIR=$D/$1; mkdir -p "$FAKE_DIR"
+  echo "$2" > "$FAKE_DIR/a.timer"; echo "$3" > "$FAKE_DIR/b.timer"; echo "${4:-inactive}" > "$FAKE_DIR/a.service"; echo inactive > "$FAKE_DIR/b.service"; : > "$FAKE_DIR/log"
+}
+confere() { # nome ativo_a ativo_b
   fa=$(cat "$FAKE_DIR/a.timer"); fb=$(cat "$FAKE_DIR/b.timer")
   if [ "$fa" = "$2" ] && [ "$fb" = "$3" ]; then echo "caso $1: estado final igual ao inicial ($fa, $fb): ok"; else echo "caso $1: FALHOU (inicial $2/$3, final $fa/$fb)"; ok=0; fi
-  grep -q "stop a.timer" "$FAKE_DIR/log" 2>/dev/null && [ "$2" = inactive ] && { echo "caso $1: parou um timer que já estava parado: FALHOU"; ok=0; }
-  grep -q "start" "$FAKE_DIR/log" 2>/dev/null && { [ "$2" = inactive ] && grep -q "start a.timer" "$FAKE_DIR/log"; } && { echo "caso $1: ativou um timer que estava parado: FALHOU"; ok=0; }
+  if [ "$2" = inactive ] && grep -q "start a.timer" "$FAKE_DIR/log"; then echo "caso $1: ativou um timer que estava parado: FALHOU"; ok=0; fi
 }
-caso ativos active active
-caso parados inactive inactive
-caso misto active inactive
+env_comum() { SYSTEMCTL="$D/fake-systemctl" TIMERS_FILE="$D/timers.txt" MEDIDA_SO_TIMERS=1 MEDIDA_DIR="$D/out-$1" "${@:2}"; }
+normal() { prepara "$1" "$2" "$3"; env_comum "$1" "$R" 1 > "$D/saida-$1.txt" 2>&1; confere "$1" "$2" "$3"; }
+normal ativos active active
+normal parados inactive inactive
+normal misto active inactive
+# saída por falha: o serviço do timer a nunca termina; a espera é encurtada
+prepara falha active active active
+MEDIDA_ESPERA_TIMERS=2 MEDIDA_PASSO_TIMERS=0.1 env_comum falha "$R" 1 > "$D/saida-falha.txt" 2>&1; rc=$?
+[ $rc -ne 0 ] || { echo "caso falha: devia sair com erro"; ok=0; }
+confere falha active active
+# sinal TERM no meio
+prepara sinal active inactive
+# direto (env faz exec), para o PID ser o do próprio roteiro e o TERM chegar nele
+env SYSTEMCTL="$D/fake-systemctl" TIMERS_FILE="$D/timers.txt" MEDIDA_SO_TIMERS=1 MEDIDA_SEGURA=1 MEDIDA_DIR="$D/out-sinal" "$R" 1 > "$D/saida-sinal.txt" 2>&1 &
+pid=$!
+for k in $(seq 1 100); do grep -q PARADOS "$D/saida-sinal.txt" 2>/dev/null && break; sleep 0.1; done
+[ "$(cat "$FAKE_DIR/a.timer")" = inactive ] || { echo "caso sinal: o timer ativo não foi parado antes do sinal: FALHOU"; ok=0; }
+kill -TERM $pid; wait $pid 2>/dev/null
+confere sinal active inactive
+# o teste pega a falta de restauração: uma cópia do roteiro sem o trap de restauração tem de reprovar o caso ativo
+sed 's/^  trap restaura_timers EXIT$/  : sem trap/' "$R" > "$D/rodar-sem-trap.sh"
+if [ "$(diff "$R" "$D/rodar-sem-trap.sh" | wc -l)" -gt 0 ]; then
+  prepara mutante active active
+  cp "$D/rodar-sem-trap.sh" qual-runs/A1-DIAG10-20261103/rodar-mutante-tmp.sh; chmod +x qual-runs/A1-DIAG10-20261103/rodar-mutante-tmp.sh
+  env_comum mutante qual-runs/A1-DIAG10-20261103/rodar-mutante-tmp.sh 1 > /dev/null 2>&1
+  if [ "$(cat "$FAKE_DIR/a.timer")" = inactive ]; then echo "mutante sem trap: reprovado como esperado: ok"; else echo "mutante sem trap NÃO foi pego: FALHOU"; ok=0; fi
+  rm -f qual-runs/A1-DIAG10-20261103/rodar-mutante-tmp.sh
+else
+  echo "mutante: o sed não alterou o roteiro: FALHOU"; ok=0
+fi
 [ $ok = 1 ] && echo "TODOS OS CASOS PASSAM" || { echo "HÁ FALHA"; exit 1; }
