@@ -224,6 +224,7 @@ dependencies = [
 [[package]]
 name = "cuda-async"
 version = "0.5.0"
+source = "git+https://github.com/NVIDIA/cuda-rust?rev=5759cb3#5759cb31985eb297e3a84c4f1e3288d13ddb9a14"
 dependencies = [
  "anyhow",
  "cuda-bindings",
@@ -239,6 +240,7 @@ dependencies = [
 [[package]]
 name = "cuda-bindings"
 version = "0.5.0"
+source = "git+https://github.com/NVIDIA/cuda-rust?rev=5759cb3#5759cb31985eb297e3a84c4f1e3288d13ddb9a14"
 dependencies = [
  "bindgen",
  "libloading",
@@ -251,6 +253,7 @@ dependencies = [
 [[package]]
 name = "cuda-core"
 version = "0.5.0"
+source = "git+https://github.com/NVIDIA/cuda-rust?rev=5759cb3#5759cb31985eb297e3a84c4f1e3288d13ddb9a14"
 dependencies = [
  "anyhow",
  "cuda-bindings",
@@ -262,6 +265,7 @@ dependencies = [
 [[package]]
 name = "cuda-core-derive"
 version = "0.5.0"
+source = "git+https://github.com/NVIDIA/cuda-rust?rev=5759cb3#5759cb31985eb297e3a84c4f1e3288d13ddb9a14"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -271,6 +275,7 @@ dependencies = [
 [[package]]
 name = "cutile"
 version = "0.5.0"
+source = "git+https://github.com/NVIDIA/cuda-rust?rev=5759cb3#5759cb31985eb297e3a84c4f1e3288d13ddb9a14"
 dependencies = [
  "anyhow",
  "cuda-async",
@@ -293,6 +298,7 @@ dependencies = [
 [[package]]
 name = "cutile-compiler"
 version = "0.5.0"
+source = "git+https://github.com/NVIDIA/cuda-rust?rev=5759cb3#5759cb31985eb297e3a84c4f1e3288d13ddb9a14"
 dependencies = [
  "anyhow",
  "cuda-async",
@@ -313,6 +319,7 @@ dependencies = [
 [[package]]
 name = "cutile-ir"
 version = "0.5.0"
+source = "git+https://github.com/NVIDIA/cuda-rust?rev=5759cb3#5759cb31985eb297e3a84c4f1e3288d13ddb9a14"
 dependencies = [
  "half",
  "indexmap",
@@ -323,6 +330,7 @@ dependencies = [
 [[package]]
 name = "cutile-macro"
 version = "0.5.0"
+source = "git+https://github.com/NVIDIA/cuda-rust?rev=5759cb3#5759cb31985eb297e3a84c4f1e3288d13ddb9a14"
 dependencies = [
  "convert_case",
  "cutile-compiler",

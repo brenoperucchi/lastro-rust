@@ -2996,7 +2996,7 @@ repositório e um space próprios: `/home/brenoperucchi/Devs/lastro-rust`, space
   strata-opencode, que só traz o começo do `.gitignore`). As árvores de `rust/`, `qual-runs/`, `tools/`, `tests/`, `docs/`
   e o `.gitignore` conferem byte a byte com o 3bacc1e. Os hashes citados neste plano são os do strata-opencode.
 - A estrutura de pastas é a mesma, na mesma profundidade: os caminhos relativos deste plano e os do `Cargo.toml` para o
-  cuda-rust (`../../../GitHub/cuda-rust`) seguem valendo.
+  cuda-rust (`../../../GitHub/cuda-rust`) seguiram valendo até 3/11, quando o `Cargo.toml` passou a fixar `git = "https://github.com/NVIDIA/cuda-rust", rev = "5759cb3"` (mesmo commit; 21 testes `motor` iguais nos dois).
 - Os registros das `qual-runs` ficam como foram gravados, com os caminhos absolutos antigos, porque os critérios têm sha
   citados nos resultados. Para executar de novo, troque `/home/brenoperucchi/Devs/strata-opencode` por este repositório.
 - As rodadas de revisão e de consulta do runtime citadas acima (revisões `strata-opencode-25` a `55`, consultas `5` a `8`)

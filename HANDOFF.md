@@ -8,7 +8,7 @@ strata-opencode e mudou para cá em 31/10/2026 (seção "Mudança para o lastro-
 - Plano e histórico de decisões: `docs/PLANO-runtime-rust-moe-20261029.md` (a fonte da verdade; leia a seção A1 e as
   decisões do Breno de 31/10).
 - Código: `rust/moe-rt` (crate principal), mais `rust/m0-gemv`, `rust/moe-monitor` e `rust/p1-posse`.
-  Dependências cutile/cuda-core/cuda-async do clone `/home/brenoperucchi/Devs/GitHub/cuda-rust` (commit 5759cb3).
+  Dependências cutile/cuda-core/cuda-async fixadas por git no commit 5759cb3 do NVIDIA/cuda-rust (desde 3/11; antes eram `path` para o clone `/home/brenoperucchi/Devs/GitHub/cuda-rust`, ainda no mesmo commit). Atualizar é um passo à parte, depois do diagnóstico dos 10%.
 - Simulador e referências: `tools/moe_sim.py`, `tools/ref_*.py`, `tools/llama-forcado/`; testes em `tests/`.
 - Medidas: `qual-runs/<MARCO>-<data>/`, cada uma com `criterio.txt` gravado antes de rodar. Os registros antigos citam
   `/home/brenoperucchi/Devs/strata-opencode`; para executar de novo, troque pelo caminho deste repositório.

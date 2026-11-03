@@ -5,11 +5,12 @@ edition = "2021"
 publish = false
 description = "Runtime MoE em Rust sobre o CUDA Rust da NVIDIA (plano docs/PLANO-runtime-rust-moe-20261029.md). M1a: bloco MoE de uma camada."
 
-# cuda-rust clonado em /home/brenoperucchi/Devs/GitHub/cuda-rust, commit 5759cb3 (29/10).
+# cuda-rust (NVIDIA) fixado no commit 5759cb3 (29/10), que é o clone usado em todas as medidas do A1. Atualizar é um passo à parte, com as
+# suítes e o hash dos logits conferidos (ver o plano, depois do A1).
 [dependencies]
-cutile = { path = "../../../GitHub/cuda-rust/cutile-rs/cutile" }
-cuda-core = { path = "../../../GitHub/cuda-rust/cuda-core" }
-cuda-async = { path = "../../../GitHub/cuda-rust/cuda-async" }
+cutile = { git = "https://github.com/NVIDIA/cuda-rust", rev = "5759cb3" }
+cuda-core = { git = "https://github.com/NVIDIA/cuda-rust", rev = "5759cb3" }
+cuda-async = { git = "https://github.com/NVIDIA/cuda-rust", rev = "5759cb3" }
 moe-monitor = { path = "../moe-monitor" }
 serde_json = "1"
 
