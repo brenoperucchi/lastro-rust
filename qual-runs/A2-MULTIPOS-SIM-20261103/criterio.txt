@@ -1,0 +1,30 @@
+A2-MULTIPOS-SIM, critério v1 (3/11/2026, escrito ANTES de rodar a varredura e antes de ver qualquer número de M > 1). Não se muda limiar depois de ver número.
+
+PERGUNTA: a partir de que M o passo multiposição reduz o tempo por token, e quanto, a 10% e a 25% de slots, no 1B e no 3B? Só simulador, sem GPU.
+
+1. MODELO (script `multipos.py`, usa os parâmetros de `tools/moe_sim.py` e os traços de `qual-runs/TRACOS-20261029`; o motor não é alterado)
+- Passo de M posições consecutivas da mesma conversa (o último bloco incompleto é descartado; M=1 é o decode de hoje). Por camada l: U = união dos experts pedidos; n_e = quantas das M posições pedem o expert e.
+- Residência = tabela publicada no começo do passo (protocolo "token" do D1): R = U ∩ residentes; o resto, U \ R, vai à CPU (política lfu_cpu: sem cópia síncrona).
+- GPU da camada = g_M + soma, sobre e em R, de h·w(n_e). CPU da camada = soma, sobre e em U \ R, de c·w(n_e), com c = c_cpu (camada com tráfego de cópia) ou c_cpu_quiet. Camada = max(GPU, CPU) + o_layer se há tráfego de cópia e algum expert fora da GPU. Passo = soma das camadas; tempo por token = passo / M.
+- Dois limites para o que o simulador NÃO mede (custo de lote de M posições; só existe medida de M=1): OTIMISTA, w(n)=1 e g_M=g (o peso do expert é lido uma vez e o lote é limitado por banda de memória); PESSIMISTA, w(n)=n e g_M=M·g (sem nenhum ganho de lote no cálculo; só a cópia e a política de cache se beneficiam da união). A verdade está entre os dois.
+- Admissão em segundo plano (lfu_cpu): depois do passo, as faltas cuja frequência com decaimento (meia-vida 128 tokens, decaimento 2^(-M/128) por passo, contagem n_e) vence a do residente mais fraco são copiadas; no máximo BACKLOG=4 por camada e, no passo todo, floor(tempo do passo / custo da cópia) cópias. Custo da cópia = expert_mb / banda; banda = 12,2 GB/s (medida no x8, qual-runs/PCIE-X8-20261031/resultado.txt: 0,258 ms por 3,15 MB e 0,388 ms por 4,72 MB com a CPU calculando). O moe_sim.py ainda traz 14,1 (calibrado em x16); o script usa 12,2 e registra a diferença; o moe_sim.py não é alterado.
+- Treino (conversas 0 a 3) aquece a frequência; o tempo é medido nas conversas de teste (4 a 7), como no censo.
+
+2. CALIBRAÇÃO (feita antes de qualquer previsão; M=1, 10% de slots, protocolo acima)
+- Alvo: o tempo por token medido do motor D1 e do lfu_cpu no A1.4 (qual-runs/A1-MEDIDA-20261101/resultado.txt e, para o binário C congelado, qual-runs/A1-DIAG10-20261103/analise-e1.txt): 1B L1 cerca de 8,0 ms; 3B L1 cerca de 14,4 ms (mediana das 5 repetições do C).
+- Tolerância (fixada agora): |simulado − medido| / medido ≤ 10% no M=1 a 10%, nos dois modelos, nos dois limites (a 10% o M=1 dos dois limites é o mesmo, pois n=1). Fora disso o resultado é "SIMULADOR NÃO SERVE" e nenhuma tabela de M > 1 é publicada como previsão.
+- Checagem adicional informativa (não decide): ideal "tudo residente" do simulador contra L3/L4 medidos.
+
+3. VARREDURA (só depois da calibração e da revisão nível 2 do critério e do script)
+- M = 1, 2, 4, 8, 16, 32; slots 10% e 25%; 1B e 3B; todas as conversas de teste; os dois limites. Uma tabela: tempo por token, ganho = 1 − t(M)/t(1), e o M em que a curva achata (menor M com ganho a menos de 2 pontos do ganho em M=32).
+
+4. REGRA DE DECISÃO (M máximo aceitável = 8; ganho mínimo = 15% do tempo por token; vale por modelo a 10% e a decisão final é a do modelo mais fraco; 25% é descritivo)
+- VALE IMPLEMENTAR NO MOTOR: em ambos os modelos, o ganho do limite PESSIMISTA com M ≤ 8 é ≥ 15%.
+- VALE MEDIR NA GPU ANTES: não vale pelo pessimista, mas em ambos o ganho do limite OTIMISTA com M ≤ 8 é ≥ 15%. A incerteza única a medir é o custo de lote do cálculo (microbench de GEMM com poucas posições); nenhuma implementação antes disso.
+- NÃO VALE AGORA: em algum dos dois modelos o ganho do limite OTIMISTA com M ≤ 8 é < 15%.
+- Calibração reprovada: SIMULADOR NÃO SERVE (não é "não vale").
+
+5. LIMITES DECLARADOS NO RESULTADO
+- Os traços vêm de passada causal sobre texto fixo; em lote de sequências diferentes e em decodificação especulativa a união é outra (nesta, só tokens aceitos seguem o texto).
+- O simulador não prevê o custo de sincronização do motor nem a espera de 0,15 a 0,5 ms (A1-DIAG10: dentro do ruído, não reproduzida).
+- O custo de lote do cálculo (item 1, os dois limites) não tem medida; por isso a decisão usa os dois limites e o resultado intermediário manda medir, não implementar.
