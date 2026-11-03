@@ -23,6 +23,7 @@ def amostra(pid, motor):
     out = []
     cand = []
     nomeada = False
+    incompleta = False        # alguma thread não pôde ser lida por inteiro: não dá para provar ausência do nome nem unicidade
     try:
         tids = os.listdir(f"/proc/{pid}/task")
     except OSError:
@@ -35,6 +36,7 @@ def amostra(pid, motor):
             cpu = int(stat[stat.rfind(")") + 2:].split()[36])
             khz = int(open(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_cur_freq").read())
         except (OSError, ValueError, IndexError):
+            incompleta = True
             continue
         p = papel_de(int(t), pid, comm, motor)
         if p:
@@ -45,7 +47,7 @@ def amostra(pid, motor):
             cand.append((int(f[11]) + int(f[12]), cpu, khz))
     # só sem moe-servico (C) e só com UM candidato com CPU consumida; ambíguo ou nenhum: chamador ausente (a 0c falha de modo conservador)
     ativos = [c for c in cand if c[0] > 0]
-    if not nomeada and len(ativos) == 1:
+    if not nomeada and not incompleta and len(ativos) == 1:
         out.append(("chamador", ativos[0][1], ativos[0][2]))
     return out
 
