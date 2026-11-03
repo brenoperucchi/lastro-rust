@@ -21,6 +21,7 @@ def papel_de(tid, pid, comm, motor):
 
 def amostra(pid, motor):
     out = []
+    cand = []
     try:
         tids = os.listdir(f"/proc/{pid}/task")
     except OSError:
@@ -36,6 +37,12 @@ def amostra(pid, motor):
         p = papel_de(int(t), pid, comm, motor)
         if p:
             out.append((p, cpu, khz))
+        elif motor and comm == "a1-motor" and int(t) != pid:
+            # binário C do A1.4: a thread de serviço não tem nome e herda o do executável; as outras com esse nome (CUDA) ficam em 0 ticks.
+            f = stat[stat.rfind(")") + 2:].split()
+            cand.append((int(f[11]) + int(f[12]), cpu, khz))
+    if cand and max(cand)[0] > 0 and not any(p == "chamador" for p, _, _ in out):
+        out.append(("chamador", max(cand)[1], max(cand)[2]))
     return out
 
 
