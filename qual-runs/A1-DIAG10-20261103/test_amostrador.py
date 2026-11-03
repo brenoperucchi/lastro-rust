@@ -38,6 +38,22 @@ class T(unittest.TestCase):
         r = amostra_com({100: ("a1-motor", 5000, 2), 101: ("a1-motor", 90, 3), 102: ("moe-servico", 160, 4)})
         self.assertEqual([c for p, c, _ in r if p == "chamador"], [4])
 
+    def test_leitura_da_nomeada_falha_nao_promove_auxiliar(self):
+        # moe-servico existe, mas a leitura do stat dele falha: o auxiliar sem nome não pode ocupar o papel
+        threads = {100: ("a1-motor", 5000, 2), 101: ("a1-motor", 90, 3), 102: ("moe-servico", 160, 4)}
+        orig = amostra_com.__globals__["stat"]
+        def stat_quebrado(ticks, cpu):
+            if ticks == 160:
+                raise OSError("stat")
+            return orig(ticks, cpu)
+        with mock.patch.dict(amostra_com.__globals__, {"stat": stat_quebrado}):
+            r = amostra_com(threads)
+        self.assertFalse(any(p == "chamador" for p, _, _ in r))
+
+    def test_c_ambiguo_deixa_o_chamador_ausente(self):
+        r = amostra_com({100: ("a1-motor", 5000, 2), 101: ("a1-motor", 500, 3), 102: ("a1-motor", 160, 4)})
+        self.assertFalse(any(p == "chamador" for p, _, _ in r))
+
     def test_sem_ticks_nao_inventa_chamador(self):
         r = amostra_com({100: ("a1-motor", 5000, 2), 101: ("a1-motor", 0, 3)})
         self.assertFalse(any(p == "chamador" for p, _, _ in r))

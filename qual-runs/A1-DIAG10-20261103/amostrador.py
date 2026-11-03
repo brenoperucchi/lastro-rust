@@ -22,6 +22,7 @@ def papel_de(tid, pid, comm, motor):
 def amostra(pid, motor):
     out = []
     cand = []
+    nomeada = False
     try:
         tids = os.listdir(f"/proc/{pid}/task")
     except OSError:
@@ -29,6 +30,7 @@ def amostra(pid, motor):
     for t in tids:
         try:
             comm = open(f"/proc/{pid}/task/{t}/comm").read().strip()
+            nomeada = nomeada or comm == "moe-servico"      # visto pelo nome, mesmo que a leitura seguinte falhe
             stat = open(f"/proc/{pid}/task/{t}/stat").read()
             cpu = int(stat[stat.rfind(")") + 2:].split()[36])
             khz = int(open(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_cur_freq").read())
@@ -41,8 +43,10 @@ def amostra(pid, motor):
             # binário C do A1.4: a thread de serviço não tem nome e herda o do executável; as outras com esse nome (CUDA) ficam em 0 ticks.
             f = stat[stat.rfind(")") + 2:].split()
             cand.append((int(f[11]) + int(f[12]), cpu, khz))
-    if cand and max(cand)[0] > 0 and not any(p == "chamador" for p, _, _ in out):
-        out.append(("chamador", max(cand)[1], max(cand)[2]))
+    # só sem moe-servico (C) e só com UM candidato com CPU consumida; ambíguo ou nenhum: chamador ausente (a 0c falha de modo conservador)
+    ativos = [c for c in cand if c[0] > 0]
+    if not nomeada and len(ativos) == 1:
+        out.append(("chamador", ativos[0][1], ativos[0][2]))
     return out
 
 
