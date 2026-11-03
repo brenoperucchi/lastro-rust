@@ -1,6 +1,6 @@
-A1-DIAG10: diagnóstico do +0,4 a +0,6 ms de espera do motor D1 a 10% de slots. VERSÃO 5 (RASCUNHO de 03/11, depois da rodada 32; ainda sem harness, sem
+A1-DIAG10: diagnóstico do +0,4 a +0,6 ms de espera do motor D1 a 10% de slots. VERSÃO 6 (RASCUNHO de 03/11, depois da rodada 33; ainda sem harness, sem
 janela e sem aval do Breno). Nada aqui foi medido. Os limiares ficam gravados antes de qualquer medida; mudar um depois de ver número vira critério novo, com
-data, e o antigo fica de histórico. As versões 1 (2cce78a), 2 (2313c7e), 3 (bc35ec9) e 4 (5e5a562) estão no git.
+data, e o antigo fica de histórico. As versões 1 (2cce78a), 2 (2313c7e), 3 (bc35ec9), 4 (5e5a562) e 5 (913d1c2) estão no git.
 Mudança de desenho da v3 (mantida na v4): a DECISÃO sai só do d pareado dos binários SEM instrumentação, sob intervenções de um fator por vez. Os intervalos instrumentados
 (T_cpu, T_servico, T_host, entrada_com_seq) são DESCRIÇÃO e não entram em nenhuma regra: atribuir atraso à GPU por intervalo de CPU não é identificável sem uma
 intervenção controlada (rodadas 29 e 30).
@@ -56,13 +56,16 @@ intervenção controlada (rodadas 29 e 30).
 - Invalida o bloco: falha de correção (logits 1e-4, roteamento, needed como no A1.4), processo alheio na 4090 (monitor com PID), sha diferente, tentativa com erro,
   ou contadores fora do limite abaixo. A análise sai de um script com controles negativos próprios, como o analise.py do A1.4.
 - Controle de trabalho (todos os pares: C contra N, N contra I, N@A0 contra N@A1w e N@A1m, na mesma repetição). Uma inequação por contador, sem compensação entre eles:
-    acertos, experts na CPU e adiadas, por token: cada um dentro de +-0,1% do par de referência;
+    acertos, experts na CPU e descartes (o contador `dropped` publicado, 492509 no 1B a 10% do A1.4), por token: cada um dentro de +-0,1% do par de referência;
     cópias: |diferença de cópias| x c_copy_cpu / tokens <= 0,01 ms por token. c_copy_cpu (0,223 ms no 1B, 0,335 ms no 3B) é uma ESCALA CONVENCIONAL do tools/moe_sim.py
     (banda de 14,1 GB/s, anterior ao x8; em x8 seria cerca de 15% maior, sem efeito no limite); não é o custo medido de uma cópia. Os 4040 e 7022 cópias do A1.4 tornam
     +-0,1% = 4 e 7 cópias, estreito demais para um par de afinidade que muda o tempo de propósito;
-    descartes: derivados (experts na CPU - cópias - adiadas), logo limitados pelas três inequações acima; reportados, sem inequação própria.
+    adiadas: SUBCONJUNTO das cópias (line.rs:468-475 soma em `copies` e, se adiada, também em `deferred`; cerca de 55% das cópias no A1.4), já limitadas pelo custo das
+    cópias; reportadas, sem inequação própria. Os descartes NÃO são derivados dos outros contadores (a conta experts na CPU - cópias - adiadas dá 490460, não os 492509
+    publicados): têm a inequação própria acima.
   Um par fora de qualquer inequação é inválido e não entra em nenhuma regra. O motor_evento decide cópias pelo tempo; isso é medido, não suposto. Controles sintéticos:
-  cópias +12 e o resto igual passa; cópias +300 (cerca de 0,02 ms por token) reprova com acertos e experts na CPU iguais; adiadas muito diferentes com o resto igual reprova.
+  cópias +12 e adiadas +6 com o resto igual passa; cópias +300 (cerca de 0,02 ms por token) reprova com acertos, experts na CPU e descartes iguais; descartes -2000 com o
+  resto igual reprova.
 
 4. Intervenções (cada comparação muda UM fator)
   A0   afinidade como no A1.4: taskset -c 0-15 para tudo.
