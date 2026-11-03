@@ -65,7 +65,7 @@ if [ "$ETAPA" = 2 ] && [ "$SECO" = 0 ]; then
 fi
 
 # --- 0. pré-condições (fora do modo seco) ---
-if [ "$SECO" = 0 ]; then
+if [ "$SECO" = 0 ] && [ "${MEDIDA_SO_TIMERS:-0}" != 1 ] && [ "${MEDIDA_SO_OCIOSA:-0}" != 1 ]; then
   g=$(gpu) || { echo "4090 não encontrada pelo UUID"; exit 1; }
   util=$(echo "$g" | cut -d, -f2 | tr -dc 0-9); mem=$(echo "$g" | cut -d, -f3 | tr -dc 0-9)
   { [ "$util" -le 2 ] && [ "$mem" -le 500 ]; } || { echo "4090 ocupada ($g); nada foi alterado"; exit 1; }
@@ -137,7 +137,7 @@ if [ "$SECO" = 0 ]; then
     sha256sum "$Q/criterio.txt" "$Q/rodar.sh" "$Q/analise.py" "$Q/decide.py"
     echo "timers parados: ${PARADOS[*]:-nenhum}"; echo "timers monitorados (estado antes):"; cat "$ESTADO"
     echo "teto de temperatura: ${TETO:-sem teto (só registro)}"
-    echo "GPU no começo: $g"; echo "temperatura do pacote: $(temp) C"
+    echo "GPU no começo: ${g:-não consultada (modo de teste)}"; echo "temperatura do pacote: $(temp) C"
     echo "processos acima de 5% de CPU no começo:"; procs
   } > "$R/ambiente-e$ETAPA.txt"
 fi
@@ -167,7 +167,7 @@ ociosa() { # 60 s ociosa; com teto, só libera depois de uma leitura VÁLIDA no 
   [ -z "$TETO" ] && return 0
   for k in $(seq 1 ${MEDIDA_ESPERA_TETO:-90}); do
     t=$(temp)
-    case $t in ''|n/d) echo "$(date +%T) teto $TETO C: sem leitura válida da temperatura" >> "$R/carga-e$ETAPA.log"; return 1;; esac
+    case $t in ''|n/d|*[!0-9.]*|*.*.*|.|-*) echo "$(date +%T) teto $TETO C: sem leitura válida da temperatura" >> "$R/carga-e$ETAPA.log"; return 1;; esac
     awk -v t="$t" -v x="$TETO" 'BEGIN { exit !(t <= x) }' && return 0
     sleep ${MEDIDA_PASSO_TETO:-20}
   done

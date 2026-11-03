@@ -212,6 +212,11 @@ def analisa(etapa):
     def p(*a): out.append(" ".join(str(x) for x in a))
     E = f"{R}/e{etapa}"
     p(f"=== A1-DIAG10, etapa {etapa}: portão de correção, carga, frequência, trabalho, instrumentação e decisão (criterio.txt v6) ===")
+    # a referência antiga nunca sobrevive à reanálise: invalida as duas células já na entrada e só um "status OK" no fim (ou uma exceção) a substitui (rodada 37, achado 1)
+    if etapa == 1:
+        for m in MODS:
+            with open(f"{R}/d-etapa1-{m}.txt", "w") as f:
+                f.write("status INVÁLIDA\n")
     # --- 0. integridade dos binários (começo e fim) registrada pelo rodar.sh ---
     try:
         with open(f"{R}/integridade-e{etapa}.txt") as f:

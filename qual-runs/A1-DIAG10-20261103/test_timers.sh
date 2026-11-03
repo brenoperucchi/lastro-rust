@@ -63,15 +63,19 @@ fi
 # teto de temperatura (rodada 36): libera só com leitura válida no teto ou abaixo; timeout e leitura ausente não liberam
 teto() { # nome temperatura rc_esperado
   echo 70 > "$D/teto.txt"; echo "$2" > "$D/temp.txt"
-  r=$(TETO_FILE="$D/teto.txt" TEMP_FILE="$D/temp.txt" MEDIDA_SO_OCIOSA=1 MEDIDA_OCIOSA=0 MEDIDA_ESPERA_TETO=2 MEDIDA_PASSO_TETO=0.05 MEDIDA_DIR="$D/out-$1" TIMERS_FILE="$D/timers.txt" "$R" 1 2>&1 | grep '^rc=')
+  r=$(SYSTEMCTL="$D/fake-systemctl" TETO_FILE="$D/teto.txt" TEMP_FILE="$D/temp.txt" MEDIDA_SO_OCIOSA=1 MEDIDA_OCIOSA=0 MEDIDA_ESPERA_TETO=2 MEDIDA_PASSO_TETO=0.05 MEDIDA_DIR="$D/out-$1" TIMERS_FILE="$D/timers.txt" "$R" 1 2>&1 | grep '^rc=')
   if [ "$r" = "rc=$3" ]; then echo "teto $1 (temperatura $2): $r ok"; else echo "teto $1 (temperatura $2): FALHOU ($r, esperado rc=$3)"; ok=0; fi
 }
 teto abaixo 60.0 0
 teto igual 70.0 0
 teto acima 90.0 1
 teto semleitura n/d 1
+teto malformada 1bad 1
+teto texto abc 1
+teto nan nan 1
+teto inf inf 1
 # sem teto só registra
-r=$(TETO_FILE="$D/inexistente" TEMP_FILE="$D/temp.txt" MEDIDA_SO_OCIOSA=1 MEDIDA_OCIOSA=0 MEDIDA_DIR="$D/out-semteto" TIMERS_FILE="$D/timers.txt" "$R" 1 2>&1 | grep '^rc=')
+r=$(SYSTEMCTL="$D/fake-systemctl" TETO_FILE="$D/inexistente" TEMP_FILE="$D/temp.txt" MEDIDA_SO_OCIOSA=1 MEDIDA_OCIOSA=0 MEDIDA_DIR="$D/out-semteto" TIMERS_FILE="$D/timers.txt" "$R" 1 2>&1 | grep '^rc=')
 [ "$r" = "rc=0" ] && echo "sem teto: libera ok" || { echo "sem teto: FALHOU ($r)"; ok=0; }
 # a lista de timers é decisão do Breno: sem o arquivo a janela não roda (falha fechado), e a etapa 2 exige a etapa 1 aprovada
 out=$(TIMERS_FILE="$D/nao-existe.txt" MEDIDA_DIR="$D/out-semlista" "$R" 1 2>&1); rc=$?

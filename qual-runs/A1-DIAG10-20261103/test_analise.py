@@ -1,6 +1,6 @@
 """Teste do analise.py com uma árvore de resultados sintética montada a partir de saídas reais do A1.4 (formato idêntico ao do harness N).
 Cada caso monta a árvore com os números desejados, roda o analise.py como processo e confere o resultado por célula e os controles."""
-import os, re, shutil, subprocess, sys, tempfile, unittest
+import glob, os, re, shutil, subprocess, sys, tempfile, unittest
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(AQUI, "..", ".."))
@@ -201,6 +201,19 @@ class Analise(unittest.TestCase):
         monta(raiz, 1, {"C": {"L1": -0.6}})
         roda(raiz)
         self.assertFalse(le(f"{raiz}/d-etapa1-1b.txt").startswith("status OK"))
+
+    def test_referencia_antiga_e_invalidada_em_saida_antecipada(self):
+        # rodada 37: sem monitor/carga a análise retorna cedo; o "status OK" antigo não pode sobreviver
+        raiz = self.raiz
+        monta(raiz, 1, {})
+        roda(raiz)
+        self.assertTrue(le(f"{raiz}/d-etapa1-1b.txt").startswith("status OK"))
+        for f in glob.glob(f"{raiz}/e1/**/carga*", recursive=True) + glob.glob(f"{raiz}/e1/**/gpu*", recursive=True) + glob.glob(f"{raiz}/carga-e1*") + glob.glob(f"{raiz}/gpu*e1*"):
+            if os.path.isfile(f):
+                os.remove(f)
+        roda(raiz)
+        self.assertFalse(le(f"{raiz}/d-etapa1-1b.txt").startswith("status OK"))
+        self.assertFalse(le(f"{raiz}/d-etapa1-3b.txt").startswith("status OK"))
 
     def test_etapa2_l4_movido_e_base(self):
         raiz = self.raiz
