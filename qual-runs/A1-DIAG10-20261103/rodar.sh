@@ -10,7 +10,7 @@
 #   configs da etapa 1: C (binários congelados do A1.4), N0 (N com --afin a0), I (a1-motor com --features diag, m2a-cache do N)
 #   configs da etapa 2: N0, A1w (a1-motor e m2a-cache com --afin a1w), A1m (a1-motor com --afin a1m; o m2a-cache não tem equivalente e roda a0)
 # Cada bloco: 60 s ociosa antes, temperatura do pacote no começo e no fim em carga.log; tentativa com falha refaz uma vez (a primeira saída fica como .falha1).
-# MEDIDA_DIR, MEDIDA_SECO=1 (imprime os comandos e não executa), MEDIDA_SO_TIMERS=1, TIMERS_FILE, SYSTEMCTL e TEMP_FILE só servem ao teste deste roteiro.
+# MEDIDA_REPS, MEDIDA_MODS, MEDIDA_CONVS, MEDIDA_WARMUP, MEDIDA_OCIOSA (fumaça curta), MEDIDA_DIR, MEDIDA_SECO=1 (imprime os comandos e não executa), MEDIDA_SO_TIMERS=1, TIMERS_FILE, SYSTEMCTL e TEMP_FILE só servem ao teste deste roteiro.
 set -euo pipefail
 ETAPA=${1:?uso: rodar.sh 1|2}
 case $ETAPA in 1|2) ;; *) echo "etapa 1 ou 2"; exit 1;; esac
@@ -189,7 +189,8 @@ um_bloco() {
   local cfg=$1 mod=$2 n=$3 bl=$4 d bin afin extra="" pols
   d=$RUNS/rep$n/$mod/$cfg/$bl
   run mkdir -p "$d"
-  local com="--model $M/$(dir $mod) --traces $T/$(dir $mod) --ref qual-runs/REF-granite-$mod-texto-a --budgets $(budgets $mod) --backlog 4 --warmup 0,1,2,3 --threads 8"
+  local com="--model $M/$(dir $mod) --traces $T/$(dir $mod) --ref qual-runs/REF-granite-$mod-texto-a --budgets $(budgets $mod) --backlog 4 --warmup ${MEDIDA_WARMUP:-0,1,2,3} --threads 8"
+  [ -n "${MEDIDA_CONVS:-}" ] && com="$com --convs $MEDIDA_CONVS"
   if [ $bl = m2a-b4 ]; then
     case $cfg in C) bin=$BC/m2a-cache; afin="";; N0|I|A1m) bin=$BN/m2a-cache; afin="--afin a0";; A1w) bin=$BN/m2a-cache; afin="--afin a1w";; esac
     ARQ="$d/ms" bloco "$d" rot "$d/saida.txt" $P $bin $com --policies resident,lfu_cpu $afin --metrics /dev/null --ms-dir "$d/ms"
@@ -206,8 +207,9 @@ um_bloco() {
 }
 
 if [ $ETAPA = 1 ]; then CFGS=(C N0 I); else CFGS=(N0 A1w A1m); fi
-for n in 1 2 3 4 5; do
+for n in $(seq 1 ${MEDIDA_REPS:-5}); do
   if [ $((n % 2)) = 1 ]; then mods="1b 3b"; else mods="3b 1b"; fi
+  [ -n "${MEDIDA_MODS:-}" ] && mods=$MEDIDA_MODS
   for mod in $mods; do
     for i in 0 1 2; do
       cfg=${CFGS[$(((i + n - 1) % 3))]}

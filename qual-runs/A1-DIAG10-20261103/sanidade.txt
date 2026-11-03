@@ -1,0 +1,20 @@
+A1-DIAG10: sanidade do harness (03/11/2026, 4090 por UUID, taskset 0-15, 1B, conversa 4, aquecimento 0; binários N e I de bin/SHA256SUMS)
+
+1. Testes sem GPU: test_decide.py (32), test_analise.py (9, árvore sintética de saídas reais do A1.4), test_timers.sh (3 casos), cargo test --lib (affinity, pool,
+   motor: 28 passam; diag com --features diag: 3 passam).
+2. Afinidade efetiva (linhas AFINIDADE/CONTROLE da saída do N):
+   A1w  moe-servico em 0 e moe-cpu-1..7 em 2,4,6,8,10,12,14; CONTROLE "8 núcleos físicos distintos: ok"; logits e roteamento passam.
+   A1m  thread principal em 17, demais em 0-15; logits e roteamento passam.
+3. Fidelidade da injeção de 10 us por camada com falta (1B a 10% tem 24 camadas com falta por token; esperado 0,24 ms, faixa +-30% = 0,168 a 0,312 ms):
+   T_livro          +0,252 ms (0,326 contra 0,074)                                     dentro
+   espera antes do wait (acumulador próprio)  0,242 ms                                dentro
+   T_cpu, três pares I+inj contra I:  +0,336, +0,278, +0,206 ms                      dois dentro, um fora (+40%)
+   A linha de base de T_cpu varia até cerca de 0,15 ms entre execuções iguais (6,009 / 6,309 / 6,201). Registrado como está; sem limiar novo.
+4. A1m e a condição de base: motor_cheio (L4), thread principal no CPU 17 contra A0, dois pares na mesma sessão:
+   A0 2,21 e 2,21 ms/token; A1m 2,30 e 2,31 -> dL4 de +0,09 e +0,10 ms, ACIMA do limite 0,05 da condição de base (criterio.txt, seção 5).
+   Pelo critério v6, a A1m cairia em SEM CONCLUSÃO (o fator moveu a base) por construção. Levado à revisão e ao Breno; nada foi mudado no critério.
+5. Fumaça do rodar.sh (etapa 2, 1 repetição, 1B, conversa 4, 60 s ociosa trocada por 1 s): os 6 blocos rodam, gravam saida.txt, ms/, freq.txt, TENTATIVA e
+   temperatura no carga-e2.log; a regra 0c aprova (chamador e trabalhadores a cerca de 5,48 a 5,50 GHz nas duas linhas); a thread principal da A1m média 4,9 GHz
+   no E-core 17; sha dos binários confere no começo e no fim; nenhum bloco suspenso.
+6. Tempo medido na sanidade: um bloco a1 com 3 orçamentos e 4 conversas de aquecimento não foi medido; a duração real da janela sai do tempo do bloco
+   de fumaça (cerca de 35 s para 1 conversa e 1 política) extrapolada: ver o pedido de janela. 
