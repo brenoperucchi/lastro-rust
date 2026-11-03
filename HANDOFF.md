@@ -29,7 +29,7 @@ strata-opencode e mudou para cá em 31/10/2026 (seção "Mudança para o lastro-
 - Fora do plano, feitos em 31/10 (commit a4faca6): `qual-runs/PCIE-X8-20261031/` (análise x8/x8 contra x16/x4: ficar
   em x8/x8) e `qual-runs/FONTE-2GPU-20261031/` (teste da fonte com as duas GPUs: seguro com a 3080 Ti em 300 W).
 
-- A1-DIAG10 (3/11): harness e script de análise aprovados nível 2 (rodada 38), sanidade registrada, commit local 8f34735. **Falta a janela**, que depende do Breno (critério v6, timers.txt, teto X, aval da etapa 1). Estado em `rust/moe-rt/src/motor/ESTADO-A1.5.md`; execução: `qual-runs/A1-DIAG10-20261103/rodar.sh 1`, depois `analise.py 1`.
+- A1-DIAG10 (3/11): harness e script de análise aprovados nível 2 (rodada 38), sanidade registrada, commit local 8f34735. **Falta a janela**, que depende do Breno (critério v6, timers.txt, teto X, aval da etapa 1). Estado em `rust/moe-rt/src/motor/ESTADO-A1.5.md`; execução: `qual-runs/A1-DIAG10-20261103/rodar.sh 1`, depois `taskset -c 16-27 tools/.venv-ref/bin/python -I -B qual-runs/A1-DIAG10-20261103/analise.py` (sem argumento: analisa as etapas presentes na própria pasta; o argumento opcional é a pasta de resultados, não a etapa).
 
 ## Máquina (depois do reboot de 31/10)
 
