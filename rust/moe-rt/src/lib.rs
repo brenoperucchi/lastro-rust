@@ -5,6 +5,7 @@
 //! - [`gpu`]: experts residentes na VRAM, com kernels Tile do cutile-rs.
 //!
 //! [`weights`] lê os tensores do safetensors; [`block`] tem os pesos de uma camada e a decisão do roteador.
+pub mod affinity;
 pub mod block;
 pub mod cache;
 pub mod cpu;

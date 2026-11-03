@@ -39,11 +39,22 @@ pub struct Pool {
     workers: Vec<JoinHandle<()>>,
     /// Serializa chamadas concorrentes a `run`.
     serial: Mutex<()>,
+    /// A1-DIAG10, A1w: CPU de quem chama (`[0]`) e de cada trabalhador (`[i]`); `None` não fixa nada.
+    plan: Option<Vec<usize>>,
+    caller_pinned: AtomicBool,
 }
 
 impl Pool {
     /// `threads` contando quem chama `run` (então `threads - 1` threads novas).
     pub fn new(threads: usize) -> Self {
+        Self::with_plan(threads, crate::affinity::compute_plan())
+    }
+
+    /// Como `new`, com a colocação do A1w: o trabalhador `i` fixo em `plan[i]` e quem chama em `plan[0]`, na primeira `run`.
+    pub fn with_plan(threads: usize, plan: Option<Vec<usize>>) -> Self {
+        if let Some(p) = &plan {
+            assert!(p.len() >= threads.max(1), "plano de afinidade com {} CPUs para {} participantes", p.len(), threads);
+        }
         let shared = Arc::new(Shared {
             generation: AtomicU64::new(0),
             job: UnsafeCell::new(None),
@@ -58,10 +69,19 @@ impl Pool {
         let workers = (1..threads.max(1))
             .map(|i| {
                 let s = shared.clone();
-                std::thread::Builder::new().name(format!("moe-cpu-{i}")).spawn(move || worker(&s)).expect("thread do caminho de CPU")
+                let cpu = plan.as_ref().map(|p| p[i]);
+                std::thread::Builder::new()
+                    .name(format!("moe-cpu-{i}"))
+                    .spawn(move || {
+                        if let Some(c) = cpu {
+                            crate::affinity::set_current(&[c]).expect("afinidade do trabalhador");
+                        }
+                        worker(&s)
+                    })
+                    .expect("thread do caminho de CPU")
             })
             .collect();
-        Self { shared, workers, serial: Mutex::new(()) }
+        Self { shared, workers, serial: Mutex::new(()), plan, caller_pinned: AtomicBool::new(false) }
     }
 
     pub fn threads(&self) -> usize {
@@ -75,6 +95,11 @@ impl Pool {
     /// interno ficaria esperando para sempre).
     pub fn run(&self, tasks: usize, f: &(dyn Fn(usize) + Sync)) {
         let _serial = self.serial.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(p) = &self.plan {
+            if !self.caller_pinned.swap(true, Ordering::Relaxed) {
+                crate::affinity::set_current(&[p[0]]).expect("afinidade de quem chama o Pool");
+            }
+        }
         let s = &*self.shared;
         let n = self.workers.len();
         if n == 0 || tasks <= 1 {
@@ -201,5 +226,59 @@ impl Out {
     #[inline]
     pub unsafe fn write(self, i: usize, v: f32) {
         unsafe { *self.0.add(i) = v };
+    }
+}
+
+#[cfg(test)]
+mod testes_afinidade {
+    use super::*;
+
+    /// Com plano, o chamador (na primeira `run`) e cada `moe-cpu-i` ficam fixos na CPU do plano, e as máscaras efetivas lidas
+    /// de dentro de cada thread são as pedidas.
+    #[test]
+    fn plano_fixa_chamador_e_trabalhadores() {
+        let livres = crate::affinity::get_current().unwrap();
+        if livres.len() < 3 {
+            return;
+        }
+        let plan = vec![livres[0], livres[1], livres[2]];
+        let seen = Arc::new(Mutex::new(Vec::<(String, Vec<usize>)>::new()));
+        let caller = {
+            let seen = seen.clone();
+            let plan = plan.clone();
+            std::thread::spawn(move || {
+                let pool = Pool::with_plan(3, Some(plan));
+                // tarefas longas o bastante para todas as threads pegarem alguma
+                pool.run(64, &|_| {
+                    let me = std::thread::current();
+                    let nome = me.name().unwrap_or("chamador").to_string();
+                    let m = crate::affinity::get_current().unwrap();
+                    seen.lock().unwrap().push((nome, m));
+                    std::thread::sleep(std::time::Duration::from_micros(200));
+                });
+            })
+        };
+        caller.join().unwrap();
+        for (nome, m) in seen.lock().unwrap().iter() {
+            let want = match nome.as_str() {
+                "moe-cpu-1" => plan[1],
+                "moe-cpu-2" => plan[2],
+                _ => plan[0],
+            };
+            assert_eq!(m, &vec![want], "{nome}");
+        }
+    }
+
+    /// Sem plano nada é fixado: as threads herdam a máscara de fora (A0).
+    #[test]
+    fn sem_plano_herda_a_mascara() {
+        let antes = crate::affinity::get_current().unwrap();
+        let pool = Pool::with_plan(2, None);
+        let visto = Arc::new(Mutex::new(Vec::new()));
+        pool.run(8, &|_| {
+            visto.lock().unwrap().push(crate::affinity::get_current().unwrap());
+            std::thread::sleep(std::time::Duration::from_micros(100));
+        });
+        assert!(visto.lock().unwrap().iter().all(|m| *m == antes));
     }
 }

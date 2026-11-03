@@ -45,6 +45,8 @@ struct Args {
     backlog: usize,
     ms_dir: Option<PathBuf>,
     sem_aquecimento: bool,
+    /// A1-DIAG10: colocação das threads (a0 não fixa nada; a1w os 8 do cálculo, um por núcleo físico; a1m a principal no E-core 17).
+    afin: moe_rt::affinity::Afin,
 }
 
 fn parse_args() -> Args {
@@ -61,6 +63,7 @@ fn parse_args() -> Args {
         backlog: 4,
         ms_dir: None,
         sem_aquecimento: false,
+        afin: moe_rt::affinity::Afin::A0,
     };
     while let Some(k) = a.next() {
         let mut v = || a.next().unwrap_or_else(|| panic!("{k} pede um valor"));
@@ -76,6 +79,7 @@ fn parse_args() -> Args {
             "--backlog" => r.backlog = v().parse().expect("--backlog"),
             "--ms-dir" => r.ms_dir = Some(PathBuf::from(v())),
             "--sem-aquecimento" => r.sem_aquecimento = true,
+            "--afin" => r.afin = moe_rt::affinity::Afin::parse(&v()).unwrap_or_else(|e| panic!("{e}")),
             _ => panic!("opção desconhecida: {k}"),
         }
     }
@@ -203,6 +207,7 @@ fn sub(a: &Stats, b: &Stats) -> Stats {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = parse_args();
+    moe_rt::affinity::set_compute_plan(args.afin.compute_plan(args.threads));
     let cfg = ModelConfig::from_json(&serde_json::from_slice(&std::fs::read(args.model.join("config.json"))?)?)?;
     let host = HostModel::load(&Checkpoint::open(&args.model)?, cfg.clone())?;
     let convs: Vec<Conv> = args.convs.iter().map(|c| load_conv(&args.traces.join(format!("conversa-{c}")))).collect::<Result<_, _>>()?;
@@ -278,12 +283,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             m.eng.close().d()?;
             // 2. o motor da medida, com o cache como veio (vazio ou cheio), aquecido nas conversas de aquecimento.
             let mut m = sobe(&device, &host, &cfg, max_len, slots, *admit, prefill, &args)?;
+            // A1m: só a thread principal (a que gira na stream) vai para o E-core; as threads novas já nasceram acima, então não herdam.
+            let mascara_antes = moe_rt::affinity::get_current()?;
+            if let Some(c) = args.afin.main_cpu() {
+                moe_rt::affinity::set_current(&[c])?;
+            }
             for conv in &warm {
                 m.b.reset_sequence().d()?;
                 for &tok in &conv.tokens {
                     m.passo(tok as usize)?;
                 }
             }
+            moe_rt::affinity::relata(pname, &budget, args.afin, args.threads, false);
             // Os contadores do `Published` valem até o fim do token anterior: o do primeiro token medido é o ponto de partida.
             let mut base: Option<Stats> = None;
             let mut idx = 0usize;
@@ -316,6 +327,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let fim = m.eng.next_published().d().map(|p| p.stats().clone())?;
             stats = sub(&fim, &base.unwrap_or_default());
             m.eng.close().d()?;
+            moe_rt::affinity::set_current(&mascara_antes)?;
         } else {
             let stream = device.new_stream()?;
             let mut g = GpuModel::upload(&host, stream, max_len)?;

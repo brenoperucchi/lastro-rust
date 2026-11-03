@@ -135,11 +135,15 @@ impl<B: Backend> Engine<B> {
         let svc = Service::new(b.clone(), sh.clone(), copy.clone(), parts.weights, cfg.clone(), parts.sides);
         let done = Arc::new(AtomicBool::new(false));
         let d = done.clone();
-        let service = thread::spawn(move || {
-            // `done` sobe também quando a linha de serviço sai por `panic`; senão o `join` girava para sempre.
-            let _done = DoneOnExit(d);
-            service_main(svc, cpu)
-        });
+        // Nome da thread só para a afinidade efetiva por papel ser legível (A1-DIAG10); o comportamento não muda.
+        let service = thread::Builder::new()
+            .name("moe-servico".into())
+            .spawn(move || {
+                // `done` sobe também quando a linha de serviço sai por `panic`; senão o `join` girava para sempre.
+                let _done = DoneOnExit(d);
+                service_main(svc, cpu)
+            })
+            .expect("thread da linha de serviço");
         Ok(Self { b, sh, compute: parts.compute, copy, table: parts.table, t: cfg.first_token, cfg, service: Some(service),
                   done, service_result: None, current: None, closed: false })
     }

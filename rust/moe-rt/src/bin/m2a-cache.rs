@@ -44,6 +44,8 @@ struct Args {
     policies: Vec<String>,
     threads: usize,
     backlog: usize,
+    /// A1-DIAG10: a1w fixa os 8 participantes do cálculo (a principal no CPU 0); a0 não fixa nada; a1m não tem equivalente aqui.
+    afin: moe_rt::affinity::Afin,
     admit: AdmitMode,
     metrics: PathBuf,
     ms_dir: Option<PathBuf>,
@@ -62,6 +64,7 @@ fn parse_args() -> Args {
         policies: vec!["resident".into(), "cache_full".into(), "lru_sync".into(), "lru_cpu".into()],
         threads: 8,
         backlog: 4,
+        afin: moe_rt::affinity::Afin::A0,
         admit: AdmitMode::Event,
         metrics: snapshot::default_path(),
         ms_dir: None,
@@ -79,6 +82,7 @@ fn parse_args() -> Args {
             "--policies" => r.policies = v().split(',').map(|s| s.trim().to_string()).collect(),
             "--threads" => r.threads = v().parse().expect("--threads"),
             "--backlog" => r.backlog = v().parse().expect("--backlog"),
+            "--afin" => r.afin = moe_rt::affinity::Afin::parse(&v()).unwrap_or_else(|e| panic!("{e}")),
             "--admit" => {
                 r.admit = match v().as_str() {
                     "evento" => AdmitMode::Event,
@@ -167,6 +171,7 @@ fn sim_row(sim: &serde_json::Value, frac: f64, policy: &str) -> Option<(f64, f64
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = parse_args();
+    moe_rt::affinity::set_compute_plan(args.afin.compute_plan(args.threads));
     let cfg = Config::from_json(&serde_json::from_slice(&std::fs::read(args.model.join("config.json"))?)?)?;
     let host = HostModel::load(&Checkpoint::open(&args.model)?, cfg.clone())?;
     let convs: Vec<Conv> = args.convs.iter().map(|c| load_conv(&args.traces.join(format!("conversa-{c}")))).collect::<Result<_, _>>()?;
@@ -263,6 +268,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (lg, _) = g.step(tok as usize)?;
             fnv(&mut hash, &lg);
             text_check.add(&lg, &ref_logits[t * vocab..(t + 1) * vocab]);
+        }
+
+        if cc.is_some() {
+            moe_rt::affinity::relata(pname, &format!("{:.0}%", cc.unwrap().0 * 100.0), args.afin, args.threads, true);
         }
 
         // 2. Conversas, com o cache vazio no começo (cheio, em `cache_full`).
