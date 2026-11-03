@@ -1,0 +1,53 @@
+M2a: granite-3.1-1b-a400m-instruct; conversas [4, 5, 6, 7] (3451 tokens); 768 experts de 3.15 MB; CPU com 8 threads; backlog 4; admissão evento; aquecimento [0, 1, 2, 3]
+
+política   orçam. slots |  ms/tok mediana   tok/s | acerto    CPU  cóp.s cóp.bg | roteador   CPU ms |   rot.igual |  sim ms/acerto | logits texto-a / conversas
+AFINIDADE resident 100% A0 tid 2240803 m2a-cache 0-15
+AFINIDADE resident 100% A0 tid 2241031 cuda00001400006 0-15
+AFINIDADE resident 100% A0 tid 2241085 m2a-cache 0-15
+AFINIDADE resident 100% A0 tid 2241086 cuda-EvtHandlr 0-15
+AFINIDADE resident 100% A0 tid 2241098 m2a-cache 0-15
+resident     100%   768 |    2.64    2.63   378.6 | 100.0%   0.0%   0.00   0.00 |      NaN     0.00 | 82824/82824 |                | 5.6e-6 / referência
+AFINIDADE lfu_cpu 10% A0 tid 2240803 m2a-cache 0-15
+AFINIDADE lfu_cpu 10% A0 tid 2241031 cuda00001400006 0-15
+AFINIDADE lfu_cpu 10% A0 tid 2241085 m2a-cache 0-15
+AFINIDADE lfu_cpu 10% A0 tid 2241086 cuda-EvtHandlr 0-15
+AFINIDADE lfu_cpu 10% A0 tid 2241098 m2a-cache 0-15
+AFINIDADE lfu_cpu 10% A0 tid 2245339 moe-cpu-1 0-15
+AFINIDADE lfu_cpu 10% A0 tid 2245340 moe-cpu-2 0-15
+AFINIDADE lfu_cpu 10% A0 tid 2245341 moe-cpu-3 0-15
+AFINIDADE lfu_cpu 10% A0 tid 2245342 moe-cpu-4 0-15
+AFINIDADE lfu_cpu 10% A0 tid 2245343 moe-cpu-5 0-15
+AFINIDADE lfu_cpu 10% A0 tid 2245344 moe-cpu-6 0-15
+AFINIDADE lfu_cpu 10% A0 tid 2245345 moe-cpu-7 0-15
+lfu_cpu       10%    76 |    7.80    7.69   128.2 |  24.9%  75.1%   0.00   1.53 |     0.50     5.94 | 82824/82824 |                | 5.2e-6 / 8.1e-6
+AFINIDADE lfu_cpu 25% A0 tid 2240803 m2a-cache 0-15
+AFINIDADE lfu_cpu 25% A0 tid 2241031 cuda00001400006 0-15
+AFINIDADE lfu_cpu 25% A0 tid 2241085 m2a-cache 0-15
+AFINIDADE lfu_cpu 25% A0 tid 2241086 cuda-EvtHandlr 0-15
+AFINIDADE lfu_cpu 25% A0 tid 2241098 m2a-cache 0-15
+AFINIDADE lfu_cpu 25% A0 tid 2256844 moe-cpu-1 0-15
+AFINIDADE lfu_cpu 25% A0 tid 2256845 moe-cpu-2 0-15
+AFINIDADE lfu_cpu 25% A0 tid 2256846 moe-cpu-3 0-15
+AFINIDADE lfu_cpu 25% A0 tid 2256847 moe-cpu-4 0-15
+AFINIDADE lfu_cpu 25% A0 tid 2256848 moe-cpu-5 0-15
+AFINIDADE lfu_cpu 25% A0 tid 2256849 moe-cpu-6 0-15
+AFINIDADE lfu_cpu 25% A0 tid 2256850 moe-cpu-7 0-15
+lfu_cpu       25%   192 |    5.95    5.86   168.1 |  50.1%  49.9%   0.00   2.25 |     0.47     3.93 | 82824/82824 |                | 5.2e-6 / 8.2e-6
+
+mediana de ms/token por posição no contexto (tokens na faixa):
+política   orçam. |          0-256        256-512       512-1024          1024+
+resident     100% |    2.61 (1024)    2.63 (1024)    2.66 (1355)    2.71 (  48)
+lfu_cpu       10% |    7.89 (1024)    7.58 (1024)    7.61 (1355)    7.82 (  48)
+lfu_cpu       25% |    6.26 (1024)    5.53 (1024)    5.65 (1355)    5.66 (  48)
+
+contagens exatas nas conversas e hash dos logits (texto-a e conversas):
+política   orçam. |   acertos     cóp.s    cóp.bg  descart.       CPU | hash
+resident     100% |         –         –         –         –         – | 6da9b225cd59de10
+lfu_cpu       10% |    164728         0      5279    492585    497864 | 548b26a6e09b8bfa
+lfu_cpu       25% |    332019         0      7766    322807    330573 | ef0550b87bbd0472
+
+ms/tok e tok/s: média nas conversas, mediana ao lado; acerto e CPU: fração dos experts pedidos; cóp.s e cóp.bg: cópias por token;
+roteador: espera do host pela leitura dos logits, por token (inclui o cálculo da GPU até ali); CPU ms: experts na CPU por token;
+sim: ms/token e acerto previstos pelo simulador para o mesmo orçamento e política (residente: 1000/tg_gpu do llama.cpp).
+logits: maior erro relativo (L2) contra o transformers no texto-a e, nas conversas, contra a passada residente; limite 1e-4, argmax igual;
+resultado: logits dentro da tolerância em todas as configurações

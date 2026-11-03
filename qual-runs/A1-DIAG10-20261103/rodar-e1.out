@@ -1,0 +1,88 @@
+15:24:51 qual-runs/A1-DIAG10-20261103/e1/rep1/1b/C/m2a-b4 0
+15:28:26 qual-runs/A1-DIAG10-20261103/e1/rep1/1b/C/a1 0
+15:28:26 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 42 %, 2 MiB, 96.14 W, 2610 MHz, 42), esperando
+15:32:00 qual-runs/A1-DIAG10-20261103/e1/rep1/1b/N0/m2a-b4 0
+15:32:00 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 24 %, 2 MiB, 84.14 W, 2610 MHz, 40), esperando
+15:35:57 qual-runs/A1-DIAG10-20261103/e1/rep1/1b/N0/a1 0
+15:39:10 qual-runs/A1-DIAG10-20261103/e1/rep1/1b/I/m2a-b4 0
+15:39:10 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 19 %, 2 MiB, 82.56 W, 2610 MHz, 40), esperando
+15:43:09 qual-runs/A1-DIAG10-20261103/e1/rep1/1b/I/a1 0
+15:43:09 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 70.64 W, 2610 MHz, 40), esperando
+15:47:01 qual-runs/A1-DIAG10-20261103/e1/rep1/3b/C/m2a-b4 0
+15:51:11 qual-runs/A1-DIAG10-20261103/e1/rep1/3b/C/a1 0
+15:51:11 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 9 %, 2 MiB, 62.81 W, 2610 MHz, 39), esperando
+15:54:59 qual-runs/A1-DIAG10-20261103/e1/rep1/3b/N0/m2a-b4 0
+15:54:59 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 96 %, 2 MiB, 67.31 W, 2610 MHz, 39), esperando
+15:59:21 qual-runs/A1-DIAG10-20261103/e1/rep1/3b/N0/a1 0
+15:59:21 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 11 %, 2 MiB, 68.03 W, 2610 MHz, 40), esperando
+16:03:06 qual-runs/A1-DIAG10-20261103/e1/rep1/3b/I/m2a-b4 0
+16:07:09 qual-runs/A1-DIAG10-20261103/e1/rep1/3b/I/a1 0
+16:07:09 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 59.52 W, 2610 MHz, 40), esperando
+16:11:31 qual-runs/A1-DIAG10-20261103/e1/rep2/3b/N0/a1 0
+16:14:54 qual-runs/A1-DIAG10-20261103/e1/rep2/3b/N0/m2a-b4 0
+16:14:54 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 63.84 W, 2850 MHz, 40), esperando
+16:19:21 qual-runs/A1-DIAG10-20261103/e1/rep2/3b/I/a1 0
+16:22:46 qual-runs/A1-DIAG10-20261103/e1/rep2/3b/I/m2a-b4 0
+16:26:48 qual-runs/A1-DIAG10-20261103/e1/rep2/3b/C/a1 0
+16:26:48 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 25 %, 2 MiB, 71.53 W, 2610 MHz, 40), esperando
+16:30:31 qual-runs/A1-DIAG10-20261103/e1/rep2/3b/C/m2a-b4 0
+16:30:31 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 51 %, 2 MiB, 66.89 W, 2610 MHz, 39), esperando
+16:34:25 qual-runs/A1-DIAG10-20261103/e1/rep2/1b/N0/a1 0
+16:37:34 qual-runs/A1-DIAG10-20261103/e1/rep2/1b/N0/m2a-b4 0
+16:37:34 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 74.87 W, 2610 MHz, 40), esperando
+16:41:28 qual-runs/A1-DIAG10-20261103/e1/rep2/1b/I/a1 0
+16:41:28 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 5 %, 2 MiB, 94.12 W, 2610 MHz, 41), esperando
+16:44:58 qual-runs/A1-DIAG10-20261103/e1/rep2/1b/I/m2a-b4 0
+16:44:58 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 40 %, 2 MiB, 83.37 W, 2610 MHz, 40), esperando
+16:48:49 qual-runs/A1-DIAG10-20261103/e1/rep2/1b/C/a1 0
+16:51:55 qual-runs/A1-DIAG10-20261103/e1/rep2/1b/C/m2a-b4 0
+16:55:01 qual-runs/A1-DIAG10-20261103/e1/rep3/1b/I/m2a-b4 0
+16:58:34 qual-runs/A1-DIAG10-20261103/e1/rep3/1b/I/a1 0
+16:58:34 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 86.89 W, 2730 MHz, 41), esperando
+17:02:05 qual-runs/A1-DIAG10-20261103/e1/rep3/1b/C/m2a-b4 0
+17:02:05 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 26 %, 2 MiB, 92.25 W, 2610 MHz, 40), esperando
+17:05:56 qual-runs/A1-DIAG10-20261103/e1/rep3/1b/C/a1 0
+17:05:57 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 21 %, 2 MiB, 107.81 W, 2850 MHz, 42), esperando
+17:09:23 qual-runs/A1-DIAG10-20261103/e1/rep3/1b/N0/m2a-b4 0
+17:12:55 qual-runs/A1-DIAG10-20261103/e1/rep3/1b/N0/a1 0
+17:16:16 qual-runs/A1-DIAG10-20261103/e1/rep3/3b/I/m2a-b4 0
+17:20:17 qual-runs/A1-DIAG10-20261103/e1/rep3/3b/I/a1 0
+17:20:17 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 11 %, 2 MiB, 68.68 W, 2610 MHz, 39), esperando
+17:23:56 qual-runs/A1-DIAG10-20261103/e1/rep3/3b/C/m2a-b4 0
+17:27:54 qual-runs/A1-DIAG10-20261103/e1/rep3/3b/C/a1 0
+17:31:14 qual-runs/A1-DIAG10-20261103/e1/rep3/3b/N0/m2a-b4 0
+17:35:12 qual-runs/A1-DIAG10-20261103/e1/rep3/3b/N0/a1 0
+17:39:10 qual-runs/A1-DIAG10-20261103/e1/rep4/3b/C/a1 0
+17:39:10 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 25 %, 2 MiB, 61.40 W, 2610 MHz, 39), esperando
+17:42:51 qual-runs/A1-DIAG10-20261103/e1/rep4/3b/C/m2a-b4 0
+17:46:49 qual-runs/A1-DIAG10-20261103/e1/rep4/3b/N0/a1 0
+17:50:07 qual-runs/A1-DIAG10-20261103/e1/rep4/3b/N0/m2a-b4 0
+17:50:07 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 41 %, 2 MiB, 66.45 W, 2610 MHz, 39), esperando
+17:54:25 qual-runs/A1-DIAG10-20261103/e1/rep4/3b/I/a1 0
+17:57:44 qual-runs/A1-DIAG10-20261103/e1/rep4/3b/I/m2a-b4 0
+17:57:44 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 82 %, 2 MiB, 66.06 W, 2610 MHz, 39), esperando
+18:01:33 qual-runs/A1-DIAG10-20261103/e1/rep4/1b/C/a1 0
+18:04:37 qual-runs/A1-DIAG10-20261103/e1/rep4/1b/C/m2a-b4 0
+18:08:05 qual-runs/A1-DIAG10-20261103/e1/rep4/1b/N0/a1 0
+18:11:09 qual-runs/A1-DIAG10-20261103/e1/rep4/1b/N0/m2a-b4 0
+18:14:37 qual-runs/A1-DIAG10-20261103/e1/rep4/1b/I/a1 0
+18:14:37 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 5 %, 2 MiB, 99.58 W, 2610 MHz, 41), esperando
+18:18:01 qual-runs/A1-DIAG10-20261103/e1/rep4/1b/I/m2a-b4 0
+18:21:05 qual-runs/A1-DIAG10-20261103/e1/rep5/1b/N0/m2a-b4 0
+18:21:05 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 6 %, 2 MiB, 101.35 W, 2850 MHz, 41), esperando
+18:24:51 qual-runs/A1-DIAG10-20261103/e1/rep5/1b/N0/a1 0
+18:27:52 qual-runs/A1-DIAG10-20261103/e1/rep5/1b/I/m2a-b4 0
+18:27:52 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 27 %, 2 MiB, 97.28 W, 2700 MHz, 41), esperando
+18:31:39 qual-runs/A1-DIAG10-20261103/e1/rep5/1b/I/a1 0
+18:34:40 qual-runs/A1-DIAG10-20261103/e1/rep5/1b/C/m2a-b4 0
+18:34:40 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 19 %, 2 MiB, 100.64 W, 2850 MHz, 41), esperando
+18:38:27 qual-runs/A1-DIAG10-20261103/e1/rep5/1b/C/a1 0
+18:38:27 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 21 %, 2 MiB, 104.81 W, 2850 MHz, 42), esperando
+18:42:02 qual-runs/A1-DIAG10-20261103/e1/rep5/3b/N0/m2a-b4 0
+18:45:57 qual-runs/A1-DIAG10-20261103/e1/rep5/3b/N0/a1 0
+18:49:12 qual-runs/A1-DIAG10-20261103/e1/rep5/3b/I/m2a-b4 0
+18:53:07 qual-runs/A1-DIAG10-20261103/e1/rep5/3b/I/a1 0
+18:53:07 GPU ocupada (GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 7 %, 2 MiB, 60.81 W, 2610 MHz, 39), esperando
+18:56:42 qual-runs/A1-DIAG10-20261103/e1/rep5/3b/C/m2a-b4 0
+19:00:38 qual-runs/A1-DIAG10-20261103/e1/rep5/3b/C/a1 0
+19:00:38 fim da etapa 1

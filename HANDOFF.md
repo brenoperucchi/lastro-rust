@@ -29,7 +29,7 @@ strata-opencode e mudou para cá em 31/10/2026 (seção "Mudança para o lastro-
 - Fora do plano, feitos em 31/10 (commit a4faca6): `qual-runs/PCIE-X8-20261031/` (análise x8/x8 contra x16/x4: ficar
   em x8/x8) e `qual-runs/FONTE-2GPU-20261031/` (teste da fonte com as duas GPUs: seguro com a 3080 Ti em 300 W).
 
-- A1-DIAG10 (3/11): harness e script de análise aprovados nível 2 (rodada 38), sanidade registrada, commit local 8f34735. **Falta a janela**, que depende do Breno (critério v6, timers.txt, teto X, aval da etapa 1). Estado em `rust/moe-rt/src/motor/ESTADO-A1.5.md`; execução: `qual-runs/A1-DIAG10-20261103/rodar.sh 1`, depois `taskset -c 16-27 tools/.venv-ref/bin/python -I -B qual-runs/A1-DIAG10-20261103/analise.py` (sem argumento: analisa as etapas presentes na própria pasta; o argumento opcional é a pasta de resultados, não a etapa).
+- A1-DIAG10 (3/11): harness e análise aprovados nível 2; etapa 1 medida e analisada (15:22 a 19:00): passo 0 NAO_REPRODUZIDO nas duas células (1B: d(C) +0,266, d(N0) +0,490; 3B: d(C) +0,290, d(N0) +0,150), orçamento da instrumentação VIOLA; etapa 2 não roda; sem conclusão sobre H1. Próximo passo: critério novo, decisão do Breno. Estado em `rust/moe-rt/src/motor/ESTADO-A1.5.md`; resultado em `qual-runs/A1-DIAG10-20261103/analise-e1.txt`; reanálise: `taskset -c 16-27 tools/.venv-ref/bin/python -I -B qual-runs/A1-DIAG10-20261103/analise.py` (sem argumento).
 
 ## Máquina (depois do reboot de 31/10)
 

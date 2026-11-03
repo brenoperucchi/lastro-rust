@@ -1,0 +1,37 @@
+=== A1-DIAG10, etapa 1: portão de correção, carga, frequência, trabalho, instrumentação e decisão (criterio.txt v6) ===
+  integridade dos binários (começo e fim): ok
+  controles negativos em memória (uma saída real passa; cada mutação tem de reprovar): saída real passa resumo FALHOU: reprova; linha ausente: reprova; roteamento fora: reprova; logits 2e-4: reprova; needed falso: reprova
+  controles da afinidade efetiva (em memória): A1w real do a1 passa: ok; A1w real do m2a passa: ok; A1m real do a1 passa: ok; A1w com FALHOU: ok; A1w sem a linha do motor_cheio: ok; A1w sem a linha do resident no m2a: ok; A1m com a principal em 0-15: ok
+  blocos com falha de logits, roteamento, needed ou arquivos: 0 de 60
+  controles negativos da GPU (em memória): erro de consulta: ok; outro programa: ok; outro PID do mesmo binário: ok; sem observação: ok; processo alheio só fora do intervalo (não pode descartar): ok
+  GPU: 2609 amostras válidas, 0 falhas de consulta; 60 tentativas; descartadas por carga: 0
+  nenhum bloco suspenso pelo rodar.sh
+
+--- célula 1b 10% ---
+  d_i(C) = -0.118 +0.372 +0.150 +0.266 +0.499  mediana +0.266
+    L1 8.177 8.000 8.014 7.726 7.648  L2 8.717 8.057 8.295 7.895 7.575  L3 2.655 2.648 2.663 2.651 2.638  L4 2.232 2.219 2.232 2.216 2.211
+  d_i(N0) = +0.766 +0.398 +0.513 +0.490 +0.359  mediana +0.490
+    L1 8.588 8.149 8.116 7.827 7.734  L2 8.262 8.162 8.025 7.775 7.802  L3 2.667 2.637 2.660 2.648 2.641  L4 2.227 2.225 2.237 2.210 2.215
+  d_i(I) = +0.507 +0.648 +0.739 +0.413 +0.457  mediana +0.507
+    L1 8.457 8.422 8.252 7.768 7.667  L2 8.363 8.192 7.950 7.783 7.625  L3 2.658 2.648 2.666 2.654 2.638  L4 2.245 2.230 2.229 2.226 2.223
+  [descritivo, não entra em regra] d_i(C) a 25% = +0.096 +0.443 +0.055 +0.292 +0.213
+  [descritivo, não entra em regra] d_i(N0) a 25% = -0.003 -0.058 -0.005 +0.246 +0.118
+  [descritivo, não entra em regra] d_i(I) a 25% = +0.341 +0.128 +0.195 +0.136 +0.176
+  controle de trabalho por par (L1 e L2 juntas): C->N0: 5/5 válidos; N0->I: 5/5 válidos
+  passo 0: d(C) mediana +0.266, d(N0) mediana +0.490 -> NAO_REPRODUZIDO
+  orçamento da instrumentação (I contra N0): mediana(d(I)-d(N0)) +0.098 ms, dispersão (min..max) -0.259..+0.250; custo relativo por linha L1 -0.76% L2 +0.10% L3 +0.23% L4 +0.36% -> VIOLA: intervalos descritivos NÃO CONFIÁVEIS
+
+--- célula 3b 10% ---
+  d_i(C) = +0.014 +0.201 +0.303 +0.290 +0.502  mediana +0.290
+    L1 15.300 14.842 14.305 14.383 13.879  L2 15.800 15.126 14.500 14.600 13.886  L3 4.180 4.145 4.146 4.171 4.150  L4 3.666 3.660 3.649 3.664 3.641
+  d_i(N0) = +0.345 +0.056 -0.207 +0.150 +0.389  mediana +0.150
+    L1 14.863 14.569 14.050 13.982 13.839  L2 15.012 15.025 14.734 14.307 13.974  L3 4.155 4.166 4.156 4.159 4.172  L4 3.662 3.654 3.679 3.683 3.648
+  d_i(I) = +0.388 +1.601 +0.450 +0.559 +0.388  mediana +0.450
+    L1 14.750 16.036 14.575 14.237 13.872  L2 14.849 14.973 14.626 14.138 13.984  L3 4.173 4.207 4.154 4.140 4.144  L4 3.686 3.669 3.654 3.680 3.643
+  controle de trabalho por par (L1 e L2 juntas): C->N0: 5/5 válidos; N0->I: 5/5 válidos
+  passo 0: d(C) mediana +0.290, d(N0) mediana +0.150 -> NAO_REPRODUZIDO
+  orçamento da instrumentação (I contra N0): mediana(d(I)-d(N0)) +0.409 ms, dispersão (min..max) -0.001..+1.545; custo relativo por linha L1 +1.83% L2 -0.73% L3 -0.04% L4 -0.10% -> VIOLA: intervalos descritivos NÃO CONFIÁVEIS
+
+=== RESULTADO POR CÉLULA ===
+  1b 10%: NAO_REPRODUZIDO
+  3b 10%: NAO_REPRODUZIDO

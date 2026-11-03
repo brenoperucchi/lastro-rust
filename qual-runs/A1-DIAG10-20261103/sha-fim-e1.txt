@@ -1,0 +1,5 @@
+a1-motor: OK
+m2a-cache: OK
+N/a1-motor: OK
+N/m2a-cache: OK
+I/a1-motor: OK

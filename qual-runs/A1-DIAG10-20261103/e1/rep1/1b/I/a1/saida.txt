@@ -1,0 +1,60 @@
+A1.4b: granite-3.1-1b-a400m-instruct; conversas [4, 5, 6, 7] (3451 tokens); 768 experts; CPU com 8 threads; backlog 4; aquecimento [0, 1, 2, 3]
+
+política       orçam. slots |  ms/tok mediana   tok/s | acerto    CPU   cóp. descart. | needed e roteamento | logits texto-a / conversas
+resident         100%   768 |    2.68    2.67   373.5 |   0.0%   0.0%   0.00   0.00 |           – | 5.6e-6 / referência
+AFINIDADE motor_cheio 100% A0 tid 448191 a1-motor 0-15
+AFINIDADE motor_cheio 100% A0 tid 448520 cuda00001400006 0-15
+AFINIDADE motor_cheio 100% A0 tid 448528 a1-motor 0-15
+AFINIDADE motor_cheio 100% A0 tid 448529 cuda-EvtHandlr 0-15
+AFINIDADE motor_cheio 100% A0 tid 448532 a1-motor 0-15
+AFINIDADE motor_cheio 100% A0 tid 452388 moe-cpu-1 0-15
+AFINIDADE motor_cheio 100% A0 tid 452389 moe-cpu-2 0-15
+AFINIDADE motor_cheio 100% A0 tid 452390 moe-cpu-3 0-15
+AFINIDADE motor_cheio 100% A0 tid 452391 moe-cpu-4 0-15
+AFINIDADE motor_cheio 100% A0 tid 452392 moe-cpu-5 0-15
+AFINIDADE motor_cheio 100% A0 tid 452393 moe-cpu-6 0-15
+AFINIDADE motor_cheio 100% A0 tid 452394 moe-cpu-7 0-15
+AFINIDADE motor_cheio 100% A0 tid 452395 moe-servico 0-15
+motor_cheio      100%   768 |    2.24    2.24   445.5 | 100.0%   0.0%   0.00   0.00 | true rot 82824/82824 | 7.8e-6 / 4.6e-6
+AFINIDADE motor_evento 10% A0 tid 448191 a1-motor 0-15
+AFINIDADE motor_evento 10% A0 tid 448520 cuda00001400006 0-15
+AFINIDADE motor_evento 10% A0 tid 448528 a1-motor 0-15
+AFINIDADE motor_evento 10% A0 tid 448529 cuda-EvtHandlr 0-15
+AFINIDADE motor_evento 10% A0 tid 448532 a1-motor 0-15
+AFINIDADE motor_evento 10% A0 tid 456796 moe-cpu-1 0-15
+AFINIDADE motor_evento 10% A0 tid 456797 moe-cpu-2 0-15
+AFINIDADE motor_evento 10% A0 tid 456798 moe-cpu-3 0-15
+AFINIDADE motor_evento 10% A0 tid 456799 moe-cpu-4 0-15
+AFINIDADE motor_evento 10% A0 tid 456800 moe-cpu-5 0-15
+AFINIDADE motor_evento 10% A0 tid 456801 moe-cpu-6 0-15
+AFINIDADE motor_evento 10% A0 tid 456802 moe-cpu-7 0-15
+AFINIDADE motor_evento 10% A0 tid 456803 moe-servico 0-15
+motor_evento      10%    76 |    8.46    8.34   118.2 |  25.0%  75.0%   1.17 142.71 | true rot 82824/82824 | 6.8e-6 / 5.7e-6
+AFINIDADE motor_evento 25% A0 tid 448191 a1-motor 0-15
+AFINIDADE motor_evento 25% A0 tid 448520 cuda00001400006 0-15
+AFINIDADE motor_evento 25% A0 tid 448528 a1-motor 0-15
+AFINIDADE motor_evento 25% A0 tid 448529 cuda-EvtHandlr 0-15
+AFINIDADE motor_evento 25% A0 tid 448532 a1-motor 0-15
+AFINIDADE motor_evento 25% A0 tid 468893 moe-cpu-1 0-15
+AFINIDADE motor_evento 25% A0 tid 468894 moe-cpu-2 0-15
+AFINIDADE motor_evento 25% A0 tid 468895 moe-cpu-3 0-15
+AFINIDADE motor_evento 25% A0 tid 468896 moe-cpu-4 0-15
+AFINIDADE motor_evento 25% A0 tid 468897 moe-cpu-5 0-15
+AFINIDADE motor_evento 25% A0 tid 468898 moe-cpu-6 0-15
+AFINIDADE motor_evento 25% A0 tid 468899 moe-cpu-7 0-15
+AFINIDADE motor_evento 25% A0 tid 468900 moe-servico 0-15
+motor_evento      25%   192 |    6.32    6.17   158.1 |  50.3%  49.7%   1.95  93.46 | true rot 82824/82824 | 4.8e-6 / 8.4e-6
+
+cauda de latência (ms por token):
+resident         100% | p50    2.67 p95    2.73 p99    2.79 max    3.00 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 1025:3.0 412:3.0 305:3.0 2804:2.9 2316:2.9 245:2.9 2755:2.9 2298:2.9 254:2.9 2309:2.9
+motor_cheio      100% | p50    2.24 p95    2.30 p99    2.33 max    2.54 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 1399:2.5 3034:2.5 2175:2.5 1407:2.5 1403:2.5 134:2.4 2942:2.4 3274:2.4 2222:2.4 2223:2.4
+motor_evento      10% | p50    8.34 p95   10.08 p99   10.87 max   12.12 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 2072:12.1 3066:12.1 2966:12.1 3269:11.9 3401:11.5 2661:11.5 2714:11.5 3082:11.4 3271:11.4 3139:11.3
+motor_evento      25% | p50    6.17 p95    8.59 p99    9.51 max   10.52 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 2460:10.5 51:10.4 1993:10.4 94:10.4 3274:10.3 19:10.2 2869:10.0 1727:10.0 2442:10.0 335:9.9
+
+contagens exatas nas conversas e hash dos logits (texto-a e conversas):
+resident         100% | needed         0 hits         0 cpu         0 cópias         0 descart.         0 adiadas         0 | 6da9b225cd59de10
+motor_cheio      100% | needed    662592 hits    662592 cpu         0 cópias         0 descart.         0 adiadas         0 | 871363132e4c8718
+motor_evento      10% | needed    662592 hits    165888 cpu    496704 cópias      4040 descart.    492509 adiadas      2205 | 985f8d0cd2630b07
+motor_evento      25% | needed    662592 hits    333028 cpu    329564 cópias      6726 descart.    322524 adiadas      3703 | f15623c1634031f7
+
+resultado: logits dentro da tolerância e experts pedidos certos em todas as configurações

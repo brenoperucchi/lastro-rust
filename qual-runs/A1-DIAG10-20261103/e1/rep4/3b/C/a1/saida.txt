@@ -1,0 +1,18 @@
+A1.4b: granite-3.1-3b-a800m-instruct; conversas [4, 5, 6, 7] (3814 tokens); 1280 experts; CPU com 8 threads; backlog 4; aquecimento [0, 1, 2, 3]
+
+política       orçam. slots |  ms/tok mediana   tok/s | acerto    CPU   cóp. descart. | needed e roteamento | logits texto-a / conversas
+resident         100%  1280 |    4.18    4.17   239.2 |   0.0%   0.0%   0.00   0.00 |           – | 2.9e-6 / referência
+motor_cheio      100%  1280 |    3.66    3.66   273.0 | 100.0%   0.0%   0.00   0.00 | true rot 122048/122048 | 2.7e-6 / 6.1e-6
+motor_evento      10%   128 |   14.38   14.22    69.5 |  29.1%  70.9%   1.84 179.73 | true rot 122048/122048 | 3.2e-6 / 4.3e-6
+
+cauda de latência (ms por token):
+resident         100% | p50    4.17 p95    4.26 p99    4.29 max    4.47 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 1596:4.5 1604:4.4 865:4.4 1595:4.4 163:4.4 2175:4.4 1805:4.4 1844:4.3 3802:4.3 3669:4.3
+motor_cheio      100% | p50    3.66 p95    3.74 p99    3.76 max    3.87 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 1800:3.9 3639:3.8 3783:3.8 3763:3.8 3792:3.8 3784:3.8 3793:3.8 3794:3.8 3718:3.8 3786:3.8
+motor_evento      10% | p50   14.22 p95   16.76 p99   18.31 max   22.74 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 3709:22.7 3708:20.9 3704:20.7 3703:20.6 3696:20.5 3591:20.3 739:19.9 1506:19.8 3604:19.8 14:19.6
+
+contagens exatas nas conversas e hash dos logits (texto-a e conversas):
+resident         100% | needed         0 hits         0 cpu         0 cópias         0 descart.         0 adiadas         0 | 162ca54cd7716a68
+motor_cheio      100% | needed    976384 hits    976384 cpu         0 cópias         0 descart.         0 adiadas         0 | 3953e4d1e33c7159
+motor_evento      10% | needed    976384 hits    283743 cpu    692641 cópias      7022 descart.    685476 adiadas      3914 | 0a2ede495b672758
+
+resultado: logits dentro da tolerância e experts pedidos certos em todas as configurações

@@ -1,0 +1,21 @@
+A1.4b: granite-3.1-1b-a400m-instruct; conversas [4, 5, 6, 7] (3451 tokens); 768 experts; CPU com 8 threads; backlog 4; aquecimento [0, 1, 2, 3]
+
+política       orçam. slots |  ms/tok mediana   tok/s | acerto    CPU   cóp. descart. | needed e roteamento | logits texto-a / conversas
+resident         100%   768 |    2.66    2.65   376.4 |   0.0%   0.0%   0.00   0.00 |           – | 5.6e-6 / referência
+motor_cheio      100%   768 |    2.23    2.22   447.9 | 100.0%   0.0%   0.00   0.00 | true rot 82824/82824 | 7.8e-6 / 4.6e-6
+motor_evento      10%    76 |    8.18    8.07   122.3 |  25.0%  75.0%   1.17 142.71 | true rot 82824/82824 | 7.0e-6 / 5.7e-6
+motor_evento      25%   192 |    6.00    5.88   166.6 |  50.3%  49.7%   1.95  93.46 | true rot 82824/82824 | 6.8e-6 / 8.4e-6
+
+cauda de latência (ms por token):
+resident         100% | p50    2.65 p95    2.72 p99    2.79 max    3.37 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 130:3.4 1835:3.0 2846:3.0 3321:3.0 3388:3.0 2822:2.9 3225:2.9 3313:2.9 3315:2.9 2831:2.9
+motor_cheio      100% | p50    2.22 p95    2.30 p99    2.34 max    3.17 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 3076:3.2 3078:2.9 3438:2.6 1962:2.5 1930:2.5 1980:2.5 2226:2.5 228:2.5 3437:2.5 2327:2.4
+motor_evento      10% | p50    8.07 p95    9.70 p99   10.46 max   11.72 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 1456:11.7 3154:11.6 2644:11.4 3211:11.4 452:11.3 2954:11.3 2838:11.3 2931:11.1 1380:11.1 2816:11.1
+motor_evento      25% | p50    5.88 p95    7.96 p99    8.77 max   10.05 | acima de 3×mediana: 0 | 10 maiores (índice:ms) 15:10.1 7:9.7 41:9.6 207:9.5 28:9.5 107:9.4 413:9.4 2415:9.4 2753:9.4 2460:9.4
+
+contagens exatas nas conversas e hash dos logits (texto-a e conversas):
+resident         100% | needed         0 hits         0 cpu         0 cópias         0 descart.         0 adiadas         0 | 6da9b225cd59de10
+motor_cheio      100% | needed    662592 hits    662592 cpu         0 cópias         0 descart.         0 adiadas         0 | 871363132e4c8718
+motor_evento      10% | needed    662592 hits    165888 cpu    496704 cópias      4040 descart.    492509 adiadas      2205 | a83c1530b3efef65
+motor_evento      25% | needed    662592 hits    333018 cpu    329574 cópias      6739 descart.    322520 adiadas      3711 | 2b8679f8528de190
+
+resultado: logits dentro da tolerância e experts pedidos certos em todas as configurações

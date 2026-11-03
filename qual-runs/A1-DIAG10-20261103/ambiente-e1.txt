@@ -1,0 +1,25 @@
+Tue Nov  3 03:21:35 PM -03 2026
+NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  615.78.08  Release Build  (root@omarchy)  
+ 15:21:35 up 3 days, 5 min,  1 user,  load average: 3.30, 6.31, 4.67
+git: 7fb449ff79058506c79fa37ea3c3a3985d787c0d (0 arquivos alterados fora desta pasta)
+415ae81f1a2efa1de8800eae8f1e741cdcad6ce1d3661656fd7e4437ca5a3826  qual-runs/A1-DIAG10-20261103/criterio.txt
+23eaf71e5844c48757fb6fd5371783f05bc6c63b41fd9bd4d96fb55648e2f230  qual-runs/A1-DIAG10-20261103/rodar.sh
+578d190ce4015e51133cc41f74a54521d2806a2cfdfab246d8fc175fe7a83b0f  qual-runs/A1-DIAG10-20261103/analise.py
+55bdff614f4c7b8360766c2366e45f5cc8d6260fedcfb52326167311379ebc00  qual-runs/A1-DIAG10-20261103/decide.py
+timers parados: omabackup-sync.timer omabackup-push.timer inventory-collect.timer
+timers monitorados (estado antes):
+omabackup-sync.timer timer: is-active=active is-enabled=enabled
+omabackup-sync.service service: is-active=inactive is-enabled=static
+omabackup-push.timer timer: is-active=active is-enabled=enabled
+omabackup-push.service service: is-active=inactive is-enabled=static
+inventory-collect.timer timer: is-active=active is-enabled=enabled
+inventory-collect.service service: is-active=inactive is-enabled=linked
+teto de temperatura: sem teto (só registro)
+GPU no começo: GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 0 %, 2 MiB, 18.83 W, 210 MHz, 39
+temperatura do pacote: 59.0 C
+processos acima de 5% de CPU no começo:
+    PID %CPU COMMAND
+ 162156 16.9 main
+3635205 15.0 main
+3629530 12.7 main
+  60662  5.5 localsearch-3
