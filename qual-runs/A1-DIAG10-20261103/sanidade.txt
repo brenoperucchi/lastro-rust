@@ -16,5 +16,7 @@ A1-DIAG10: sanidade do harness (03/11/2026, 4090 por UUID, taskset 0-15, 1B, con
 5. Fumaça do rodar.sh (etapa 2, 1 repetição, 1B, conversa 4, 60 s ociosa trocada por 1 s): os 6 blocos rodam, gravam saida.txt, ms/, freq.txt, TENTATIVA e
    temperatura no carga-e2.log; a regra 0c aprova (chamador e trabalhadores a cerca de 5,48 a 5,50 GHz nas duas linhas); a thread principal da A1m média 4,9 GHz
    no E-core 17; sha dos binários confere no começo e no fim; nenhum bloco suspenso.
-6. Tempo medido na sanidade: um bloco a1 com 3 orçamentos e 4 conversas de aquecimento não foi medido; a duração real da janela sai do tempo do bloco
-   de fumaça (cerca de 35 s para 1 conversa e 1 política) extrapolada: ver o pedido de janela. 
+6. Duração estimada da janela, a partir dos blocos do A1.4 (carga.log: 1B a1 176 s, m2a-b4 154 s; 3B a1 302 s, m2a-b4 266 s, com 3 orçamentos; aqui o 1B tem 2
+   orçamentos na etapa 1 e o resto 1): por repetição e configuração, 1B cerca de 280 s e 3B cerca de 440 s de GPU, mais 4 blocos x (60 s ociosa + cerca de 20 s
+   de espera da GPU) = cerca de 17 min. Etapa 1: 3 configurações x 5 repetições = cerca de 4,3 h. Etapa 2 (só 10%): cerca de 3,8 h com A1w e A1m, cerca de
+   2,5 h sem a A1m. As estimativas anteriores do critério (3 a 4 h e 2 a 3 h) não contavam a ociosa de 60 s; a duração só vale com esta conta.
