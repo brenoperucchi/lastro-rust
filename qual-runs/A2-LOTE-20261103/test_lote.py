@@ -223,6 +223,12 @@ class Escolha(unittest.TestCase):
             with self.assertRaises(ValueError):
                 LT.escolhe_variante(ruim)
 
+    def test_todas_excluidas_nao_escolhe_nenhuma(self):
+        ruins = {v: so_n1(v, 4.96, 5.19, err=2e-3) for v in (0, 1, 2)}
+        v, d = LT.escolhe_variante(ruins)
+        self.assertIsNone(v)
+        self.assertEqual(d, {0: None, 1: None, 2: None})
+
     def test_cabecalho_da_selecao(self):
         ideal = so_n1(2, 4.96, 5.19)
         for ruim in (ideal.replace(LT.UUID_4090, "GPU-0"), ideal.replace("reps=15 replays=10", "reps=3 replays=2"),
@@ -277,6 +283,13 @@ class Principal(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 rc = LT.principal(g, c, self.carrega, e)
             return rc, buf.getvalue()
+
+    def test_gpu_rapida_ou_outra_placa_nao_decide_pelo_principal(self):
+        cpu = cpu_txt(lambda n: 1)
+        ok = gpu_txt(lambda n: 1, lambda n: 1)
+        self.assertEqual(self.roda_principal(ok, cpu)[0], 0)
+        for ruim in (ok.replace("reps=15", "reps=3"), ok.replace("modo=completo", "modo=rapido"), ok.replace(LT.UUID_4090, "GPU-0")):
+            self.assertEqual(self.roda_principal(ruim, cpu)[0], 1)
 
     def test_variante_da_gpu_tem_de_ser_a_escolhida(self):
         g, c = gpu_txt(lambda n: 1, lambda n: 1), cpu_txt(lambda n: 1)
