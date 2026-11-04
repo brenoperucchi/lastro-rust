@@ -35,14 +35,24 @@ class SimM(moe_sim.Sim):
         super().__init__("lfu_cpu", int(frac * L * E), L, E, k, p, protocol="token")
         self.limite, self.M = limite, 1
 
+    def wg(self, n):
+        """Custo relativo de um expert com n posições na GPU (ponto de extensão do A2-LOTE)."""
+        return n if self.limite == "pessimista" else 1
+
+    def wc(self, n):
+        """Idem na CPU."""
+        return self.wg(n)
+
+    def gm(self):
+        """Fator do g da camada com M posições."""
+        return self.M if self.limite == "pessimista" else 1
+
     def layer_m(self, l, es, ns):
         p, M = self.p, self.M
-        pess = self.limite == "pessimista"
-        w = (lambda n: n) if pess else (lambda n: 1)
         self.cur_layer = l
         if l == 0:
             self.begin_token()
-        self.now += p["g"] * (M if pess else 1)
+        self.now += p["g"] * self.gm()
         if l > 0:
             self.release_deferred(l - 1)
         start = self.now
@@ -63,12 +73,12 @@ class SimM(moe_sim.Sim):
                 if key in self.resident:
                     self.resident.move_to_end(key)
                     self.push(key)
-                hsum += p["h"] * w(n)
+                hsum += p["h"] * self.wg(n)
                 self.stats["hits"] += n
                 self.reserved.pop(key, None)
                 continue
-            cpu_t += c_cpu * w(n)
-            cpu_w += w(n)
+            cpu_t += c_cpu * self.wc(n)
+            cpu_w += self.wc(n)
             self.stats["cpu"] += n
             if key in self.inflight:
                 self.requested[key] = self.step        # falta com cópia em voo: CPU, sem nova admissão
