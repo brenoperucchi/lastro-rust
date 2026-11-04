@@ -64,23 +64,41 @@ def validos(tab, lado):
     return mot
 
 
+CAB_SEL = re.compile(r"^# modo=so-n1 reps=15 replays=10\s*$", re.M)
+
+
 def escolhe_variante(textos):
-    """Seleção da variante do kernel de GPU (criterio.txt v1.2, seção 6): textos = {variante: saída de `lote_gpu --so-n1 --var=V`}.
-    Vale a de menor max sobre os dois modelos de |t(1)/h − 1| (h do motor); empate, a de menor número. Só olha n=1 e a correção;
-    variante com correção reprovada ou tempo inválido não concorre. Devolve (variante, {variante: desvio})."""
+    """Seleção da variante do kernel de GPU (criterio.txt v1.2, seção 6): textos = {variante: saída de `lote_gpu --so-n1 --var=V`}, EXATAMENTE
+    as variantes 0, 1 e 2, uma saída cada (ausência, duplicata ou variante fora de {0,1,2} é erro: ValueError). Cada saída tem de ter
+    `# modo=so-n1 reps=15 replays=10`, o UUID da 4090 e a própria variante. Vale a de menor max sobre os dois modelos de |t(1)/h − 1| (h do
+    motor); empate, a de menor número; variante com saída inválida, correção reprovada ou tempo inválido não concorre (continua registrada).
+    Só olha n=1 e a correção: não usa o w(n). Devolve (variante, {variante: desvio ou None se excluída})."""
+    if sorted(textos) != [0, 1, 2]:
+        raise ValueError(f"a seleção exige exatamente as variantes 0, 1 e 2, uma saída cada (vieram {sorted(textos)})")
     desv = {}
     for v, t in sorted(textos.items()):
+        desv[v] = None
         tab = parse(t, "gpu")
-        if not re.search(r"^# modo=so-n1\b", t, re.M) or not re.search(rf"^# variante={v}\s*$", t, re.M):
-            continue
-        if any((mod, 1) not in tab for mod in ("1b", "3b")) or validos({k: r for k, r in tab.items()}, "GPU"):
+        ok_cab = CAB_SEL.search(t) and re.search(rf"^# variante={v}\s*$", t, re.M) and re.search(rf"^# dispositivo: .* uuid={re.escape(UUID_4090)}\s*$", t, re.M)
+        if not ok_cab or set(tab) != {("1b", 1), ("3b", 1)} or validos(tab, "GPU"):
             continue
         if not all(tab[(mod, 1)]["err"] <= TOL_GPU_ERR for mod in ("1b", "3b")):
             continue
         desv[v] = max(abs(tab[(mod, 1)]["lote"] / (MP.moe_sim.PARAMS_RUNTIME[mod]["h"] * 1000) - 1) for mod in ("1b", "3b"))
-    if not desv:
+    vivas = {v: d for v, d in desv.items() if d is not None}
+    if not vivas:
         return None, desv
-    return min(desv, key=lambda v: (desv[v], v)), desv
+    return min(vivas, key=lambda v: (vivas[v], v)), desv
+
+
+def le_escolha(caminho):
+    """Variante escrita no escolha.txt (linha 'VARIANTE ESCOLHIDA: V') ou None."""
+    try:
+        with open(caminho) as f:
+            m = re.search(r"^VARIANTE ESCOLHIDA: ([012])\s*$", f.read(), re.M)
+    except OSError:
+        return None
+    return int(m.group(1)) if m else None
 
 
 def portoes(gpu, cpu):
@@ -175,11 +193,17 @@ def calcula(gpu, cpu, carrega=MP.carrega, fracs=(0.10,)):
     return ganhos, tempos
 
 
-def principal(gpu_txt, cpu_txt, carrega=MP.carrega):
+def principal(gpu_txt, cpu_txt, carrega=MP.carrega, escolha=None):
     with open(gpu_txt) as f, open(cpu_txt) as h:
         tg, tc = f.read(), h.read()
     gpu, cpu = parse(tg, "gpu"), parse(tc, "cpu")
     mot = cabecalho(tg, "GPU") + cabecalho(tc, "CPU") + portoes(gpu, cpu)
+    v = le_escolha(escolha) if escolha else None
+    m = re.search(r"^# variante=([012])\s*$", tg, re.M)
+    if v is None:
+        mot.append("sem escolha.txt válido (a variante da execução completa tem de ser a escolhida pela seleção)")
+    elif not m or int(m.group(1)) != v:
+        mot.append(f"a variante da GPU ({m.group(1) if m else '?'}) não é a escolhida pela seleção ({v})")
     if not mot:
         print("=== Tempo medido por expert (us) e w(n) = t(n)/t(1) ===")
         for mod in ("1b", "3b"):
@@ -217,15 +241,22 @@ def principal(gpu_txt, cpu_txt, carrega=MP.carrega):
 
 if __name__ == "__main__":
     if sys.argv[1] == "--escolhe":
-        txt = {}
+        import hashlib
+        txt, shas = {}, {}
         for f in sys.argv[2:]:
-            with open(f) as h:
-                t = h.read()
-            m = re.search(r"^# variante=(\d)", t, re.M)
-            if m:
-                txt[int(m.group(1))] = t
-        v, d = escolhe_variante(txt)
-        print("desvios |t(1)/h-1| (pior dos dois modelos):", {k: round(x, 3) for k, x in d.items()})
-        print("VARIANTE ESCOLHIDA:", v)
+            with open(f, "rb") as h:
+                raw = h.read()
+            m = re.search(rb"^# variante=(\d+)", raw, re.M)
+            if not m or int(m.group(1)) in txt:
+                sys.exit(f"erro: {f}: sem variante ou variante repetida")
+            txt[int(m.group(1))] = raw.decode()
+            shas[int(m.group(1))] = (f, hashlib.sha256(raw).hexdigest())
+        try:
+            v, d = escolhe_variante(txt)
+        except ValueError as e:
+            sys.exit(f"erro: {e}")
+        saida = ["desvios |t(1)/h-1| (pior dos dois modelos; None = excluída):"] + [f"  variante {k}: {x if x is None else round(x, 4)}  {shas[k][0]} sha256={shas[k][1]}" for k, x in sorted(d.items())]
+        saida.append(f"VARIANTE ESCOLHIDA: {v}")
+        print("\n".join(saida))
         sys.exit(0 if v is not None else 1)
-    sys.exit(principal(sys.argv[1], sys.argv[2]))
+    sys.exit(principal(sys.argv[1], sys.argv[2], escolha=sys.argv[3] if len(sys.argv) > 3 else None))

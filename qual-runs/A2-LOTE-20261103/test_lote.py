@@ -182,27 +182,61 @@ def so_n1(var, t1b, t3b, err=1e-7, modo="so-n1"):
 
 
 class Escolha(unittest.TestCase):
+    def tres(self, mod=None):
+        base = {0: so_n1(0, 6.05, 7.65), 1: so_n1(1, 6.45, 6.23), 2: so_n1(2, 4.46, 7.27)}
+        base.update(mod or {})
+        return base
+
     def test_menor_desvio_do_pior_modelo(self):
         # h: 1b 4.96, 3b 5.19. v0: 3b +47% ; v1: 1b +30% e 3b +20%; v2: 1b -10% e 3b +40%
-        v, d = LT.escolhe_variante({0: so_n1(0, 6.05, 7.65), 1: so_n1(1, 6.45, 6.23), 2: so_n1(2, 4.46, 7.27)})
+        v, d = LT.escolhe_variante(self.tres())
         self.assertEqual(v, 1)
         self.assertLess(d[1], d[2])
         self.assertLess(d[2], d[0])
 
+    def test_max_e_nao_soma_nem_media(self):
+        # v1: desvios 0.30 e 0.30 (soma 0.60, max 0.30); v2: 0.00 e 0.45 (soma 0.45, max 0.45): o max escolhe a 1, a soma escolheria a 2
+        t = {0: so_n1(0, 9.0, 9.0), 1: so_n1(1, 4.96 * 1.3, 5.19 * 1.3), 2: so_n1(2, 4.96, 5.19 * 1.45)}
+        self.assertEqual(LT.escolhe_variante(t)[0], 1)
+
+    def test_abs_desvio_abaixo_do_motor_conta(self):
+        # v1 muito abaixo do motor (-50%) perde para v2 (+10%)
+        t = {0: so_n1(0, 9.0, 9.0), 1: so_n1(1, 4.96 * 0.5, 5.19 * 0.5), 2: so_n1(2, 4.96 * 1.1, 5.19 * 1.1)}
+        self.assertEqual(LT.escolhe_variante(t)[0], 2)
+
     def test_empate_vai_para_o_menor_numero(self):
-        v, _ = LT.escolhe_variante({2: so_n1(2, 5.0, 5.2), 1: so_n1(1, 5.0, 5.2)})
+        v, _ = LT.escolhe_variante(self.tres({"0": None}) if False else {0: so_n1(0, 9, 9), 1: so_n1(1, 5.0, 5.2), 2: so_n1(2, 5.0, 5.2)})
         self.assertEqual(v, 1)
 
     def test_correcao_ou_tempo_invalido_nao_concorre(self):
-        v, d = LT.escolhe_variante({0: so_n1(0, 5.0, 5.2, err=2e-3), 1: so_n1(1, 7.0, 7.0)})
+        v, d = LT.escolhe_variante(self.tres({0: so_n1(0, 4.96, 5.19, err=2e-3)}))
         self.assertEqual(v, 1)
-        self.assertNotIn(0, d)
-        v, d = LT.escolhe_variante({0: so_n1(0, 0.0, 5.2), 1: so_n1(1, 7.0, 7.0)})
-        self.assertEqual(v, 1)
+        self.assertIsNone(d[0])
+        for ruim in (so_n1(0, 0.0, 5.19), so_n1(0, "nan", 5.19), so_n1(0, 4.96, 5.19).replace("serial_us=4.96", "serial_us=0.0")):
+            v, d = LT.escolhe_variante(self.tres({0: ruim}))
+            self.assertEqual(v, 1)
+            self.assertIsNone(d[0])
 
-    def test_modo_ou_variante_trocados_nao_concorrem(self):
-        v, d = LT.escolhe_variante({0: so_n1(0, 5.0, 5.2, modo="completo"), 1: so_n1(2, 5.0, 5.2)})
-        self.assertIsNone(v)
+    def test_exige_exatamente_as_tres_variantes(self):
+        t = self.tres()
+        for ruim in ({0: t[0], 1: t[1]}, {**t, 3: so_n1(3, 5, 5)}, {1: t[1], 2: t[2], 3: t[0]}):
+            with self.assertRaises(ValueError):
+                LT.escolhe_variante(ruim)
+
+    def test_cabecalho_da_selecao(self):
+        ideal = so_n1(2, 4.96, 5.19)
+        for ruim in (ideal.replace(LT.UUID_4090, "GPU-0"), ideal.replace("reps=15 replays=10", "reps=3 replays=2"),
+                     ideal.replace("# modo=so-n1", "# modo=completo"), ideal.replace("# variante=2", "# variante=1"),
+                     ideal.replace("# dispositivo", "# x")):
+            v, d = LT.escolhe_variante(self.tres({2: ruim}))
+            self.assertEqual(v, 1)
+            self.assertIsNone(d[2])
+        self.assertEqual(LT.escolhe_variante(self.tres({2: ideal}))[0], 2)
+
+    def test_so_as_linhas_de_n1(self):
+        extra = so_n1(2, 4.96, 5.19) + "GPU 1b n=2 lote_us=5 serial_us=5 err_lote_serial=0 err_ref=0\n"
+        v, d = LT.escolhe_variante(self.tres({2: extra}))
+        self.assertIsNone(d[2])
 
     def test_principal_exige_linha_de_variante(self):
         sem = gpu_txt(lambda n: 1, lambda n: 1).replace("# variante=0\n", "")
@@ -230,16 +264,28 @@ class Principal(unittest.TestCase):
     def carrega(self, mod):
         return [self.traco(1), self.traco(2)], [self.traco(3)]
 
-    def roda_principal(self, gtxt, ctxt):
+    def roda_principal(self, gtxt, ctxt, escolha="VARIANTE ESCOLHIDA: 0\n"):
         with tempfile.TemporaryDirectory() as d:
-            g, c = os.path.join(d, "g.txt"), os.path.join(d, "c.txt")
+            g, c, e = os.path.join(d, "g.txt"), os.path.join(d, "c.txt"), os.path.join(d, "escolha.txt")
             with open(g, "w") as f, open(c, "w") as h:
                 f.write(gtxt)
                 h.write(ctxt)
+            if escolha is not None:
+                with open(e, "w") as f:
+                    f.write(escolha)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = LT.principal(g, c, self.carrega)
+                rc = LT.principal(g, c, self.carrega, e)
             return rc, buf.getvalue()
+
+    def test_variante_da_gpu_tem_de_ser_a_escolhida(self):
+        g, c = gpu_txt(lambda n: 1, lambda n: 1), cpu_txt(lambda n: 1)
+        self.assertEqual(self.roda_principal(g, c, "VARIANTE ESCOLHIDA: 0\n")[0], 0)
+        rc, out = self.roda_principal(g, c, "VARIANTE ESCOLHIDA: 1\n")
+        self.assertEqual(rc, 1)
+        self.assertIn("não é a escolhida", out)
+        self.assertEqual(self.roda_principal(g, c, None)[0], 1)
+        self.assertEqual(self.roda_principal(g, c, "lixo\n")[0], 1)
 
     def test_portao_reprovado_nao_simula(self):
         chamadas = []

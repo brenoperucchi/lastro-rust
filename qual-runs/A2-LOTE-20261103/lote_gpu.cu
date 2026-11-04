@@ -130,6 +130,7 @@ int main(int argc, char** argv) {
     else if (!strncmp(argv[i], "--var=", 6)) g_var = atoi(argv[i] + 6);
     else { fprintf(stderr, "argumento desconhecido %s\n", argv[i]); return 2; }
   }
+  if (so_n1 && rapido) { fprintf(stderr, "--so-n1 e --rapido não se combinam\n"); return 2; }
   if (g_var < 0 || g_var > 2) { fprintf(stderr, "--var=0|1|2\n"); return 2; }
   int reps = rapido ? 3 : 15, replays = rapido ? 2 : 10;
   cudaDeviceProp pr; CK(cudaGetDeviceProperties(&pr, 0));
