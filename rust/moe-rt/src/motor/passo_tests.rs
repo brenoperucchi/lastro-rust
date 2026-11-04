@@ -692,19 +692,25 @@ fn event_e_falhas_com_m_maior_que_um_encerram_limpo() {
 }
 
 /// A falha da `n`-ésima operação da stream principal, para as primeiras `n` de um passo de 8 posições (a do `begin_step` inclusa, que só
-/// existe com `max_positions > 1`): sempre chega ao chamador ou fecha limpo, sem violação, travamento nem fila pendente.
+/// existe com `max_positions > 1`): chega ao chamador e fecha limpo, sem violação, travamento nem fila pendente. Com `[8, 3]` e `n` até 8,
+/// toda falha cai dentro do primeiro passo, então o erro tem de existir (um `begin_step` engolido seria acusado em `n = 1`).
 #[test]
 fn falha_nas_primeiras_operacoes_da_principal_com_passo_de_oito_encerra_limpo() {
     for n in 1..=8u64 {
         for admit in [AdmitMode::Event, AdmitMode::TokenBarrier] {
             let (err, viol, stalled, q) = sonda(admit, &[8, 3], FalhaR::Main(n), sched_a(), 3, 2);
             assert!(viol.is_empty() && !stalled && q == (0, 0), "n = {n}, {admit:?}: {err:?} {viol:?} {q:?}");
+            assert!(err.is_some(), "n = {n}, {admit:?}: a falha da principal tem de chegar ao chamador");
         }
+        // Controle: sem injeção o mesmo caso termina com sucesso.
+        let (err, viol, stalled, q) = sonda(AdmitMode::TokenBarrier, &[8, 3], FalhaR::Nada, sched_a(), 3, 2);
+        assert!(err.is_none() && viol.is_empty() && !stalled && q == (0, 0), "controle: {err:?} {viol:?}");
     }
 }
 
-/// As fases do `sync`, separadas por fronteira observável: a partida (dentro de `Engine::new`), um por passo de cálculo do chamador, e
-/// o fechamento (que sincroniza as duas streams). A contagem por passo é a mesma com M = 1 e M = 8.
+/// As fases do `sync`, separadas por fronteira observável e só depois de a fase terminar: a partida (o primeiro `Published` só chega com
+/// o serviço já iniciado), um `sync` de cálculo do chamador por passo (lido depois do `Published` que confirma o último passo), e o
+/// fechamento (que soma `sync` de cálculo do chamador e de cópia do serviço). A contagem por passo é a mesma com M = 1 e M = 8.
 #[test]
 fn sync_separa_partida_passos_e_fechamento() {
     for passos in [vec![1usize; 8], vec![8]] {
@@ -717,19 +723,24 @@ fn sync_separa_partida_passos_e_fechamento() {
                            prefill: vec![0], max_positions: 8, mutant: None };
         let parts = gpu.parts(&cfg);
         let mut eng = Engine::new(gpu.clone(), parts, cfg, FakeCpu { weighted: true, ..Default::default() }).unwrap();
+        let mut p = eng.next_published().unwrap();
         let partida = gpu.sync_counts();
+        assert_eq!(partida[2], [0, 0], "o chamador não sincroniza na partida: {partida:?}");
         for &mm in &passos {
-            let p = eng.next_published().unwrap();
             eng.enqueue_step(p, mm).unwrap();
             eng.finish_token().unwrap();
+            p = eng.next_published().unwrap();
         }
+        drop(p);
         let passos_fim = gpu.sync_counts();
-        assert_eq!(partida[2], [0, 0], "o chamador não sincroniza na partida: {partida:?}");
-        assert_eq!(passos_fim[2], [passos.len() as u64, 0], "um sync de cálculo por passo: {passos_fim:?}");
-        let _ = eng.next_published().map(drop);
+        let n = passos.len() as u64;
+        assert_eq!(passos_fim[2], [n, 0], "um sync de cálculo por passo: {passos_fim:?}");
+        assert_eq!(passos_fim[1][0], 0, "o serviço nunca sincroniza o cálculo: {passos_fim:?}");
+        assert!(passos_fim[1][1] >= partida[1][1] + n, "o serviço sincroniza a cópia a cada passo: {passos_fim:?} {partida:?}");
         eng.close().unwrap();
         let fim = gpu.sync_counts();
-        assert!(fim[2][0] + fim[2][1] + fim[1][1] + fim[1][0] >= passos_fim[2][0] + passos_fim[1][1], "o fechamento só soma: {fim:?}");
+        assert!(fim[2][0] > passos_fim[2][0], "o fechamento sincroniza o cálculo: {fim:?} {passos_fim:?}");
+        assert!(fim[1][1] > passos_fim[1][1], "o fechamento drena a cópia do serviço: {fim:?} {passos_fim:?}");
         assert_eq!(fim[1][0], 0, "o serviço nunca sincroniza o cálculo: {fim:?}");
     }
 }
