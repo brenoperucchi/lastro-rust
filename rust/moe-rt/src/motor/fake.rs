@@ -128,6 +128,8 @@ struct State {
     /// A posição global da sequência e o tamanho do passo corrente da GPU (só com `max_positions > 1`; `BeginStep` os instala em ordem FIFO).
     pos: usize,
     m: usize,
+    /// Só para teste: a palavra `m` escrita na camada indicada, no lugar do `m` do passo (um backend que erra entre camadas).
+    m_word_override: Option<(usize, u32)>,
     /// `hits[camada][posição]`: as chaves lançadas na GPU naquela posição.
     hits: Vec<Vec<Vec<u32>>>,
     /// A fila de cálculo passou de uma flag com o valor de soltura: dali em diante o `y` não é conferido.
@@ -206,7 +208,11 @@ fn step(st: &mut State, cfg: &FakeCfg, q: usize) -> bool {
                         io.x[p * w + j].store(x_value(gpos, *layer, j), Ordering::Relaxed);
                     }
                 }
-                io.m[0].store(m as u32, Ordering::Relaxed);
+                let word = match st.m_word_override {
+                    Some((l, v)) if l == *layer => v,
+                    _ => m as u32,
+                };
+                io.m[0].store(word, Ordering::Relaxed);
             }
         }
         Op::Launch { layer, table, io, .. } => {
@@ -280,6 +286,7 @@ impl FakeGpu {
             token: 0,
             pos: 0,
             m: 1,
+            m_word_override: None,
             hits: vec![vec![Vec::new(); cfg.max_positions]; cfg.layers],
             released: false,
             violations: Vec::new(),
@@ -327,6 +334,11 @@ impl FakeGpu {
         });
         *g.exec.lock().unwrap_or_else(|e| e.into_inner()) = Some(h);
         g
+    }
+
+    /// Só para teste: a camada `layer` passa a gravar `word` na palavra `m` (diferente da dos outros passos).
+    pub fn set_m_word_override(&self, layer: usize, word: u32) {
+        lock(&self.st).m_word_override = Some((layer, word));
     }
 
     /// Para o executor (depois de o motor cair).

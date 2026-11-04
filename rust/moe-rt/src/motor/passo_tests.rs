@@ -384,3 +384,27 @@ fn read_step_recusa_m_fora_da_faixa_e_espera_a_seq() {
     let (seq, io) = area_cheia(k, w, mp, 2);
     assert!(read_step(&seq, &io, 6, false, k, w, mp).is_none(), "seq ainda em 5: não alcançou 6");
 }
+
+/// `m` divergente entre camadas do mesmo passo (o backend grava 2 na camada 0 e 3 na camada 1) derruba o motor sem travar e sem
+/// violação; com a camada de `m` igual o mesmo passo é servido.
+#[test]
+fn m_divergente_entre_camadas_derruba_o_motor() {
+    for (diverge, ok) in [(false, true), (true, false)] {
+        let gpu = fake(MP);
+        if diverge {
+            gpu.set_m_word_override(1, 3);
+        }
+        let cfg = config(MP);
+        let parts = gpu.parts(&cfg);
+        let mut eng = Engine::new(gpu.clone(), parts, cfg, FakeCpu::default()).unwrap();
+        let p = eng.next_published().unwrap();
+        let r = eng.enqueue_step(p, 2).and_then(|_| eng.finish_token());
+        assert_eq!(r.is_ok(), ok, "diverge = {diverge}: {r:?}");
+        let fim = eng.close();
+        assert_eq!(fim.is_ok(), ok, "close: {fim:?}");
+        gpu.shutdown();
+        assert!(!gpu.stalled());
+        assert_eq!(gpu.violations(), vec![], "diverge = {diverge}");
+        assert_eq!(gpu.queued(), (0, 0), "filas drenadas, diverge = {diverge}");
+    }
+}

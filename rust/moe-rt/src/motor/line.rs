@@ -797,4 +797,54 @@ mod candidato_tests {
         svc.copy_after_reader(a, 1, &served).unwrap();
         assert!(matches!(svc.copy_after_reader(b, 2, &served), Err(Error::Config(_))), "o slot da vítima já foi usado");
     }
+
+    /// Monta um `Service` sobre o falso, com `prefill` residente e áreas de até 4 posições.
+    fn servico(prefill: Vec<u32>) -> (Arc<FakeGpu>, Service<FakeGpu>, Arc<Shared<FakeGpu>>) {
+        let cfg = Config { layers: 2, experts: 4, topk: 2, width: 2, slots: 4, backlog: 4, admit: AdmitMode::TokenBarrier,
+                           first_token: 1, prefill, max_positions: 4, mutant: None };
+        let gpu = FakeGpu::new_executor(FakeCfg { layers: 2, experts: 4, topk: 2, width: 2, routing: vec![], fail_main_at: None,
+                                                  copy_immediate: false, max_positions: 4 });
+        let parts = gpu.parts(&cfg);
+        let sh = Arc::new(Shared {
+            id: 1,
+            seq: parts.seq.into_iter().map(Arc::new).collect(),
+            flag: parts.flag.into_iter().map(Arc::new).collect(),
+            io: parts.io.into_iter().map(Arc::new).collect(),
+            bank: parts.bank,
+            ready: parts.ready,
+            cancel: AtomicBool::new(false),
+            poison: AtomicBool::new(false),
+            cur_t: AtomicU32::new(1),
+            published: Chan::new(),
+            returned: Chan::new(),
+        });
+        let svc = Service::new(gpu.clone(), sh.clone(), Arc::new(parts.copy), parts.weights, cfg, parts.sides);
+        (gpu, svc, sh)
+    }
+
+    /// Regra da versão (contrato, U2): uma chave residente pedida por 3 posições sobe a versão UMA vez; a não residente não muda.
+    /// O oráculo B não vê isso (a versão só desempata vítimas empatadas na pontuação).
+    #[test]
+    fn versao_sobe_uma_vez_por_chave_residente_da_uniao() {
+        let (gpu, mut svc, sh) = servico(vec![0]);
+        let epoch = svc.start().unwrap();
+        // Camada 0, m = 3: o expert 0 (residente) em todas as posições, mais o 1 (não residente) na última.
+        let ids = [0u32, 0, 0, 0, 0, 1];
+        let io = &sh.io[0];
+        for (a, &v) in io.ids.iter().zip(ids.iter().chain([0, 0].iter())) {
+            a.store(v, Ordering::Relaxed);
+        }
+        io.m[0].store(3, Ordering::Relaxed);
+        sh.seq[0].store(1, Ordering::Release);
+        let (v0, v1) = (svc.version[0], svc.version[1]);
+        let view = svc.serve_layer(&epoch, 0).unwrap();
+        assert_eq!(view.m(), 3);
+        assert_eq!(svc.version[0], v0 + 1, "uma vez por chave da união, não por ocorrência");
+        assert_eq!(svc.version[1], v1, "a não residente não muda");
+        assert_eq!((svc.stats.needed, svc.stats.hits, svc.stats.cpu), (6, 5, 1));
+        drop(view);
+        sh.cancel.store(true, Ordering::Release);
+        drop(svc);
+        gpu.shutdown();
+    }
 }
