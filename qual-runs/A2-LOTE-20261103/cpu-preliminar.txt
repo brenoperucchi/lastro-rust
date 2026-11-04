@@ -1,0 +1,27 @@
+# Execuções preliminares do lote-cpu, guardadas por transparência (a medida que decide é nova, completa, na janela da GPU).
+# (1) v1 do lote-cpu (um expert por par de despachos, SwiGLU serial), modo --rapido, P-cores 0-15, 3/11/2026 ~21:58:
+CPU 1b n=1 us_por_expert=41.30 max_err_rel=0.00e0
+CPU 1b n=2 us_por_expert=43.42 max_err_rel=2.22e-7
+CPU 1b n=4 us_por_expert=52.71 max_err_rel=2.92e-7
+CPU 1b n=8 us_por_expert=64.48 max_err_rel=3.42e-7
+CPU 1b n=16 us_por_expert=98.30 max_err_rel=3.80e-7
+CPU 1b n=32 us_por_expert=215.99 max_err_rel=3.78e-7
+CPU 3b n=1 us_por_expert=64.81 max_err_rel=0.00e0
+CPU 3b n=2 us_por_expert=71.14 max_err_rel=4.17e-7
+CPU 3b n=4 us_por_expert=73.43 max_err_rel=3.29e-7
+CPU 3b n=8 us_por_expert=88.17 max_err_rel=4.53e-7
+CPU 3b n=16 us_por_expert=138.38 max_err_rel=3.87e-7
+CPU 3b n=32 us_por_expert=295.93 max_err_rel=4.10e-7
+# (2) v1.1 (K=6 por despacho, SwiGLU no Pool), modo --rapido, ~22:15:
+CPU 1b n=1 us_por_expert=36.48 max_err_rel=0.00e0
+CPU 1b n=2 us_por_expert=35.27 max_err_rel=2.71e-7
+CPU 1b n=4 us_por_expert=39.09 max_err_rel=3.17e-7
+CPU 1b n=8 us_por_expert=47.57 max_err_rel=4.40e-7
+CPU 1b n=16 us_por_expert=103.94 max_err_rel=4.28e-7
+CPU 1b n=32 us_por_expert=228.40 max_err_rel=3.92e-7
+CPU 3b n=1 us_por_expert=54.06 max_err_rel=0.00e0
+CPU 3b n=2 us_por_expert=59.25 max_err_rel=3.82e-7
+CPU 3b n=4 us_por_expert=58.52 max_err_rel=4.07e-7
+CPU 3b n=8 us_por_expert=76.18 max_err_rel=4.93e-7
+CPU 3b n=16 us_por_expert=154.67 max_err_rel=4.43e-7
+CPU 3b n=32 us_por_expert=298.64 max_err_rel=5.02e-7

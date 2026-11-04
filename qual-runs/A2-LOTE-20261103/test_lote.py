@@ -175,6 +175,18 @@ class Reforcos(unittest.TestCase):
         self.assertIn("NÃO VALE", LT.decide(g, True))
 
 
+class CamposGpu(unittest.TestCase):
+    def test_cada_campo_invalido_reprova_no_parser(self):
+        base = gpu_txt(lambda n: 1, lambda n: 1)
+        c = LT.parse(cpu_txt(lambda n: 1), "cpu")
+        for campo in ("err_lote_serial", "err_ref"):
+            for v in ("-0.1", "-inf", "inf", "nan"):
+                t = base.replace(f"{campo}=1.00e-05", f"{campo}={v}", 1)
+                self.assertNotEqual(t, base)
+                self.assertTrue(LT.portoes(LT.parse(t, "gpu"), c), (campo, v))
+        self.assertEqual(LT.portoes(LT.parse(base, "gpu"), c), [])
+
+
 class Principal(unittest.TestCase):
     def traco(self, seed, L=3, T=64, E=16, k=2):
         rng = np.random.default_rng(seed)
@@ -205,6 +217,31 @@ class Principal(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertEqual(chamadas, [])
         self.assertIn("SEM DECISÃO", out)
+
+    def test_cpu_sem_cabecalho_ou_rapido_nao_decide(self):
+        rc, out = self.roda_principal(gpu_txt(lambda n: 1, lambda n: 1), cpu_txt(lambda n: 1, cab=False))
+        self.assertEqual(rc, 1)
+        rc, _ = self.roda_principal(gpu_txt(lambda n: 1, lambda n: 1), cpu_txt(lambda n: 1).replace("completo reps=15", "rapido reps=3"))
+        self.assertEqual(rc, 1)
+
+    def test_decide_so_ve_10_por_cento_e_roda_usa_coluna_lote(self):
+        vistos, wgs = [], []
+        od, orr = LT.decide, LT.roda
+        LT.decide = lambda g, ok: vistos.append(set(g)) or "x"
+        def roda(mod, frac, M, wg, wc, modo, tr, te):
+            wgs.append((mod, wg(8), wc(8)))
+            return orr(mod, frac, M, wg, wc, modo, tr, te)
+        LT.roda = roda
+        try:
+            gt = gpu_txt(lambda n: 1 + 0.5 * (n - 1), lambda n: 1 + 0.5 * (n - 1))
+            self.roda_principal(gt, cpu_txt(lambda n: 1 + 0.02 * (n - 1)))
+        finally:
+            LT.decide, LT.roda = od, orr
+        self.assertEqual(len(vistos[0]), 2 * 2 * len(MP.MS))        # 2 modelos x 2 modos x 6 M, só 10%
+        g = LT.parse(gt, "gpu")
+        esperado = LT.tabela_w(g, "1b")[0](8)
+        self.assertTrue(any(m == "1b" and abs(a - esperado) < 1e-9 for m, a, _ in wgs))
+        self.assertFalse(any(abs(a - 8.0) < 1e-6 for _, a, _ in wgs))   # a coluna serial daria w=8
 
     def test_ganhos_usam_as_tabelas_certas_a_10_e_25(self):
         g = LT.parse(gpu_txt(lambda n: 1 + 0.5 * (n - 1), lambda n: 1 + 0.5 * (n - 1)), "gpu")

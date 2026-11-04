@@ -1,8 +1,8 @@
-// A2-LOTE (GPU): tempo de UM expert do Granite para n posições juntas. Critério: criterio.txt (v1).
+// A2-LOTE (GPU): tempo de UM expert do Granite para n posições juntas. Critério: criterio.txt (v1.1).
 // Kernel de lote dedicado em CUDA C++ (não é o cutile do motor): um warp por linha de peso, a linha vai UMA vez para registradores
 // e é usada pelas n posições. Dois kernels por expert (gate_up+SwiGLU, depois down), 64 experts em rodízio dentro de um CUDA Graph.
 // Também mede a variante "serial" (n execuções de n=1 seguidas do MESMO expert; da 2ª em diante os pesos vêm da L2, então é informativo e NÃO é o w=n da DRAM). Uso: CUDA_VISIBLE_DEVICES=<UUID da 4090> lote_gpu [--rapido]
-// Saída: GPU <modelo> n=<n> lote_us=<x> serial_us=<y> err_lote=<e> err_serial=<e> err_ref=<e>   (saída 3 se algum erro > 1e-3)
+// Saída: GPU <modelo> n=<n> lote_us=<x> serial_us=<y> err_lote_serial=<e> err_ref=<e>   (saída 3 se algum erro > 1e-3)
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
 #include <cstdio>

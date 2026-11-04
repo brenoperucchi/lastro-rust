@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A2-LOTE: aplica o custo de lote MEDIDO do expert (lote_gpu e lote-cpu) ao SimM do A2-MULTIPOS-SIM. Critério: criterio.txt (v1).
+"""A2-LOTE: aplica o custo de lote MEDIDO do expert (lote_gpu e lote-cpu) ao SimM do A2-MULTIPOS-SIM. Critério: criterio.txt (v1.1).
 Uso: tools/.venv-ref/bin/python -I -B qual-runs/A2-LOTE-20261103/lote.py <gpu.txt> <cpu.txt>     (sem GPU; só lê as duas saídas)
 A calibração em M=1 é a do A2-MULTIPOS-SIM (w(1)=1 por definição, nada muda em M=1) e não se repete aqui."""
 import math, os, re, sys
@@ -17,8 +17,8 @@ RE_CPU = re.compile(r"^CPU (1b|3b) n=(\d+) us_por_expert=(\S+) max_err_rel=(\S+)
 
 
 def pior(*erros):
-    """Maior erro; NaN contamina (o max do Python ignoraria o NaN)."""
-    return float("nan") if any(math.isnan(e) for e in erros) else max(erros)
+    """Maior erro; qualquer erro NaN, infinito ou negativo contamina (o max ignoraria o NaN e esconderia um campo inválido menor)."""
+    return float("nan") if any(not math.isfinite(e) or e < 0 for e in erros) else max(erros)
 
 
 def parse(texto, lado):
