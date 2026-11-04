@@ -1,0 +1,13 @@
+# modo=completo reps=15 camadas_por_rep=106 experts_por_camada=6
+CPU 1b n=1 us_por_expert=38.85 max_err_rel=0.00e0
+CPU 1b n=2 us_por_expert=38.07 max_err_rel=2.71e-7
+CPU 1b n=4 us_por_expert=38.30 max_err_rel=3.17e-7
+CPU 1b n=8 us_por_expert=47.68 max_err_rel=4.40e-7
+CPU 1b n=16 us_por_expert=83.55 max_err_rel=4.28e-7
+CPU 1b n=32 us_por_expert=165.48 max_err_rel=3.92e-7
+CPU 3b n=1 us_por_expert=58.33 max_err_rel=0.00e0
+CPU 3b n=2 us_por_expert=58.41 max_err_rel=3.82e-7
+CPU 3b n=4 us_por_expert=59.03 max_err_rel=4.07e-7
+CPU 3b n=8 us_por_expert=71.05 max_err_rel=4.93e-7
+CPU 3b n=16 us_por_expert=128.25 max_err_rel=4.43e-7
+CPU 3b n=32 us_por_expert=245.83 max_err_rel=5.02e-7

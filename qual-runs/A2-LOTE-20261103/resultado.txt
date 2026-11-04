@@ -1,0 +1,14 @@
+
+=== Portões ===
+  REPROVADOS:
+   - GPU 3b n=1: 7.65 us contra 5.19 us do motor (+47%, limite ±40%)
+
+  DECISÃO: SEM DECISÃO (portão reprovado)
+
+=== Leitura (informativa; NÃO é decisão, o portão reprovou) ===
+  A janela rodou uma vez (3/11, ~23:40), 4090 por UUID, CPU nos P-cores 0-15; saídas em gpu.txt e cpu.txt (modo completo, 15 repetições, correção ok: GPU ≤ 1,9e-7, CPU ≤ 5,0e-7).
+  Portão de representatividade em n=1: GPU 1b 6,05 us contra 4,96 do motor (+22%, ok); GPU 3b 7,65 us contra 5,19 (+47%, limite ±40%: REPROVOU); CPU 1b 38,85 contra 40,1 (-3%) e 3b 58,33 contra 61,0 (-4%), ok.
+  Pelo critério (seção 3) o resultado é "O MICROBENCH NÃO REPRESENTA O MOTOR": a tabela não entra no simulador e o limiar não se muda depois de ver o número.
+  Razões medidas, só para orientar a próxima versão (w = t(n)/t(1)): GPU 1b n=8 1,67 e n=32 4,28; GPU 3b n=8 1,69 e n=32 4,25; CPU 1b n=8 1,23 e n=32 4,26; CPU 3b n=8 1,22 e n=32 4,21. O serial da GPU (n execuções de n=1 do mesmo expert) deu 5,1x (1b) e 4,7x (3b) em n=8, perto de n.
+  Leitura em regra de negócio: o custo de calcular um expert para 8 posições juntas ficou em torno de 1,7x (GPU) e 1,2x (CPU) o de uma posição, bem abaixo dos 8x do cenário pessimista e acima do 1x do otimista; mas o kernel de GPU do 3B nesta medida ficou 47% mais lento que o do motor em n=1, então a escala absoluta da GPU não é confiável para o 3B.
+  Ressalva do kernel: CUDA C++ dedicado, x lido do L1, sem memória compartilhada; o 3B (6 vetores de 16 B por lane, mais registradores) é o que mais se afasta do cutile do motor.
