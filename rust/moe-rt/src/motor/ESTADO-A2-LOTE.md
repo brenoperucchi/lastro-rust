@@ -6,4 +6,7 @@ Feito: critério v1.1 (`qual-runs/A2-LOTE-20261103/criterio.txt`), `lote_gpu.cu`
 
 Resultado: **portão de representatividade reprovado** (GPU 3B em n=1: 7,65 us contra 5,19 do motor, +47% com limite ±40%), então a decisão é "O MICROBENCH NÃO REPRESENTA O MOTOR" e a tabela não entra no simulador. Razões informativas: w(8) ≈ 1,7 (GPU) e 1,2 (CPU). Detalhe em `qual-runs/A2-LOTE-20261103/resultado.txt`.
 
-Próximo: critério v1.2 (kernel de GPU mais próximo do cutile do motor no 3B, sem mudar limiares nem a regra) e segunda janela; precisa de aval do Breno. Alternativa: medir o kernel cutile do próprio motor em lote.
+(Histórico v1.1:) critério v1.2 (kernel de GPU mais próximo do cutile do motor no 3B, sem mudar limiares nem a regra) e segunda janela; precisa de aval do Breno. Alternativa: medir o kernel cutile do próprio motor em lote.
+
+## v1.2 (3/11, 23:5x)
+Kernel de GPU com split-K em três variantes pré-declaradas, escolhida por n=1 (variante 2); revisão nível 2 nas rodadas 56 e 57 antes da GPU. Portão reprovou de novo no 3B (7,36 us contra 5,19, +42%, limite ±40%), sem decisão; w(8) da GPU caiu para 1,36 (1B) e 1,42 (3B). Pelo critério, nenhuma terceira tentativa sem novo aval do Breno. Alternativas: medir o cutile do próprio motor em lote, ou aceitar a leitura qualitativa e seguir para o g_M. Detalhe: `qual-runs/A2-LOTE-20261103/resultado.txt`.

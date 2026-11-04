@@ -1,0 +1,13 @@
+
+=== Portões ===
+  REPROVADOS:
+   - GPU 3b n=1: 7.36 us contra 5.19 us do motor (+42%, limite ±40%)
+
+  DECISÃO: SEM DECISÃO (portão reprovado)
+
+=== Leitura (v1.2; informativa, NÃO é decisão: o portão reprovou de novo) ===
+  Seleção (so-n1, sem w): desvios de |t(1)/h-1| no pior modelo: variante 0 48,4%, variante 1 43,2%, variante 2 41,8%; escolhida a 2 (escolha.txt). Execução completa da variante 2 em gpu.txt (4090 por UUID, modo completo, correção ≤ 2,3e-7).
+  Portão em n=1: GPU 1b 5,92 us contra 4,96 (+19%, ok); GPU 3b 7,36 us contra 5,19 (+42%, limite ±40%): REPROVOU por 2 pontos. CPU (reaproveitada da janela anterior) passou.
+  Pelo critério (seção 6): sem decisão e sem terceira tentativa sem novo aval do Breno. O limiar não foi mudado.
+  Razões medidas com a variante 2, só orientação (w = t(n)/t(1)): GPU 1b n=8 1,36 e n=32 3,08; GPU 3b n=8 1,42 e n=32 3,31 (na v1.1 eram 1,67 e 1,69 em n=8). CPU: 1b n=8 1,23, 3b n=8 1,22. Serial da GPU: n=8 5,1x (1b) e 4,8x (3b).
+  Leitura em regra de negócio: nas duas medições a GPU calcula 8 posições de um expert por cerca de 1,4 a 1,7 vezes o custo de uma, e a CPU por cerca de 1,2 vezes; a conclusão qualitativa (o custo de lote fica bem mais perto do cenário otimista que do pessimista) não mudou entre v1.1 e v1.2. O que falta é a escala absoluta do kernel de GPU do 3B, que continua 42% acima do cutile do motor em n=1.
