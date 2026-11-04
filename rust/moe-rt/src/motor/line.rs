@@ -10,7 +10,7 @@
 //! `make_room` e `victim`), para o modo com barreira bater com ele: a vítima é a residente fora dos pins com o menor
 //! `(pontuação, versão, chave)`, e a versão de uma chave sobe a cada vez que o simulador a empurra no heap (no `settle` e
 //! num acerto de chave residente).
-use super::backend::{geq, release_value, Backend, HostExperts, LayerIo, Role};
+use super::backend::{geq, release_value, Backend, CpuGroup, CpuStep, HostExperts, LayerIo, Role};
 use super::engine::{Published, Shared};
 use super::mem::{Mapped, Pinned};
 use super::sync::{AtomicBool, AtomicU32, Ordering};
@@ -52,10 +52,18 @@ impl TokenEpoch {
 pub struct LayerView<'t> {
     epoch: &'t TokenEpoch,
     layer: usize,
+    /// A união das chaves pedidas pelas `m` posições, em ordem da primeira aparição (posição por posição, top-k de cada uma).
     keys: Vec<u32>,
+    /// Quantas posições pedem cada chave de `keys` (`n_e`).
+    n_e: Vec<usize>,
     misses: Vec<u32>,
-    /// Os bits `f32` dos pesos do softmax, na ordem de `keys`.
-    w: Vec<u32>,
+    /// O tamanho do passo (1 com uma posição).
+    m: usize,
+    /// As chaves de cada posição, na ordem do top-k dela.
+    positions: Vec<Vec<u32>>,
+    /// Os bits `f32` dos pesos do softmax de cada posição, na mesma ordem de `positions`.
+    pweights: Vec<Vec<u32>>,
+    /// `x` das `m` posições (`m·width` palavras).
     x: Vec<u32>,
     io: Arc<Mapped<LayerIo>>,
     flag: Arc<Mapped<AtomicU32>>,
@@ -67,23 +75,60 @@ impl<'t> LayerView<'t> {
         self.layer
     }
 
-    /// As chaves pedidas, na ordem do top-k.
+    /// As chaves pedidas: a união das posições em ordem da primeira aparição (com uma posição, o top-k na ordem do roteador).
     pub fn keys(&self) -> &[u32] {
         &self.keys
+    }
+
+    /// O tamanho do passo.
+    pub fn m(&self) -> usize {
+        self.m
+    }
+
+    /// As chaves de cada posição, na ordem do top-k dela.
+    pub fn positions(&self) -> &[Vec<u32>] {
+        &self.positions
+    }
+
+    /// A união com `n_e`: (chave, quantas posições a pedem), em ordem da primeira aparição.
+    pub fn union(&self) -> impl Iterator<Item = (u32, usize)> + '_ {
+        self.keys.iter().copied().zip(self.n_e.iter().copied())
     }
 
     pub fn x(&self) -> &[u32] {
         &self.x
     }
 
-    /// As chaves fora da tabela do token, que vão à CPU, na ordem do top-k.
+    /// As chaves da posição 0 fora da tabela do token, que vão à CPU, na ordem do top-k (o caminho de uma posição).
     pub fn cpu_keys(&self) -> Vec<u32> {
-        self.keys.iter().copied().filter(|&k| self.epoch.lookup(k).is_none()).collect()
+        self.positions[0].iter().copied().filter(|&k| self.epoch.lookup(k).is_none()).collect()
     }
 
     /// Os pesos (bits `f32`) das chaves de [`cpu_keys`](Self::cpu_keys), na mesma ordem.
     pub fn cpu_weights(&self) -> Vec<u32> {
-        self.keys.iter().zip(&self.w).filter(|(&k, _)| self.epoch.lookup(k).is_none()).map(|(_, &w)| w).collect()
+        self.positions[0].iter().zip(&self.pweights[0]).filter(|(&k, _)| self.epoch.lookup(k).is_none()).map(|(_, &w)| w).collect()
+    }
+
+    /// O trabalho da CPU na camada: as faltas de cada posição (referência) e as mesmas por expert, com as posições e os pesos de cada um.
+    /// Os acertos da tabela não entram: a GPU os calcula.
+    pub fn cpu_step(&self, width: usize) -> CpuStep {
+        let falta = |k: u32| self.epoch.lookup(k).is_none();
+        let keys: Vec<Vec<u32>> = self.positions.iter().map(|ks| ks.iter().copied().filter(|&k| falta(k)).collect()).collect();
+        let weights: Vec<Vec<u32>> = self.positions.iter().zip(&self.pweights)
+            .map(|(ks, ws)| ks.iter().zip(ws).filter(|(&k, _)| falta(k)).map(|(_, &w)| w).collect()).collect();
+        let groups = self.keys.iter().copied().filter(|&k| falta(k)).map(|key| {
+            let mut g = CpuGroup { key, positions: Vec::new(), weights: Vec::new() };
+            for (p, (ks, ws)) in self.positions.iter().zip(&self.pweights).enumerate() {
+                for (&k, &w) in ks.iter().zip(ws) {
+                    if k == key {
+                        g.positions.push(p);
+                        g.weights.push(w);
+                    }
+                }
+            }
+            g
+        }).collect();
+        CpuStep { m: self.m, width, keys, weights, groups }
     }
 }
 
@@ -138,6 +183,30 @@ pub(crate) fn release_layer(l: usize, early: bool) -> Option<usize> {
 /// A leitura de ids e `x` da camada: só depois de ver `seq >= t` (a composição de produção, que o modelo do `loom` usa).
 pub(crate) fn read_layer(seq: &AtomicU32, io: &LayerIo, t: u32, relaxed: bool) -> Option<(Vec<u32>, Vec<u32>)> {
     seq_reached(seq, t, relaxed).then(|| (LayerIo::load(&io.ids), LayerIo::load(&io.x)))
+}
+
+/// O que a GPU publicou numa camada de um passo de `m` posições, lido depois do `Acquire` de `seq`.
+pub(crate) struct LayerRead {
+    pub m: usize,
+    pub ids: Vec<u32>,
+    pub w: Vec<u32>,
+    pub x: Vec<u32>,
+}
+
+/// A leitura de uma camada com `m` posições (a composição de produção, que o modelo do `loom` usa): só depois de ver `seq >= t` lê a
+/// palavra `m` (`Relaxed`, ordenada pelo `Acquire`), valida `1 <= m <= max_positions` e fatia ids, pesos e `x` pelo prefixo ativo (a
+/// cauda `m..max_positions` guarda dado de passo antigo e nunca é interpretada). `Some(Err(m))` é um `m` fora da faixa. Com uma área de
+/// uma posição (sem a palavra) `m = 1` sem ler nada.
+pub(crate) fn read_step(seq: &AtomicU32, io: &LayerIo, t: u32, relaxed: bool, topk: usize, width: usize, max_positions: usize)
+    -> Option<Result<LayerRead, usize>> {
+    seq_reached(seq, t, relaxed).then(|| {
+        let m = io.step_size();
+        if m < 1 || m > max_positions {
+            return Err(m);
+        }
+        let (ids, w, x) = (LayerIo::load(&io.ids), LayerIo::load(&io.w), LayerIo::load(&io.x));
+        Ok(LayerRead { m, ids: ids[..m * topk].to_vec(), w: w[..m * topk].to_vec(), x: x[..m * width].to_vec() })
+    })
 }
 
 /// A cópia guardada com `after` sai quando a soltura é da camada `k`.
@@ -200,6 +269,8 @@ pub struct Service<B: Backend> {
     cfg: Config,
     freq: Freq,
     step: u64,
+    /// O `m` do token corrente, fixado na camada 0 e conferido nas seguintes.
+    step_m: Option<usize>,
     slots: Vec<SlotState>,
     key_slot: Vec<u32>,
     version: Vec<u64>,
@@ -223,6 +294,7 @@ impl<B: Backend> Service<B> {
             weights,
             freq: Freq::new(keys, cfg.layers),
             step: 0,
+            step_m: None,
             slots: vec![SlotState::Free; cfg.slots],
             key_slot: vec![NO_SLOT; keys],
             version: vec![0; keys],
@@ -253,15 +325,15 @@ impl<B: Backend> Service<B> {
     }
 
     /// Espera `seq[l] >= t` e lê ids e `x` (por [`read_layer`]), consultando o cancelamento.
-    fn wait_layer(&self, l: usize, t: u32) -> R<(Vec<u32>, Vec<u32>, Vec<u32>), B> {
+    fn wait_layer(&self, l: usize, t: u32) -> R<LayerRead, B> {
         let relaxed = self.cfg.is(Mutant::SeqRelaxed);
         let since = crate::diag::now();
         let mut first = true;
         loop {
-            if let Some((ids, x)) = read_layer(&self.sh.seq[l], &self.sh.io[l], t, relaxed) {
+            if let Some(r) = read_step(&self.sh.seq[l], &self.sh.io[l], t, relaxed, self.cfg.topk, self.cfg.width, self.cfg.max_positions) {
                 crate::diag::wait_done(since, first);
-                // Os pesos vêm da mesma publicação: lidos depois do `Acquire` de `seq`, como ids e `x`.
-                return Ok((ids, LayerIo::load(&self.sh.io[l].w), x));
+                // Os pesos e o `m` vêm da mesma publicação: lidos depois do `Acquire` de `seq`, como ids e `x`.
+                return r.map_err(|_| Error::Config("m publicado fora de 1..=max_positions"));
             }
             first = false;
             if self.sh.cancel.load(Ordering::Acquire) {
@@ -362,34 +434,61 @@ impl<B: Backend> Service<B> {
     /// Espera `seq[l] >= t`, solta as cópias guardadas da camada anterior e lê ids e `x` publicados pela GPU.
     pub fn serve_layer<'t>(&mut self, epoch: &'t TokenEpoch, l: usize) -> R<LayerView<'t>, B> {
         let t = epoch.t;
-        let (ids, w, x) = self.wait_layer(l, t)?;
+        let LayerRead { m, ids, w, x } = self.wait_layer(l, t)?;
+        // O `m` é o mesmo em todas as camadas do passo: fixado na camada 0 e conferido nas seguintes.
+        if l == 0 {
+            self.step_m = None;
+        }
+        match self.step_m {
+            Some(prev) if prev != m => return Err(Error::Config("m diferente entre as camadas do passo")),
+            _ => self.step_m = Some(m),
+        }
         if let Some(k) = release_layer(l, self.cfg.is(Mutant::HeldOneLayerEarly)) {
             self.release_held(k, true)?;
         }
         let io = self.sh.io[l].clone();
-        let keys: Vec<u32> = ids.iter().map(|&e| self.cfg.key(l, e)).collect();
-        for &k in &keys {
-            self.freq.touch(k as usize, self.step);
+        let topk = self.cfg.topk;
+        // As chaves e os pesos de cada posição, na ordem do top-k dela; a união em ordem da primeira aparição, com `n_e`.
+        let positions: Vec<Vec<u32>> =
+            (0..m).map(|p| ids[p * topk..(p + 1) * topk].iter().map(|&e| self.cfg.key(l, e)).collect()).collect();
+        let pweights: Vec<Vec<u32>> = (0..m).map(|p| w[p * topk..(p + 1) * topk].to_vec()).collect();
+        let mut keys: Vec<u32> = Vec::new();
+        let mut n_e: Vec<usize> = Vec::new();
+        for &k in positions.iter().flatten() {
+            match keys.iter().position(|&u| u == k) {
+                Some(i) => n_e[i] += 1,
+                None => {
+                    keys.push(k);
+                    n_e.push(1);
+                }
+            }
         }
-        self.step += 1;
+        // A frequência conta cada pedido, no mesmo instante, antes de qualquer decisão da camada; o relógio anda `m`.
+        for (&k, &n) in keys.iter().zip(&n_e) {
+            for _ in 0..n {
+                self.freq.touch(k as usize, self.step);
+            }
+        }
+        self.step += m as u64;
+        // Contagens por pedido (por ocorrência); a admissão e a versão contam uma vez por chave da união.
         let mut misses = Vec::new();
-        for &k in &keys {
-            self.stats.needed += 1;
+        for (&k, &n) in keys.iter().zip(&n_e) {
+            self.stats.needed += n as u64;
             if epoch.lookup(k).is_some() {
-                self.stats.hits += 1;
+                self.stats.hits += n as u64;
                 let s = self.key_slot[k as usize];
                 if s != NO_SLOT && self.slots[s as usize] == (SlotState::Resident { key: k }) {
                     self.version[k as usize] += 1;
                 }
             } else {
-                self.stats.cpu += 1;
+                self.stats.cpu += n as u64;
                 if self.key_slot[k as usize] == NO_SLOT {
                     misses.push(k);
                 }
             }
         }
         let flag = self.sh.flag[l].clone();
-        Ok(LayerView { epoch, layer: l, keys, misses, w, x, io, flag, flag_first: self.cfg.is(Mutant::FlagBeforeY) })
+        Ok(LayerView { epoch, layer: l, keys, n_e, misses, m, positions, pweights, x, io, flag, flag_first: self.cfg.is(Mutant::FlagBeforeY) })
     }
 
     pub fn pin_layer(&self, served: &Served<'_>) -> Pins {
@@ -612,10 +711,10 @@ fn run<B: Backend, C: HostExperts>(svc: &mut Service<B>, cpu: &mut C) -> R<(), B
     loop {
         for l in 0..layers {
             let view = svc.serve_layer(&epoch, l)?;
-            let mut y = vec![0u32; width];
-            let ck = view.cpu_keys();
-            let has_cpu = !ck.is_empty();
-            cpu.compute(l, &ck, &view.cpu_weights(), view.x(), &mut y).map_err(|e| Error::Cpu(format!("{e:?}")))?;
+            let mut y = vec![0u32; view.m() * width];
+            let step = view.cpu_step(width);
+            let has_cpu = !step.groups.is_empty();
+            cpu.compute_step(l, &step, view.x(), &mut y).map_err(|e| Error::Cpu(format!("{e:?}")))?;
             let served = answer(view, &y);
             crate::diag::answered();
             if has_cpu {

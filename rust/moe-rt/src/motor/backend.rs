@@ -215,12 +215,43 @@ pub trait Backend: Send + Sync + 'static {
     fn on_thread_end(&self, _role: Role) {}
 }
 
+/// Um expert calculado na CPU num passo de várias posições: as posições que o pedem e o peso de cada uma (nas mesmas posições).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CpuGroup {
+    pub key: u32,
+    pub positions: Vec<usize>,
+    pub weights: Vec<u32>,
+}
+
+/// O trabalho da CPU numa camada de um passo de `m` posições. `keys[p]` e `weights[p]` são as faltas da posição `p` na ordem do top-k
+/// dela (o caminho de uma posição, que é a referência do passo); `groups` são as mesmas faltas por expert (a união em ordem da primeira
+/// aparição), com as posições e os pesos de cada um.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CpuStep {
+    pub m: usize,
+    pub width: usize,
+    pub keys: Vec<Vec<u32>>,
+    pub weights: Vec<Vec<u32>>,
+    pub groups: Vec<CpuGroup>,
+}
+
 /// Os experts calculados na CPU pela linha de serviço.
 pub trait HostExperts: Send + 'static {
     type Error: Debug + Send + 'static;
     /// `y = Σ peso · expert(key, x)` sobre `keys` (as faltas da camada `layer`, na ordem do top-k); `weights` são os bits `f32`
     /// dos pesos do softmax das mesmas chaves, que a GPU publicou.
     fn compute(&mut self, layer: usize, keys: &[u32], weights: &[u32], x: &[u32], y: &mut [u32]) -> Result<(), Self::Error>;
+
+    /// A camada de um passo de `step.m` posições: `x` e `y` têm `m·width` palavras e `y` é escrito inteiro (posições sem faltas ficam
+    /// em zero). O padrão chama [`compute`](Self::compute) posição por posição, com as faltas dela na ordem do top-k: é o caminho de
+    /// uma posição repetido, a referência do passo. Uma implementação em lote (U3 e E4b) sobrescreve este método.
+    fn compute_step(&mut self, layer: usize, step: &CpuStep, x: &[u32], y: &mut [u32]) -> Result<(), Self::Error> {
+        let w = step.width;
+        for p in 0..step.m {
+            self.compute(layer, &step.keys[p], &step.weights[p], &x[p * w..(p + 1) * w], &mut y[p * w..(p + 1) * w])?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(all(test, not(motor_loom)))]

@@ -28,7 +28,7 @@ pub(crate) mod tests;
 #[cfg(all(test, not(motor_loom)))]
 mod passo_tests;
 
-pub use backend::{geq, release_value, Backend, HostExperts, LayerIo, LayerOffsets, Role};
+pub use backend::{geq, release_value, Backend, CpuGroup, CpuStep, HostExperts, LayerIo, LayerOffsets, Role};
 pub use engine::{Engine, Parts, Published};
 pub use line::{answer, LayerView, Pins, Served, Service, TokenEpoch, Victim};
 pub use mem::{Device, Mapped, Pinned};
