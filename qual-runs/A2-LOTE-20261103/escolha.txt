@@ -1,0 +1,5 @@
+desvios |t(1)/h-1| (pior dos dois modelos; None = excluída):
+  variante 0: 0.4836  qual-runs/A2-LOTE-20261103/so-n1-v0.txt sha256=9ac85a87cbdb8144be5bc7f8674cb74ea81250f207a89c974635e8e2a01edb9e
+  variante 1: 0.4316  qual-runs/A2-LOTE-20261103/so-n1-v1.txt sha256=87f95bce04cd3fa570544e9cc33a288320fa14def9514558c571d7badce86353
+  variante 2: 0.4181  qual-runs/A2-LOTE-20261103/so-n1-v2.txt sha256=628e148f663530241dab6938070be5d1d3ac6cd2baca56b65ca6d1207e7571c5
+VARIANTE ESCOLHIDA: 2
