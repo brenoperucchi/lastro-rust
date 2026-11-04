@@ -92,6 +92,8 @@ fn doorbell_passo(seq_relaxed: bool, flag_first: bool, m_depois: bool) {
     let flag = Arc::new(AtomicU32::new(0));
     let io = Arc::new(LayerIo::with_positions(1, 2, 2));
 
+    // A palavra do passo anterior (m = 1) já está na área: com a gravação atrasada o host a leria velha, dentro da faixa.
+    io.m[0].store(1, Ordering::Relaxed);
     let gpu = {
         let (seq, flag, io) = (seq.clone(), flag.clone(), io.clone());
         thread::spawn(move || {

@@ -604,3 +604,132 @@ fn semeaduras_do_escalonador_com_m_variavel() {
         assert_eq!(Stats { dropped: 0, ..st }, want, "sorteio {i}, {passos:?}");
     }
 }
+
+
+// --- U4: Event e as saídas de erro com M > 1 (rodada 66) ----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+enum FalhaR { Nada, Main(u64), Cpu(usize), Panico(usize), Solta(usize) }
+
+/// Um caso com M > 1: cópias (backlog > 0, slots < chaves), modo sorteado, `m` sorteado de 1 a 8, uma falha opcional. Devolve
+/// (erro, violações, travou, filas).
+fn sonda(admit: AdmitMode, passos: &[usize], falha: FalhaR, sched: SchedCfg, slots: usize, backlog: usize)
+    -> (Option<String>, Vec<Violation>, bool, (usize, usize)) {
+    let total: usize = passos.iter().sum();
+    let routing: Vec<Vec<Vec<u32>>> = (0..total).map(|p| (0..2).map(|l| rota_a(p, l)).collect()).collect();
+    let gpu = FakeGpu::new_sched(
+        FakeCfg { layers: 2, experts: 4, topk: K, width: W, routing, copy_immediate: false, max_positions: 8,
+                  fail_main_at: if let FalhaR::Main(n) = falha { Some(n) } else { None } },
+        sched,
+    );
+    let cfg = Config { layers: 2, experts: 4, topk: K, width: W, slots, backlog, admit, first_token: 1, prefill: vec![], max_positions: 8,
+                       mutant: None };
+    let parts = gpu.parts(&cfg);
+    let cpu = FakeCpu { weighted: true, fail_at: if let FalhaR::Cpu(n) = falha { Some(n) } else { None },
+                        panic_at: if let FalhaR::Panico(n) = falha { Some(n) } else { None }, ..Default::default() };
+    let mut eng = Engine::new(gpu.clone(), parts, cfg, cpu).expect("motor");
+    let mut err = None;
+    let mut needed = None;
+    for (i, &m) in passos.iter().enumerate() {
+        let p = match eng.next_published() { Ok(p) => p, Err(e) => { err = Some(format!("{e:?}")); break } };
+        if let FalhaR::Solta(d) = falha {
+            if d == i {
+                if let Err(e) = eng.enqueue_step(p, m) { err = Some(format!("{e:?}")); }
+                break;
+            }
+        }
+        if let Err(e) = eng.enqueue_step(p, m).and_then(|_| eng.finish_token()) { err = Some(format!("{e:?}")); break }
+    }
+    if err.is_none() && !matches!(falha, FalhaR::Solta(_)) {
+        match eng.next_published() { Ok(p) => needed = Some(p.stats().clone()), Err(e) => err = Some(format!("{e:?}")) }
+    }
+    let fim = eng.close();
+    if err.is_none() { err = fim.err().map(|e| format!("{e:?}")); }
+    if let (None, Some(st), FalhaR::Nada) = (&err, &needed, falha) {
+        assert_eq!(st.needed, (total * 2 * K) as u64);
+        assert_eq!(st.hits + st.cpu, st.needed);
+    }
+    (err, gpu.violations(), gpu.stalled(), gpu.queued())
+}
+
+#[test]
+fn event_e_falhas_com_m_maior_que_um_encerram_limpo() {
+    let mut x = 0x5EED_0066_u64;
+    let mut rnd = move || { x ^= x << 13; x ^= x >> 7; x ^= x << 17; x };
+    let mut ruins = Vec::new();
+    let mut n_falha = [0usize; 5];
+    for i in 0..400 {
+        let mut passos = Vec::new();
+        let mut falta = 1 + (rnd() % 24) as usize;
+        while falta > 0 { let m = (1 + (rnd() % 8) as usize).min(falta); passos.push(m); falta -= m; }
+        let admit = if rnd() % 2 == 0 { AdmitMode::Event } else { AdmitMode::TokenBarrier };
+        let calls = (passos.len() * (5 * 2 + 3 + 8)) as u64;
+        let falha = match rnd() % 5 {
+            0 => FalhaR::Nada,
+            1 => FalhaR::Main(1 + rnd() % calls),
+            2 => FalhaR::Cpu((rnd() % (passos.len() as u64 * 2)) as usize),
+            3 => FalhaR::Panico((rnd() % (passos.len() as u64 * 2)) as usize),
+            _ => FalhaR::Solta((rnd() % passos.len() as u64) as usize),
+        };
+        n_falha[match falha { FalhaR::Nada => 0, FalhaR::Main(_) => 1, FalhaR::Cpu(_) => 2, FalhaR::Panico(_) => 3, FalhaR::Solta(_) => 4 }] += 1;
+        let w = [1 + (rnd() % 8) as u32, 1 + (rnd() % 8) as u32, 1 + (rnd() % 8) as u32, 1 + (rnd() % 8) as u32];
+        let sched = SchedCfg { seed: rnd(), weights: w, budget: 300_000 };
+        let slots = (rnd() % 6) as usize;
+        let backlog = (rnd() % 5) as usize;
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sonda(admit, &passos, falha, sched, slots, backlog)));
+        match r {
+            Ok((err, viol, stalled, q)) => {
+                let ok = viol.is_empty() && !stalled && q == (0, 0)
+                    && (!matches!(falha, FalhaR::Nada) || err.is_none())
+                    && (!matches!(falha, FalhaR::Cpu(_) | FalhaR::Panico(_)) || err.is_some());
+                if !ok { ruins.push(format!("{i}: {admit:?} {passos:?} {falha:?} slots {slots} backlog {backlog}: {err:?} {viol:?} travou {stalled} filas {q:?}")); }
+            }
+            Err(_) => ruins.push(format!("{i}: {admit:?} {passos:?} {falha:?}: panic no teste")),
+        }
+    }
+    assert!(n_falha.iter().all(|&n| n > 30), "cada tipo de falha tem de aparecer: {n_falha:?}");
+    assert!(ruins.is_empty(), "{} casos ruins:\n{}", ruins.len(), ruins.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
+}
+
+/// A falha da `n`-ésima operação da stream principal, para as primeiras `n` de um passo de 8 posições (a do `begin_step` inclusa, que só
+/// existe com `max_positions > 1`): sempre chega ao chamador ou fecha limpo, sem violação, travamento nem fila pendente.
+#[test]
+fn falha_nas_primeiras_operacoes_da_principal_com_passo_de_oito_encerra_limpo() {
+    for n in 1..=8u64 {
+        for admit in [AdmitMode::Event, AdmitMode::TokenBarrier] {
+            let (err, viol, stalled, q) = sonda(admit, &[8, 3], FalhaR::Main(n), sched_a(), 3, 2);
+            assert!(viol.is_empty() && !stalled && q == (0, 0), "n = {n}, {admit:?}: {err:?} {viol:?} {q:?}");
+        }
+    }
+}
+
+/// As fases do `sync`, separadas por fronteira observável: a partida (dentro de `Engine::new`), um por passo de cálculo do chamador, e
+/// o fechamento (que sincroniza as duas streams). A contagem por passo é a mesma com M = 1 e M = 8.
+#[test]
+fn sync_separa_partida_passos_e_fechamento() {
+    for passos in [vec![1usize; 8], vec![8]] {
+        let gpu = FakeGpu::new_sched(
+            FakeCfg { layers: 2, experts: 4, topk: K, width: W, routing: (0..8).map(|p| (0..2).map(|l| rota_a(p, l)).collect()).collect(),
+                      fail_main_at: None, copy_immediate: false, max_positions: 8 },
+            sched_a(),
+        );
+        let cfg = Config { layers: 2, experts: 4, topk: K, width: W, slots: 2, backlog: 0, admit: AdmitMode::TokenBarrier, first_token: 1,
+                           prefill: vec![0], max_positions: 8, mutant: None };
+        let parts = gpu.parts(&cfg);
+        let mut eng = Engine::new(gpu.clone(), parts, cfg, FakeCpu { weighted: true, ..Default::default() }).unwrap();
+        let partida = gpu.sync_counts();
+        for &mm in &passos {
+            let p = eng.next_published().unwrap();
+            eng.enqueue_step(p, mm).unwrap();
+            eng.finish_token().unwrap();
+        }
+        let passos_fim = gpu.sync_counts();
+        assert_eq!(partida[2], [0, 0], "o chamador não sincroniza na partida: {partida:?}");
+        assert_eq!(passos_fim[2], [passos.len() as u64, 0], "um sync de cálculo por passo: {passos_fim:?}");
+        let _ = eng.next_published().map(drop);
+        eng.close().unwrap();
+        let fim = gpu.sync_counts();
+        assert!(fim[2][0] + fim[2][1] + fim[1][1] + fim[1][0] >= passos_fim[2][0] + passos_fim[1][1], "o fechamento só soma: {fim:?}");
+        assert_eq!(fim[1][0], 0, "o serviço nunca sincroniza o cálculo: {fim:?}");
+    }
+}
