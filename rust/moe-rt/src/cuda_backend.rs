@@ -351,7 +351,7 @@ impl CudaBackend {
 
     pub fn mapped_io(&self) -> Result<Mapped<LayerIo>, CudaError> {
         let (k, w) = (self.dims.topk, self.dims.hidden);
-        let (mem, dev) = host_alloc((2 * k + 2 * w) * 4, true)?;
+        let (mem, dev) = host_alloc(LayerIo::offsets(k, w, 1).total * 4, true)?;
         // SAFETY: `2k + 2w` palavras zeradas e alinhadas, vivas enquanto o `LayerGuard` viver.
         let io = unsafe { LayerIo::from_raw(mem.0 as *const AtomicU32, k, w) };
         let guard = Arc::new(LayerGuard { io, _mem: mem });
@@ -572,7 +572,8 @@ impl Backend for CudaBackend {
         // recebe empréstimos, então uma falha não os solta antes da espera da stream (`fail_k`).
         unsafe { gk::gemv((&mut st.logits).partition([GEMV_BM]), &self.router[layer], xin).generics(gemv_generics(d.hidden)).async_on(&s.0).map_err(fail_k(raw))? };
         let base = io.dev_addr();
-        let (ids, w, x) = (base, base + (d.topk * 4) as u64, base + (2 * d.topk * 4) as u64);
+        let o = LayerIo::offsets(d.topk, d.hidden, 1);
+        let (ids, w, x) = (base + (o.ids * 4) as u64, base + (o.w * 4) as u64, base + (o.x * 4) as u64);
         // SAFETY: um bloco; as três áreas mapeadas têm K, K e H palavras; `logits` tem E elementos.
         unsafe {
             route_kernels::route_topk(ptr::<i32>(ids), ptr::<f32>(w), &st.logits, d.experts as i32, xin, ptr::<f32>(x))
@@ -600,7 +601,8 @@ impl Backend for CudaBackend {
         let st = &mut *guard;
         let xin = if st.dense.is_some() { &st.xn } else { &st.h };
         let base = io.dev_addr();
-        let (ids, w) = (base, base + (d.topk * 4) as u64);
+        let o = LayerIo::offsets(d.topk, d.hidden, 1);
+        let (ids, w) = (base + (o.ids * 4) as u64, base + (o.w * 4) as u64);
         // SAFETY: um bloco; K ids e K pesos mapeados; a linha da camada cabe na tabela de L·E entradas.
         unsafe {
             hits_kernels::hit_select((&mut st.hs).partition([d.topk]), (&mut st.hw).partition([d.topk]), (&mut st.hc).partition([1]), ptr::<i32>(ids), ptr::<f32>(w), ptr::<i32>(table.dev_addr()), (d.layers * d.experts) as i32, (layer * d.experts) as i32, d.slots as i32)
@@ -636,7 +638,7 @@ impl Backend for CudaBackend {
         let d = self.dims;
         let mut guard = self.st.lock().unwrap_or_else(|e| e.into_inner());
         let st = &mut *guard;
-        let y_host = io.dev_addr() + ((2 * d.topk + d.hidden) * 4) as u64;
+        let y_host = io.dev_addr() + (LayerIo::offsets(d.topk, d.hidden, 1).y * 4) as u64;
         // SAFETY: H múltiplo de AXPBY_B; a área `y` mapeada tem H palavras.
         unsafe {
             match &st.dense {
@@ -932,6 +934,7 @@ mod tests {
             admit: c.admit,
             first_token: 1,
             prefill: vec![],
+            max_positions: 1,
             mutant,
         };
         let parts = b.parts(compute.clone(), copy, b.weights(&ex).unwrap(), 1).unwrap();
@@ -1119,6 +1122,7 @@ mod tests {
             admit: AdmitMode::Event,
             first_token: 1,
             prefill: vec![],
+            max_positions: 1,
             #[cfg(test)]
             mutant: None,
         };

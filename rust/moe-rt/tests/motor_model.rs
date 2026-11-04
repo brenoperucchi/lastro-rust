@@ -52,6 +52,7 @@ fn roda_com_falha(tokens: &[usize], slots: usize, admit: AdmitMode, falha_em: Op
         admit,
         first_token: 1,
         prefill: vec![],
+        max_positions: 1,
     };
     let parts = b.parts(compute.clone(), copy, b.weights(&ex).unwrap(), cfg.first_token).unwrap();
     let cpu = CpuServe { cpu: Cpu::new(2), hidden: m.cfg.hidden, inter: m.cfg.inter, experts: m.cfg.experts, weights: ex.clone() };
@@ -123,7 +124,7 @@ fn reset_da_sequencia_repete_os_logits_da_cpu() {
     let want: Vec<Vec<f32>> = seq.iter().map(|&t| sess.step(t).0).collect();
     let (compute, copy) = (CudaStream(device.new_stream().unwrap()), CudaStream(device.new_stream().unwrap()));
     let (b, ex) = CudaBackend::new_model(device.clone(), &m, 5, 64, &compute).unwrap();
-    let cfg = Config { layers: m.cfg.layers, experts: m.cfg.experts, topk: m.cfg.k, width: m.cfg.hidden, slots: 5, backlog: 4, admit: AdmitMode::Event, first_token: 1, prefill: vec![] };
+    let cfg = Config { layers: m.cfg.layers, experts: m.cfg.experts, topk: m.cfg.k, width: m.cfg.hidden, slots: 5, backlog: 4, admit: AdmitMode::Event, first_token: 1, prefill: vec![], max_positions: 1 };
     let parts = b.parts(compute.clone(), copy, b.weights(&ex).unwrap(), cfg.first_token).unwrap();
     let cpu = CpuServe { cpu: Cpu::new(2), hidden: m.cfg.hidden, inter: m.cfg.inter, experts: m.cfg.experts, weights: ex.clone() };
     let mut eng = Engine::new(b.clone(), parts, cfg, cpu).unwrap();

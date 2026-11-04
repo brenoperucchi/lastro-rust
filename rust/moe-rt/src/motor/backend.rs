@@ -31,6 +31,24 @@ pub struct LayerIo {
     pub w: Words,
     pub x: Words,
     pub y: Words,
+    /// O tamanho do passo (`m`), uma palavra no fim da área. Só existe com `max_positions > 1`; com 1 posição o campo é vazio e o
+    /// layout é o de sempre (a linha de serviço usa `m = 1` sem ler nada).
+    pub m: Words,
+}
+
+/// Os deslocamentos (em palavras) e o tamanho da área de uma camada para `max_positions` posições. Fonte única do layout: a
+/// `LayerIo`, o backend falso e o backend de CUDA usam esta função. Com `max_positions == 1` dá `0, topk, 2·topk, 2·topk + width` e
+/// `2·topk + 2·width`, o layout de antes do passo de várias posições (sem a palavra `m`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LayerOffsets {
+    pub ids: usize,
+    pub w: usize,
+    pub x: usize,
+    pub y: usize,
+    /// A palavra do tamanho do passo, no fim; `None` com uma posição.
+    pub m: Option<usize>,
+    /// O tamanho total da área, em palavras.
+    pub total: usize,
 }
 
 /// Palavras de 32 bits compartilhadas com a GPU: um bloco do heap (backend falso) ou uma fatia de memória host mapeada que o
@@ -67,9 +85,36 @@ impl std::ops::Deref for Words {
 }
 
 impl LayerIo {
+    /// Os deslocamentos da área para `max_positions` posições (ver [`LayerOffsets`]).
+    pub fn offsets(topk: usize, width: usize, max_positions: usize) -> LayerOffsets {
+        assert!(max_positions >= 1);
+        let (ids, w) = (0, max_positions * topk);
+        let x = 2 * max_positions * topk;
+        let y = x + max_positions * width;
+        let end = y + max_positions * width;
+        let m = (max_positions > 1).then_some(end);
+        LayerOffsets { ids, w, x, y, m, total: end + usize::from(m.is_some()) }
+    }
+
     pub fn new(topk: usize, width: usize) -> Self {
+        Self::with_positions(topk, width, 1)
+    }
+
+    /// Uma `LayerIo` no heap para `max_positions` posições.
+    pub fn with_positions(topk: usize, width: usize, max_positions: usize) -> Self {
         let z = |n: usize| Words(Repr::Heap((0..n).map(|_| AtomicU32::new(0)).collect::<Vec<_>>().into_boxed_slice()));
-        Self { ids: z(topk), w: z(topk), x: z(width), y: z(width) }
+        let mp = max_positions;
+        assert!(mp >= 1);
+        Self { ids: z(mp * topk), w: z(mp * topk), x: z(mp * width), y: z(mp * width), m: z(usize::from(mp > 1)) }
+    }
+
+    /// O `m` publicado pela GPU (1 sem a palavra). Lido depois do `Acquire` de `seq[l]`.
+    pub fn step_size(&self) -> usize {
+        if self.m.is_empty() {
+            1
+        } else {
+            self.m[0].load(Ordering::Relaxed) as usize
+        }
     }
 
     /// Uma `LayerIo` sobre `2·topk + 2·width` palavras contíguas (ids, pesos, `x`, `y`), na ordem dos campos.
@@ -80,10 +125,24 @@ impl LayerIo {
     #[cfg(not(motor_loom))]
     #[allow(unsafe_code)]
     pub(crate) unsafe fn from_raw(base: *const AtomicU32, topk: usize, width: usize) -> Self {
-        // SAFETY: os deslocamentos ficam dentro das `2·topk + 2·width` palavras.
+        // SAFETY: mesmas exigências, com uma posição.
+        unsafe { Self::from_raw_positions(base, topk, width, 1) }
+    }
+
+    /// Como [`from_raw`](Self::from_raw), para `max_positions` posições: `LayerIo::offsets(topk, width, max_positions).total` palavras.
+    ///
+    /// # Safety
+    /// As mesmas de `from_raw`, com `offsets(..).total` palavras vivas.
+    #[cfg(not(motor_loom))]
+    #[allow(unsafe_code)]
+    pub(crate) unsafe fn from_raw_positions(base: *const AtomicU32, topk: usize, width: usize, max_positions: usize) -> Self {
+        let o = Self::offsets(topk, width, max_positions);
+        let mp = max_positions;
+        // SAFETY: os deslocamentos ficam dentro das `o.total` palavras.
         unsafe {
             let at = |off: usize, len: usize| Words(Repr::Raw { ptr: base.add(off), len });
-            Self { ids: at(0, topk), w: at(topk, topk), x: at(2 * topk, width), y: at(2 * topk + width, width) }
+            Self { ids: at(o.ids, mp * topk), w: at(o.w, mp * topk), x: at(o.x, mp * width), y: at(o.y, mp * width),
+                   m: at(o.m.unwrap_or(o.total), usize::from(o.m.is_some())) }
         }
     }
 
@@ -118,6 +177,17 @@ pub trait Backend: Send + Sync + 'static {
     fn query(&self, ev: &Self::Event) -> Result<bool, Self::Error>;
     /// Publica a tabela do token: o lado pinned vai para a tabela do device, na stream `s`.
     fn upload_table(&self, s: &Self::Stream, dst: &Device<[u32]>, src: &Pinned<[AtomicU32]>) -> Result<(), Self::Error>;
+    /// O maior número de posições por passo que o backend aceita (as áreas e os kernels dele). O padrão é 1: um backend que só
+    /// calcula uma posição não aceita `max_positions > 1` em silêncio.
+    fn max_positions(&self) -> usize {
+        1
+    }
+    /// Começo de um passo de `m` posições, a partir da posição `pos` da sequência, na stream `s` e na geração `t`. Enfileira (ou
+    /// captura) o descritor do passo em ordem FIFO: operações anteriores do passo anterior não podem ver o valor novo. O padrão
+    /// não faz nada (o backend falso com uma posição e o motor por token).
+    fn begin_step(&self, _s: &Self::Stream, _t: u32, _pos: u64, _m: usize) -> Result<(), Self::Error> {
+        Ok(())
+    }
     /// Antes do `route` da camada: o que o modelo roda antes do bloco MoE (no A1.3, a atenção e a norma de entrada do bloco).
     /// O padrão não faz nada (o backend falso e a pilha de blocos MoE do A1.2).
     fn pre_layer(&self, _s: &Self::Stream, _layer: usize) -> Result<(), Self::Error> {

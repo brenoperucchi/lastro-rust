@@ -201,7 +201,7 @@ struct Motor {
 fn sobe(device: &std::sync::Arc<Device>, host: &HostModel, cfg: &ModelConfig, max_len: usize, slots: usize, admit: AdmitMode, prefill: Vec<u32>, a: &Args) -> Result<Motor, Box<dyn std::error::Error>> {
     let (compute, copy) = (CudaStream(device.new_stream().d()?), CudaStream(device.new_stream().d()?));
     let (b, ex) = CudaBackend::new_model(device.clone(), host, slots, max_len, &compute).d()?;
-    let mcfg = Config { layers: cfg.layers, experts: cfg.experts, topk: cfg.k, width: cfg.hidden, slots, backlog: a.backlog, admit, first_token: 1, prefill };
+    let mcfg = Config { layers: cfg.layers, experts: cfg.experts, topk: cfg.k, width: cfg.hidden, slots, backlog: a.backlog, admit, first_token: 1, prefill, max_positions: 1 };
     let parts = b.parts(compute.clone(), copy, b.weights(&ex).d()?, mcfg.first_token).d()?;
     let cpu = CpuServe { cpu: Cpu::new(a.threads), hidden: cfg.hidden, inter: cfg.inter, experts: cfg.experts, weights: ex.clone() };
     let eng = Engine::new(b.clone(), parts, mcfg, cpu).d()?;

@@ -91,6 +91,7 @@ fn roda(device: &Arc<cuda_core::Device>, f: &Fixture) -> Stats {
         admit: AdmitMode::TokenBarrier,
         first_token: 1,
         prefill: vec![],
+        max_positions: 1,
     };
     let parts = b.parts(compute.clone(), copy, b.weights(&ex).unwrap(), cfg.first_token).unwrap();
     let cpu = CpuServe { cpu: Cpu::new(2), hidden: H, inter: I, experts: f.experts, weights: ex.clone() };

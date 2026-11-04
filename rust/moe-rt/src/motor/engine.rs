@@ -89,6 +89,10 @@ pub struct Engine<B: Backend> {
     service_result: Option<R<(), B>>,
     /// O próximo token a enfileirar (ou o enfileirado, até o `finish_token`).
     t: u32,
+    /// A posição da sequência do próximo passo (avança `m` a cada `finish_token`); não entra no protocolo (`t` é por passo).
+    pos: u64,
+    /// O tamanho do passo enfileirado, até o `finish_token`.
+    cur_m: usize,
     current: Option<(usize, Pinned<[AtomicU32]>)>,
     closed: bool,
 }
@@ -104,7 +108,17 @@ impl<B: Backend> Engine<B> {
             && parts.io.len() == cfg.layers
             && parts.ready.len() == cfg.slots
             && parts.sides.iter().all(|s| s.len() == keys)
-            && cfg.prefill.iter().all(|&k| (k as usize) < keys);
+            && cfg.prefill.iter().all(|&k| (k as usize) < keys)
+            && cfg.max_positions >= 1
+            && cfg.max_positions <= b.max_positions()
+            && parts.io.iter().all(|io| {
+                let o = LayerIo::offsets(cfg.topk, cfg.width, cfg.max_positions);
+                io.ids.len() == cfg.max_positions * cfg.topk
+                    && io.w.len() == cfg.max_positions * cfg.topk
+                    && io.x.len() == cfg.max_positions * cfg.width
+                    && io.y.len() == cfg.max_positions * cfg.width
+                    && io.m.len() == usize::from(o.m.is_some())
+            });
         if !ok {
             return Err(Error::Config("peças e configuração não batem"));
         }
@@ -149,7 +163,7 @@ impl<B: Backend> Engine<B> {
             })
             .expect("thread da linha de serviço");
         Ok(Self { b, sh, compute: parts.compute, copy, table: parts.table, t: cfg.first_token, cfg, service: Some(service),
-                  done, service_result: None, current: None, closed: false })
+                  done, service_result: None, current: None, closed: false, pos: 0, cur_m: 1 })
     }
 
     /// Espera o `Published` do próximo token.
@@ -168,8 +182,11 @@ impl<B: Backend> Engine<B> {
         }
     }
 
-    fn enqueue_inner(&self, p: &Published) -> Result<(), B::Error> {
+    fn enqueue_inner(&self, p: &Published, m: usize) -> Result<(), B::Error> {
         let (b, c, t) = (&*self.b, &self.compute, self.t);
+        if self.cfg.max_positions > 1 {
+            b.begin_step(c, t, self.pos, m)?;
+        }
         b.upload_table(c, &self.table, &p.side)?;
         if !self.cfg.is(Mutant::NoReadyProtection) {
             for &s in &p.ready {
@@ -189,10 +206,26 @@ impl<B: Backend> Engine<B> {
         b.write_value(c, &self.sh.seq[self.cfg.layers], t)
     }
 
-    /// Enfileira o token do `Published`: a tabela, as esperas pelos `ready` e as camadas.
+    /// Enfileira o token do `Published`: a tabela, as esperas pelos `ready` e as camadas (um passo de uma posição).
     pub fn enqueue_token(&mut self, p: Published) -> R<(), B> {
+        self.enqueue_step(p, 1)
+    }
+
+    /// Enfileira um passo de `m` posições (`1 <= m <= max_positions`). Um `m` fora da faixa derruba o motor (o `Published` já foi
+    /// consumido e a linha de serviço ficaria esperando por ele), como uma geração errada.
+    pub fn enqueue_step(&mut self, p: Published, m: usize) -> R<(), B> {
         if self.closed {
             return Err(Error::Cancelled);
+        }
+        if m < 1 || m > self.cfg.max_positions {
+            self.shutdown();
+            return Err(Error::Config("m fora de 1..=max_positions"));
+        }
+        // U1: a linha de serviço ainda lê uma posição por camada. Sem esta recusa, um passo de m > 1 seria servido como um token só,
+        // em silêncio. A U2 (união, listas por posição, LFU) remove a recusa.
+        if m > 1 {
+            self.shutdown();
+            return Err(Error::Config("passo de m > 1 ainda não servido pela linha de serviço (U2)"));
         }
         if p.origin != self.sh.id {
             self.shutdown();
@@ -205,7 +238,8 @@ impl<B: Backend> Engine<B> {
             self.shutdown();
             return Err(e);
         }
-        let r = self.enqueue_inner(&p);
+        let r = self.enqueue_inner(&p, m);
+        self.cur_m = m;
         self.current = Some((p.side_idx, p.side));
         if let Err(e) = r {
             self.shutdown();
@@ -234,6 +268,7 @@ impl<B: Backend> Engine<B> {
             self.sh.returned.send(side);
         }
         self.t = self.t.wrapping_add(1);
+        self.pos += self.cur_m as u64;
         Ok(())
     }
 
@@ -278,7 +313,8 @@ impl<B: Backend> Engine<B> {
     /// Os ids dos experts que o roteador da GPU escolheu na camada `l` do último token terminado (`run_token` ou `finish_token`
     /// já voltou). Só vale com o motor parado entre dois tokens: durante um token a área está sendo escrita.
     pub fn layer_ids(&self, l: usize) -> Vec<u32> {
-        LayerIo::load(&self.sh.io[l].ids)
+        let ids = LayerIo::load(&self.sh.io[l].ids);
+        ids[..self.cur_m * self.cfg.topk].to_vec()
     }
 
     /// Encerra na ordem do `Drop` e devolve o resultado da linha de serviço (o cancelamento conta como sucesso).

@@ -25,8 +25,10 @@ pub mod sync;
 mod loom_tests;
 #[cfg(all(test, not(motor_loom)))]
 pub(crate) mod tests;
+#[cfg(all(test, not(motor_loom)))]
+mod passo_tests;
 
-pub use backend::{geq, release_value, Backend, HostExperts, LayerIo, Role};
+pub use backend::{geq, release_value, Backend, HostExperts, LayerIo, LayerOffsets, Role};
 pub use engine::{Engine, Parts, Published};
 pub use line::{answer, LayerView, Pins, Served, Service, TokenEpoch, Victim};
 pub use mem::{Device, Mapped, Pinned};
@@ -60,6 +62,8 @@ pub struct Config {
     pub first_token: u32,
     /// Chaves copiadas antes do primeiro token (o simulador começa vazio).
     pub prefill: Vec<u32>,
+    /// O número máximo de posições de um passo (1 = o motor por token de sempre). Define o tamanho das áreas das camadas.
+    pub max_positions: usize,
     #[cfg(test)]
     pub(crate) mutant: Option<Mutant>,
 }

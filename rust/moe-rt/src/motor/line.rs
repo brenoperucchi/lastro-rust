@@ -661,9 +661,9 @@ mod candidato_tests {
     #[test]
     fn candidato_fora_das_faltas_e_recusado() {
         let cfg = Config { layers: 2, experts: 3, topk: 2, width: 2, slots: 3, backlog: 4, admit: AdmitMode::Event,
-                           first_token: 1, prefill: vec![], mutant: None };
+                           first_token: 1, prefill: vec![], max_positions: 1, mutant: None };
         let gpu = FakeGpu::new_executor(FakeCfg { layers: 2, experts: 3, topk: 2, width: 2, routing: vec![], fail_main_at: None,
-                                                  copy_immediate: false });
+                                                  copy_immediate: false, max_positions: 1 });
         let parts = gpu.parts(&cfg);
         let sh = Arc::new(Shared {
             id: 1,

@@ -80,6 +80,7 @@ fn config(c: &Caso, mutant: Option<Mutant>) -> Config {
         admit: c.admit,
         first_token: c.first_token,
         prefill: c.prefill.clone(),
+        max_positions: 1,
         mutant,
     }
 }
@@ -96,6 +97,7 @@ fn fake_cfg(c: &Caso) -> FakeCfg {
             _ => None,
         },
         copy_immediate: false,
+        max_positions: 1,
     }
 }
 

@@ -42,6 +42,9 @@ pub struct FakeCfg {
     pub fail_main_at: Option<u64>,
     /// A cópia roda inteira na hora em que é enfileirada (o executor).
     pub copy_immediate: bool,
+    /// O M máximo do passo (1 = por token, sem a palavra `m` nem a operação `BeginStep`: as filas são as de sempre). Com mais de 1,
+    /// `routing[p]` é o roteamento da posição global `p` da sequência (circular) e `x` também depende da posição global.
+    pub max_positions: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,9 +57,9 @@ pub enum FakeError {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Violation {
-    Launch { token: usize, layer: usize, key: u32, slot: u32, found: Option<u32>, copying: bool },
+    Launch { token: usize, pos: usize, layer: usize, key: u32, slot: u32, found: Option<u32>, copying: bool },
     Table { key: u32, slot: u32, found: Option<u32>, copying: bool, queued: bool },
-    Y { token: usize, layer: usize, expected: Vec<u32>, got: Vec<u32> },
+    Y { token: usize, pos: usize, layer: usize, expected: Vec<u32>, got: Vec<u32> },
     FreedWithQueued { id: u64, ops: usize },
     Unfinished { ops: usize },
 }
@@ -86,6 +89,7 @@ enum Op {
     Record { ev: usize, n: u64 },
     WaitEvent { ev: usize, n: u64 },
     Upload { dst: AllocId, src_id: AllocId, src: Arc<[AtomicU32]> },
+    BeginStep { pos: u64, m: usize },
     Route { layer: usize, io_id: AllocId, io: Arc<LayerIo> },
     Launch { layer: usize, table: AllocId, bank: AllocId, io_id: AllocId, io: Arc<LayerIo> },
     AddY { layer: usize, io_id: AllocId, io: Arc<LayerIo> },
@@ -97,7 +101,7 @@ impl Op {
     fn refs(&self, id: AllocId) -> bool {
         match self {
             Op::Copy { bank, weights, .. } => *bank == id || *weights == id,
-            Op::Record { .. } | Op::WaitEvent { .. } => false,
+            Op::Record { .. } | Op::WaitEvent { .. } | Op::BeginStep { .. } => false,
             Op::Upload { dst, src_id, .. } => *dst == id || *src_id == id,
             Op::Route { io_id, .. } | Op::AddY { io_id, .. } => *io_id == id,
             Op::Launch { table, bank, io_id, .. } => *table == id || *bank == id || *io_id == id,
@@ -121,7 +125,11 @@ struct State {
     next_id: u64,
     /// Envios de tabela já executados (o token corrente da GPU é `token - 1`).
     token: usize,
-    hits: Vec<Vec<u32>>,
+    /// A posição global da sequência e o tamanho do passo corrente da GPU (só com `max_positions > 1`; `BeginStep` os instala em ordem FIFO).
+    pos: usize,
+    m: usize,
+    /// `hits[camada][posição]`: as chaves lançadas na GPU naquela posição.
+    hits: Vec<Vec<Vec<u32>>>,
     /// A fila de cálculo passou de uma flag com o valor de soltura: dali em diante o `y` não é conferido.
     released: bool,
     violations: Vec<Violation>,
@@ -134,7 +142,7 @@ pub fn expert_out(key: u32, x: u32) -> u32 {
     x.wrapping_mul(0x9E37_79B1).wrapping_add(key.wrapping_mul(40503)).rotate_left(key % 31 + 1)
 }
 
-fn x_value(token: usize, layer: usize, j: usize) -> u32 {
+pub(crate) fn x_value(token: usize, layer: usize, j: usize) -> u32 {
     (((token as u32).wrapping_add(1)) << 16) ^ ((layer as u32) << 8) ^ (j as u32 + 1)
 }
 
@@ -164,48 +172,76 @@ fn step(st: &mut State, cfg: &FakeCfg, q: usize) -> bool {
             st.tables.insert(*dst, src.iter().map(|a| a.load(Ordering::Relaxed)).collect());
             st.token += 1;
         }
+        Op::BeginStep { pos, m } => {
+            st.pos = *pos as usize;
+            st.m = *m;
+        }
         Op::Route { layer, io, .. } => {
-            let tok = st.token.saturating_sub(1);
-            let ids = &cfg.routing[tok % cfg.routing.len()][*layer];
-            for (a, &e) in io.ids.iter().zip(ids) {
-                a.store(e, Ordering::Relaxed);
-            }
-            // Pesos do softmax: o backend falso publica pesos iguais (o motor ainda não os usa; entram com o A1.3).
-            for a in io.w.iter() {
-                a.store((1.0f32 / io.w.len() as f32).to_bits(), Ordering::Relaxed);
-            }
-            for (j, a) in io.x.iter().enumerate() {
-                a.store(x_value(tok, *layer, j), Ordering::Relaxed);
+            if cfg.max_positions == 1 {
+                let tok = st.token.saturating_sub(1);
+                let ids = &cfg.routing[tok % cfg.routing.len()][*layer];
+                for (a, &e) in io.ids.iter().zip(ids) {
+                    a.store(e, Ordering::Relaxed);
+                }
+                // Pesos do softmax: o backend falso publica pesos iguais (o motor ainda não os usa; entram com o A1.3).
+                for a in io.w.iter() {
+                    a.store((1.0f32 / io.w.len() as f32).to_bits(), Ordering::Relaxed);
+                }
+                for (j, a) in io.x.iter().enumerate() {
+                    a.store(x_value(tok, *layer, j), Ordering::Relaxed);
+                }
+            } else {
+                // Passo de `m` posições: ids, pesos e `x` por posição global, depois a palavra `m`. Só o prefixo ativo é escrito: a cauda
+                // `m..max_positions` fica com o dado do passo anterior (a linha de serviço tem de fatiar por `m`).
+                let (m, k, w) = (st.m, cfg.topk, cfg.width);
+                for p in 0..m {
+                    let gpos = st.pos + p;
+                    let ids = &cfg.routing[gpos % cfg.routing.len()][*layer];
+                    for (j, &e) in ids.iter().enumerate() {
+                        io.ids[p * k + j].store(e, Ordering::Relaxed);
+                        io.w[p * k + j].store((1.0f32 / k as f32).to_bits(), Ordering::Relaxed);
+                    }
+                    for j in 0..w {
+                        io.x[p * w + j].store(x_value(gpos, *layer, j), Ordering::Relaxed);
+                    }
+                }
+                io.m[0].store(m as u32, Ordering::Relaxed);
             }
         }
         Op::Launch { layer, table, io, .. } => {
+            let (m, k) = (if cfg.max_positions == 1 { 1 } else { st.m }, cfg.topk);
             let ids = LayerIo::load(&io.ids);
-            let mut hits = Vec::new();
-            for e in ids {
-                let key = (*layer * cfg.experts) as u32 + e;
-                let s = st.tables.get(table).map_or(NO_SLOT, |t| t[key as usize]);
-                if s == NO_SLOT {
-                    continue;
+            let mut por_pos = vec![Vec::new(); cfg.max_positions];
+            for p in 0..m {
+                for &e in &ids[p * k..(p + 1) * k] {
+                    let key = (*layer * cfg.experts) as u32 + e;
+                    let s = st.tables.get(table).map_or(NO_SLOT, |t| t[key as usize]);
+                    if s == NO_SLOT {
+                        continue;
+                    }
+                    let sl = st.bank[s as usize];
+                    if sl.key != Some(key) || sl.copying {
+                        let token = st.token;
+                        st.violations.push(Violation::Launch { token, pos: p, layer: *layer, key, slot: s, found: sl.key, copying: sl.copying });
+                    }
+                    por_pos[p].push(key);
                 }
-                let sl = st.bank[s as usize];
-                if sl.key != Some(key) || sl.copying {
-                    let token = st.token;
-                    st.violations.push(Violation::Launch { token, layer: *layer, key, slot: s, found: sl.key, copying: sl.copying });
-                }
-                hits.push(key);
             }
-            st.hits[*layer] = hits;
+            st.hits[*layer] = por_pos;
         }
         Op::AddY { layer, io, .. } => {
             if !st.released {
-                let x = LayerIo::load(&io.x);
-                let ids = LayerIo::load(&io.ids);
-                let cpu: Vec<u32> = ids.iter().map(|&e| (*layer * cfg.experts) as u32 + e).filter(|k| !st.hits[*layer].contains(k)).collect();
-                let expected: Vec<u32> = x.iter().map(|&xj| cpu.iter().fold(0u32, |a, &k| a.wrapping_add(expert_out(k, xj)))).collect();
-                let got = LayerIo::load(&io.y);
-                if expected != got {
-                    let token = st.token;
-                    st.violations.push(Violation::Y { token, layer: *layer, expected, got });
+                let (m, k, w) = (if cfg.max_positions == 1 { 1 } else { st.m }, cfg.topk, cfg.width);
+                let (x, ids, got) = (LayerIo::load(&io.x), LayerIo::load(&io.ids), LayerIo::load(&io.y));
+                for p in 0..m {
+                    let cpu: Vec<u32> = ids[p * k..(p + 1) * k].iter().map(|&e| (*layer * cfg.experts) as u32 + e)
+                        .filter(|key| !st.hits[*layer][p].contains(key)).collect();
+                    let expected: Vec<u32> =
+                        x[p * w..(p + 1) * w].iter().map(|&xj| cpu.iter().fold(0u32, |a, &key| a.wrapping_add(expert_out(key, xj)))).collect();
+                    if expected != got[p * w..(p + 1) * w] {
+                        let token = st.token;
+                        st.violations.push(Violation::Y { token, pos: p, layer: *layer, expected, got: got[p * w..(p + 1) * w].to_vec() });
+                    }
                 }
             }
         }
@@ -241,7 +277,9 @@ impl FakeGpu {
             tables: HashMap::new(),
             next_id: 0,
             token: 0,
-            hits: vec![Vec::new(); cfg.layers],
+            pos: 0,
+            m: 1,
+            hits: vec![vec![Vec::new(); cfg.max_positions]; cfg.layers],
             released: false,
             violations: Vec::new(),
             main_calls: 0,
@@ -358,8 +396,12 @@ impl FakeGpu {
     }
 
     pub fn mapped_io(self: &Arc<Self>, topk: usize, width: usize) -> Mapped<LayerIo> {
+        self.mapped_io_positions(topk, width, 1)
+    }
+
+    pub fn mapped_io_positions(self: &Arc<Self>, topk: usize, width: usize, max_positions: usize) -> Mapped<LayerIo> {
         let id = self.new_id();
-        Mapped::from_parts(Arc::new(LayerIo::new(topk, width)), id.0, id, self.owner())
+        Mapped::from_parts(Arc::new(LayerIo::with_positions(topk, width, max_positions)), id.0, id, self.owner())
     }
 
     pub fn device_table(self: &Arc<Self>, len: usize) -> Device<[u32]> {
@@ -394,7 +436,7 @@ impl FakeGpu {
             ready: (0..cfg.slots).map(|_| self.event()).collect(),
             seq: (0..=cfg.layers).map(|_| self.mapped_u32(init)).collect(),
             flag: (0..cfg.layers).map(|_| self.mapped_u32(init)).collect(),
-            io: (0..cfg.layers).map(|_| self.mapped_io(cfg.topk, cfg.width)).collect(),
+            io: (0..cfg.layers).map(|_| self.mapped_io_positions(cfg.topk, cfg.width, cfg.max_positions)).collect(),
         }
     }
 
@@ -482,6 +524,15 @@ impl Backend for FakeGpu {
             }
         }
         self.enqueue(s.0, Op::Upload { dst: dst.id(), src_id: src.id(), src: src.shared() })
+    }
+
+    fn max_positions(&self) -> usize {
+        self.cfg.max_positions
+    }
+
+    fn begin_step(&self, s: &FakeStream, _t: u32, pos: u64, m: usize) -> Result<(), FakeError> {
+        self.point()?;
+        self.enqueue(s.0, Op::BeginStep { pos, m })
     }
 
     fn route(&self, s: &FakeStream, layer: usize, io: &Mapped<LayerIo>) -> Result<(), FakeError> {
