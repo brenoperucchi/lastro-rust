@@ -1,30 +1,38 @@
-A2-MULTIPOS-SIM, critério v1 (3/11/2026, escrito ANTES de rodar a varredura e antes de ver qualquer número de M > 1). Não se muda limiar depois de ver número.
+A2-MULTIPOS-SIM, critério v1.1 (3/11/2026). Nenhum número de M > 1 foi visto até esta versão. Não se muda limiar depois de ver número.
 
-PERGUNTA: a partir de que M o passo multiposição reduz o tempo por token, e quanto, a 10% e a 25% de slots, no 1B e no 3B? Só simulador, sem GPU.
+HISTÓRICO (a ordem "critério antes do número" vale só para M > 1)
+- v1 (commit f4c6e5c): escrito antes de qualquer execução. Modelo de cache próprio, só o tempo por token em M=1 como calibração (±10%).
+- 1ª calibração do script v1: 5,85 ms no 1B (−27%), reprovada. Causa: a CPU e a GPU dos experts começavam junto com o g da camada; o moe_sim.py faz o g (atenção e roteador) antes dos experts. Corrigido (commit d11a98e).
+- Rodada 48 de revisão nível 2: o modelo próprio de cache fazia 1/3 das cópias do motor medido (0,39 contra 1,17 por token), duplicava cópias em voo, contava a frequência depois da admissão e não adiava a cópia até a GPU passar da camada da vítima. A calibração em ms/token sozinha não discriminava isso.
+- v1.1 (esta): o cache passa a ser o do próprio moe_sim.py (protocolo "token", lfu_cpu) generalizado para M posições (classe SimM do multipos.py), e a calibração ganha cópias por token e acerto, com tolerâncias fixadas aqui antes de rodar a versão 1.1 do script. Nenhum limiar de decisão mudou desde o v1.
 
-1. MODELO (script `multipos.py`, usa os parâmetros de `tools/moe_sim.py` e os traços de `qual-runs/TRACOS-20261029`; o motor não é alterado)
-- Passo de M posições consecutivas da mesma conversa (o último bloco incompleto é descartado; M=1 é o decode de hoje). Por camada l: U = união dos experts pedidos; n_e = quantas das M posições pedem o expert e.
-- Residência = tabela publicada no começo do passo (protocolo "token" do D1): R = U ∩ residentes; o resto, U \ R, vai à CPU (política lfu_cpu: sem cópia síncrona).
-- GPU dos experts = soma, sobre e em R, de h·w(n_e); CPU = soma, sobre e em U \ R, de c·w(n_e), com c = c_cpu (camada com tráfego de cópia) ou c_cpu_quiet. Camada = g_M + max(GPU dos experts, CPU) + o_layer se há tráfego de cópia e algum expert fora da GPU. Passo = soma das camadas; tempo por token = passo / M.
-- Dois limites para o que o simulador NÃO mede (custo de lote de M posições; só existe medida de M=1): OTIMISTA, w(n)=1 e g_M=g (o peso do expert é lido uma vez e o lote é limitado por banda de memória); PESSIMISTA, w(n)=n e g_M=M·g (sem nenhum ganho de lote no cálculo; só a cópia e a política de cache se beneficiam da união). A verdade está entre os dois.
-- Admissão em segundo plano (lfu_cpu): depois do passo, as faltas cuja frequência com decaimento (meia-vida 128 tokens, decaimento 2^(-M/128) por passo, contagem n_e) vence a do residente mais fraco são copiadas; no máximo BACKLOG=4 por camada e, no passo todo, floor(tempo do passo / custo da cópia) cópias. Custo da cópia = expert_mb / banda; banda = 12,2 GB/s (medida no x8, qual-runs/PCIE-X8-20261031/resultado.txt: 0,258 ms por 3,15 MB e 0,388 ms por 4,72 MB com a CPU calculando). O moe_sim.py ainda traz 14,1 (calibrado em x16); o script usa 12,2 e registra a diferença; o moe_sim.py não é alterado.
-- Treino (conversas 0 a 3) aquece a frequência; o tempo é medido nas conversas de teste (4 a 7), como no censo.
+PERGUNTA: a partir de que M o passo multiposição reduz o tempo por posição processada, e quanto, a 10% e a 25% de slots, no 1B e no 3B? Só simulador, sem GPU.
 
-2. CALIBRAÇÃO (feita antes de qualquer previsão; M=1, 10% de slots, protocolo acima)
-- Alvo: o tempo por token medido do motor D1 e do lfu_cpu no A1.4 (qual-runs/A1-MEDIDA-20261101/resultado.txt e, para o binário C congelado, qual-runs/A1-DIAG10-20261103/analise-e1.txt): 1B L1 cerca de 8,0 ms; 3B L1 cerca de 14,4 ms (mediana das 5 repetições do C).
-- Tolerância (fixada agora): |simulado − medido| / medido ≤ 10% no M=1 a 10%, nos dois modelos, nos dois limites (a 10% o M=1 dos dois limites é o mesmo, pois n=1). Fora disso o resultado é "SIMULADOR NÃO SERVE" e nenhuma tabela de M > 1 é publicada como previsão.
-- Checagem adicional informativa (não decide): ideal "tudo residente" do simulador contra L3/L4 medidos.
+1. MODELO (`multipos.py`; usa tools/moe_sim.py sem alterá-lo, e os traços de qual-runs/TRACOS-20261029)
+- Passo de M posições consecutivas da mesma conversa (o último bloco incompleto é descartado; M=1 é o decode de hoje). Por camada: união U dos experts pedidos, n_e = quantas das M posições pedem o expert e, na ordem da primeira aparição.
+- Cache = Sim(protocol="token", policy="lfu_cpu") do moe_sim.py: tabela de residentes publicada no começo do passo; faltas vão à CPU; admissão em segundo plano depois da flag da CPU da camada, com frequência de decaimento (meia-vida 128 tokens, cada pedido conta; o relógio anda M posições por camada), no máximo 4 cópias em voo no total, cópia para o slot de uma vítima de camada ≥ a corrente adiada até a GPU passar dessa camada, fila de PCIe única e contínua entre passos, falta com cópia em voo vai à CPU sem nova admissão. Em M=1 o SimM é IGUAL ao Sim do moe_sim.py (teste de equivalência).
+- Banda de cópia = 12,2 GB/s (medida no x8, qual-runs/PCIE-X8-20261031/resultado.txt: 0,258 ms por 3,15 MB e 0,388 ms por 4,72 MB com a CPU calculando). O moe_sim.py ainda traz 14,1 (x16); o script passa 12,2 e não altera o moe_sim.py.
+- Camada = g_M + max(GPU dos experts, CPU) + o_layer se há tráfego e falta. GPU dos experts = soma, sobre os residentes, de h·w(n_e); CPU = soma, sobre as faltas, de c·w(n_e), com c = c_cpu (camada com tráfego de cópia) ou c_cpu_quiet. Passo = soma das camadas; custo por posição = passo / M.
+- Dois CENÁRIOS CONDICIONAIS para o custo de lote do cálculo, que não tem medida (só existe medida de M=1): OTIMISTA, w(n)=1 e g_M=g (o peso do expert é lido uma vez; o lote é limitado por banda de memória); PESSIMISTA, w(n)=n e g_M=M·g (nenhum ganho de lote no cálculo modelado; só a cópia e o cache se beneficiam da união). Eles NÃO são limites garantidos do motor real: custos que o modelo não tem (sincronização do passo, buffers, atenção entre as M posições, escalonamento) podem elevar o tempo real além do pessimista.
+- Treino (conversas 0 a 3) aquece a frequência; o tempo é medido nas conversas de teste (4 a 7).
 
-3. VARREDURA (só depois da calibração e da revisão nível 2 do critério e do script)
-- M = 1, 2, 4, 8, 16, 32; slots 10% e 25%; 1B e 3B; todas as conversas de teste; os dois limites. Uma tabela: tempo por token, ganho = 1 − t(M)/t(1), e o M em que a curva achata (menor M com ganho a menos de 2 pontos do ganho em M=32).
+2. CALIBRAÇÃO (M=1, 10% de slots; antes de qualquer previsão)
+- Alvos do binário C congelado do A1.4 (5 repetições; qual-runs/A1-DIAG10-20261103/analise-e1.txt e os contadores do A1.4): ms/token L1 de 8,0 (1B) e 14,4 (3B); cópias de fundo por token de 1,17 (1B) e 1,84 (3B); acerto de 25,0% (1B).
+- Tolerâncias: ms/token ±10%; cópias/token ±15%; acerto ±2 pontos (só 1B). Fora de qualquer uma: "SIMULADOR NÃO SERVE" e nenhuma tabela de M > 1 vale como previsão.
+- Informativo: o ideal "tudo residente" do simulador contra L3/L4.
 
-4. REGRA DE DECISÃO (M máximo aceitável = 8; ganho mínimo = 15% do tempo por token; vale por modelo a 10% e a decisão final é a do modelo mais fraco; 25% é descritivo)
-- VALE IMPLEMENTAR NO MOTOR: em ambos os modelos, o ganho do limite PESSIMISTA com M ≤ 8 é ≥ 15%.
-- VALE MEDIR NA GPU ANTES: não vale pelo pessimista, mas em ambos o ganho do limite OTIMISTA com M ≤ 8 é ≥ 15%. A incerteza única a medir é o custo de lote do cálculo (microbench de GEMM com poucas posições); nenhuma implementação antes disso.
-- NÃO VALE AGORA: em algum dos dois modelos o ganho do limite OTIMISTA com M ≤ 8 é < 15%.
+3. VARREDURA (só depois da aprovação nível 2 desta v1.1 e do script)
+- M = 1, 2, 4, 8, 16, 32; slots 10% e 25%; 1B e 3B; conversas de teste; os dois cenários. Uma tabela por modelo, fração e cenário: custo por posição, ganho = 1 − t(M)/t(1), acerto, cópias por posição, a_eq e folga, e o M em que a curva achata (menor M com ganho a menos de 2 pontos do ganho em M=32).
+- a_eq = (t(M)/t(1)) / 0,85: a menor fração de posições úteis que mantém ganho de 15% (todas as M posições são contadas como úteis na tabela; com decodificação especulativa só as aceitas servem). folga = M·(0,85·t(1) − t(M)): o custo extra por passo, em ms, que o modelo não tem e que ainda deixa 15% de ganho (se negativa, o ganho já é menor que 15%). Não são limiares novos; são leituras do mesmo número.
+
+4. REGRA DE DECISÃO (M máximo aceitável = 8; ganho mínimo = 15% do custo por posição; vale por modelo a 10%, decide o modelo mais fraco; 25% é descritivo)
+- VALE PROTOTIPAR NO MOTOR (sob as hipóteses do modelo): em ambos os modelos, o ganho do cenário PESSIMISTA com M ≤ 8 é ≥ 15%. É indicação, não garantia: o ganho real depende de uma fonte de M posições úteis e dos custos que o modelo não tem.
+- VALE MEDIR NA GPU ANTES: não vale pelo pessimista, mas em ambos o ganho do OTIMISTA com M ≤ 8 é ≥ 15%. Mede-se o custo de lote do cálculo (microbench de GEMM com poucas posições) e os custos de passo antes de qualquer implementação.
+- NÃO VALE AGORA: em algum dos dois modelos o ganho do OTIMISTA com M ≤ 8 é < 15%.
 - Calibração reprovada: SIMULADOR NÃO SERVE (não é "não vale").
 
 5. LIMITES DECLARADOS NO RESULTADO
-- Os traços vêm de passada causal sobre texto fixo; em lote de sequências diferentes e em decodificação especulativa a união é outra (nesta, só tokens aceitos seguem o texto).
-- O simulador não prevê o custo de sincronização do motor nem a espera de 0,15 a 0,5 ms (A1-DIAG10: dentro do ruído, não reproduzida).
-- O custo de lote do cálculo (item 1, os dois limites) não tem medida; por isso a decisão usa os dois limites e o resultado intermediário manda medir, não implementar.
+- O custo por posição supõe M posições úteis seguidas do mesmo texto. O decode de hoje é autorregressivo: uma fonte de M posições seria decodificação especulativa, decodificador paralelo ou prefill, e nessa carga só as posições aceitas contam (ver a_eq) e o rascunho tem custo. O projeto não tem essa carga nem a mediu.
+- Os traços vêm de passada causal sobre texto fixo; em lote de sequências diferentes a união é outra.
+- O simulador não prevê a sincronização do motor; a espera de 0,15 a 0,5 ms do A1-DIAG10 não foi reproduzida e nada se afirma sobre a sua causa.
+- Os dois cenários cobrem só os custos modelados (ver seção 1); a folga mede quanto de custo não modelado cabe.
