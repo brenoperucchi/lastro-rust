@@ -1,12 +1,12 @@
-A2-LOTE, critério v1 (3/11/2026, escrito ANTES de qualquer medida; autorizado pelo Breno em 3/11 21:45: critério e script sem GPU, depois uma janela curta na 4090). Não se muda limiar depois de ver número.
+A2-LOTE, critério v1.1 (3/11/2026; v1 revisada na rodada 53, mudanças na seção 5;  escrito ANTES de qualquer medida; autorizado pelo Breno em 3/11 21:45: critério e script sem GPU, depois uma janela curta na 4090). Não se muda limiar depois de ver número.
 
 PERGUNTA: quanto custa calcular UM expert para n posições juntas (n = 1, 2, 4, 8, 16, 32), na GPU e na CPU de 8 threads, comparado com n = 1? Essa razão é o w(n) que o A2-MULTIPOS-SIM tratou com dois cenários (w=1 e w=n). A medida entra no mesmo simulador (SimM do multipos.py) no lugar deles.
 
 1. MEDIDA
 - GPU (`lote_gpu.cu`, CUDA C++, nvcc; 4090 por UUID GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, nunca a 3080 Ti; CPU fixada por taskset nos P-cores 0-15; sem outro processo na GPU): o expert inteiro, gate_up com SwiGLU e down, pesos BF16 e ativações f32 acumulando em f32 (como o gemv_swiglu e o gemv_axpby do motor), para n posições. Kernel de lote dedicado, cada peso lido UMA vez da memória para as n posições. Dimensões do Granite 1B (hidden 1024, inter 512) e 3B (hidden 1536, inter 512). 64 experts sintéticos em rodízio (200 MB no 1B, 300 MB no 3B, mais que a L2 de 72 MB) para os pesos virem da DRAM, como no motor; lançamentos seguidos na mesma stream; tempo por expert = tempo total ÷ lançamentos; mediana de 15 repetições (cada uma com 640 experts após aquecimento).
 - Ressalva dita no resultado: o kernel é CUDA C++ escrito para esta medida, não o kernel cutile do motor; ele estima o que a placa permite com um kernel de lote, e um kernel cutile equivalente pode ficar acima.
-- CPU (`lote_cpu` em Rust, usando o Pool de 8 threads e o dot AVX2/FMA do cpu.rs): o expert inteiro para n posições, pesos BF16, x f32, cada linha de peso carregada uma vez e usada por n acumuladores; 64 experts em rodízio (mais que a L3); duas fases como o Cpu::experts (gate_up, depois down); tempo por expert = tempo total ÷ experts; mediana de 15 repetições. Fixada nos P-cores 0-15 com 8 threads, como o motor.
-- Portão de correção, por n: o resultado do lote tem de bater com n execuções de n = 1 (GPU: erro relativo máximo ≤ 1e-3 sobre a saída; CPU: ≤ 1e-5). Qualquer falha invalida a tabela daquele n.
+- CPU (`lote-cpu` em Rust, usando o Pool de 8 threads e o dot AVX2/FMA do cpu.rs): camadas de K = 6 experts (a média de experts de CPU por camada a 10% de slots), em DOIS despachos do Pool como o Cpu::experts (gate_up com SwiGLU dentro das tarefas do Pool, depois down somando os 6), pesos BF16, x f32, cada linha de peso carregada uma vez e usada por até 8 posições por vez (n=1 usa o cpu::dot do motor); 64 experts em rodízio (mais que a L3 de 33 MiB); tempo por expert = tempo total ÷ (camadas × 6); mediana de 15 repetições. O SwiGLU no Pool é "o que a CPU permite com um lote", como o kernel da GPU; o motor de hoje o faz serial na thread que chama. Fixada nos P-cores 0-15 com 8 threads, como o motor.
+- Portão de correção, por n: o resultado do lote tem de bater com n execuções de n = 1 (GPU: erro relativo máximo ≤ 1e-3 sobre a saída, contra n execuções de n=1 e contra uma referência em double; CPU: ≤ 1e-5, contra o Cpu::experts do motor posição por posição). Saída não finita, tempo ≤ 0 ou não finito, UUID diferente da 4090, ou modo diferente de "completo reps=15" reprovam o portão. Qualquer falha invalida a tabela daquele n.
 - Representatividade (portão): no n = 1, o tempo por expert da GPU tem de estar a ±40% do h do motor (1B 4,96 µs; 3B 5,19 µs, qual-runs/M2F-FUSOES-20261029 / moe_sim.py) e o da CPU a ±30% do c_cpu_quiet (1B 0,0401 ms; 3B 0,0610 ms). Fora disso: "O MICROBENCH NÃO REPRESENTA O MOTOR" e a tabela não entra no simulador.
 
 2. TABELA w(n)
@@ -24,3 +24,10 @@ PERGUNTA: quanto custa calcular UM expert para n posições juntas (n = 1, 2, 4,
 - O custo por posição supõe M posições úteis seguidas (como no A2-MULTIPOS-SIM; com decodificação especulativa só as aceitas servem).
 - O sistema de memória em rodízio de 64 experts aproxima a leitura da DRAM do motor, mas o motor lê os 8 experts de uma camada em sequência com outros kernels no meio.
 - Nada aqui mede g_M, a atenção entre as M posições, o roteador em lote nem a sincronização do passo.
+
+5. MUDANÇAS DA v1.1 (rodada 53, antes de qualquer medida; nenhum limiar de decisão mudou)
+- CPU: camadas de K = 6 experts por despacho (o custo fixo do despacho se divide como no motor) e SwiGLU dentro do Pool; o t(1) continua sendo o portão de representatividade.
+- Portões de validade: finitude de todas as saídas e tempos, UUID da 4090 impresso e conferido, modo completo com 15 repetições, erro de lançamento CUDA checado.
+- A variante serial da GPU relança o mesmo expert n vezes seguidas (da 2ª em diante os pesos vêm da L2): é informativa e não é o w=n da DRAM; não alimenta a decisão.
+- O kernel de GPU não usa memória compartilhada para x nem pipeline de posições: para n >= 16 o tempo medido é conservador; a regra só olha M <= 8.
+- 25% de slots sai impresso como descritivo e não entra na decisão.

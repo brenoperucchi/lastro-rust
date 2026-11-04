@@ -1,7 +1,7 @@
 // A2-LOTE (GPU): tempo de UM expert do Granite para n posições juntas. Critério: criterio.txt (v1).
 // Kernel de lote dedicado em CUDA C++ (não é o cutile do motor): um warp por linha de peso, a linha vai UMA vez para registradores
 // e é usada pelas n posições. Dois kernels por expert (gate_up+SwiGLU, depois down), 64 experts em rodízio dentro de um CUDA Graph.
-// Também mede a variante "serial" (n execuções de n=1 por expert, o cenário pessimista). Uso: CUDA_VISIBLE_DEVICES=<UUID da 4090> lote_gpu [--rapido]
+// Também mede a variante "serial" (n execuções de n=1 seguidas do MESMO expert; da 2ª em diante os pesos vêm da L2, então é informativo e NÃO é o w=n da DRAM). Uso: CUDA_VISIBLE_DEVICES=<UUID da 4090> lote_gpu [--rapido]
 // Saída: GPU <modelo> n=<n> lote_us=<x> serial_us=<y> err_lote=<e> err_serial=<e> err_ref=<e>   (saída 3 se algum erro > 1e-3)
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
@@ -81,7 +81,9 @@ static void lanca(const Modelo& m, const bf* gu, const bf* dn, const float* x, f
   const int W = 4;  // warps por bloco
   if (m.hid == 1024) k_gu<1024><<<(m.inter + W - 1) / W, W * 32, 0, s>>>(gu, x, a, n, m.inter);
   else k_gu<1536><<<(m.inter + W - 1) / W, W * 32, 0, s>>>(gu, x, a, n, m.inter);
+  CK(cudaGetLastError());
   k_dn<512><<<(m.hid + W - 1) / W, W * 32, 0, s>>>(dn, a, y, n, m.hid);
+  CK(cudaGetLastError());
 }
 
 static double mediana(std::vector<double> v) { std::sort(v.begin(), v.end()); return v[v.size() / 2]; }
@@ -90,8 +92,13 @@ int main(int argc, char** argv) {
   bool rapido = argc > 1 && !strcmp(argv[1], "--rapido");
   int reps = rapido ? 3 : 15, replays = rapido ? 2 : 10;
   cudaDeviceProp pr; CK(cudaGetDeviceProperties(&pr, 0));
-  printf("# dispositivo: %s (visível 0)\n", pr.name);
-  if (strstr(pr.name, "3080")) { fprintf(stderr, "RECUSADO: a 3080 Ti não é a placa deste experimento\n"); return 4; }
+  char uuid[64];
+  { const unsigned char* b = (const unsigned char*)pr.uuid.bytes;
+    snprintf(uuid, sizeof uuid, "GPU-%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+             b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]); }
+  printf("# dispositivo: %s uuid=%s\n", pr.name, uuid);
+  printf("# modo=%s reps=%d replays=%d\n", rapido ? "rapido" : "completo", reps, replays);
+  if (strcmp(uuid, "GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd")) { fprintf(stderr, "RECUSADO: não é a 4090 do experimento (uuid %s)\n", uuid); return 4; }
   cudaStream_t st; CK(cudaStreamCreate(&st));
   uint64_t rs = 0x9E3779B97F4A7C15ull;
   auto rnd = [&]() { rs ^= rs << 13; rs ^= rs >> 7; rs ^= rs << 17; return ((float)(rs >> 40) / 16777216.f - 0.5f) * 0.1f; };
@@ -119,9 +126,13 @@ int main(int argc, char** argv) {
       std::vector<float> yl((size_t)n * m.hid), ys((size_t)n * m.hid);
       CK(cudaMemcpy(yl.data(), dy, yl.size() * 4, cudaMemcpyDeviceToHost));
       CK(cudaMemcpy(ys.data(), dy2, ys.size() * 4, cudaMemcpyDeviceToHost));
-      double mx = 1e-30, e_ls = 0, e_ref = 0;
-      for (float v : ys) mx = std::max(mx, (double)fabsf(v));
+      double mx = 0, e_ls = 0, e_ref = 0;
+      bool finito = true;                       // qualquer NaN/inf nas saídas reprova (std::max ignoraria o NaN)
+      for (float v : yl) finito = finito && std::isfinite(v);
+      for (float v : ys) { finito = finito && std::isfinite(v); mx = std::max(mx, (double)fabsf(v)); }
+      if (!finito || !(mx > 0)) mx = NAN;
       for (size_t i = 0; i < yl.size(); i++) e_ls = std::max(e_ls, (double)fabsf(yl[i] - ys[i]) / mx);
+      if (!finito || std::isnan(mx)) e_ls = NAN;
       for (int p : {0, n - 1}) {
         std::vector<double> act(m.inter);
         for (int r = 0; r < m.inter; r++) {
@@ -137,6 +148,7 @@ int main(int argc, char** argv) {
           double s = 0;
           for (int k = 0; k < m.inter; k++) s += (double)__bfloat162float(hdn[(size_t)r * m.inter + k]) * act[k];
           e_ref = std::max(e_ref, fabs((double)yl[(size_t)p * m.hid + r] - s) / mx);
+          if (!std::isfinite(s)) e_ref = NAN;
         }
       }
       // tempo: grafo com 64 experts em rodízio
@@ -170,6 +182,7 @@ int main(int argc, char** argv) {
         CK(cudaGraphExecDestroy(ex));
       }
       printf("GPU %s n=%d lote_us=%.2f serial_us=%.2f err_lote_serial=%.2e err_ref=%.2e\n", m.nome, n, tt[0], tt[1], e_ls, e_ref);
+      if (!finito || std::isnan(mx)) e_ref = NAN;
       if (!(e_ls <= 1e-3) || !(e_ref <= 1e-3)) falhou = true;
       cudaFree(dx); cudaFree(da); cudaFree(dy); cudaFree(dy2);
     }
