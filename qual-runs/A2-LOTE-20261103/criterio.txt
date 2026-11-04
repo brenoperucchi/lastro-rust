@@ -1,0 +1,26 @@
+A2-LOTE, critério v1 (3/11/2026, escrito ANTES de qualquer medida; autorizado pelo Breno em 3/11 21:45: critério e script sem GPU, depois uma janela curta na 4090). Não se muda limiar depois de ver número.
+
+PERGUNTA: quanto custa calcular UM expert para n posições juntas (n = 1, 2, 4, 8, 16, 32), na GPU e na CPU de 8 threads, comparado com n = 1? Essa razão é o w(n) que o A2-MULTIPOS-SIM tratou com dois cenários (w=1 e w=n). A medida entra no mesmo simulador (SimM do multipos.py) no lugar deles.
+
+1. MEDIDA
+- GPU (`lote_gpu.cu`, CUDA C++, nvcc; 4090 por UUID GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, nunca a 3080 Ti; CPU fixada por taskset nos P-cores 0-15; sem outro processo na GPU): o expert inteiro, gate_up com SwiGLU e down, pesos BF16 e ativações f32 acumulando em f32 (como o gemv_swiglu e o gemv_axpby do motor), para n posições. Kernel de lote dedicado, cada peso lido UMA vez da memória para as n posições. Dimensões do Granite 1B (hidden 1024, inter 512) e 3B (hidden 1536, inter 512). 64 experts sintéticos em rodízio (200 MB no 1B, 300 MB no 3B, mais que a L2 de 72 MB) para os pesos virem da DRAM, como no motor; lançamentos seguidos na mesma stream; tempo por expert = tempo total ÷ lançamentos; mediana de 15 repetições (cada uma com 640 experts após aquecimento).
+- Ressalva dita no resultado: o kernel é CUDA C++ escrito para esta medida, não o kernel cutile do motor; ele estima o que a placa permite com um kernel de lote, e um kernel cutile equivalente pode ficar acima.
+- CPU (`lote_cpu` em Rust, usando o Pool de 8 threads e o dot AVX2/FMA do cpu.rs): o expert inteiro para n posições, pesos BF16, x f32, cada linha de peso carregada uma vez e usada por n acumuladores; 64 experts em rodízio (mais que a L3); duas fases como o Cpu::experts (gate_up, depois down); tempo por expert = tempo total ÷ experts; mediana de 15 repetições. Fixada nos P-cores 0-15 com 8 threads, como o motor.
+- Portão de correção, por n: o resultado do lote tem de bater com n execuções de n = 1 (GPU: erro relativo máximo ≤ 1e-3 sobre a saída; CPU: ≤ 1e-5). Qualquer falha invalida a tabela daquele n.
+- Representatividade (portão): no n = 1, o tempo por expert da GPU tem de estar a ±40% do h do motor (1B 4,96 µs; 3B 5,19 µs, qual-runs/M2F-FUSOES-20261029 / moe_sim.py) e o da CPU a ±30% do c_cpu_quiet (1B 0,0401 ms; 3B 0,0610 ms). Fora disso: "O MICROBENCH NÃO REPRESENTA O MOTOR" e a tabela não entra no simulador.
+
+2. TABELA w(n)
+- w_gpu(n) = t_gpu(n) / t_gpu(1) e w_cpu(n) = t_cpu(n) / t_cpu(1), por modelo, nos pontos n medidos; entre pontos, interpolação linear em n; n > 32 não ocorre (M máximo 32).
+- Cenário MEDIDO no SimM: o custo do expert na GPU é h·w_gpu(n) e na CPU c·w_cpu(n); o g_M continua sem medida e entra com DOIS valores: g_M = g (hipótese favorável, a atenção e o roteador em lote custam como uma posição) e g_M = M·g (desfavorável). Nada mais muda no simulador (calibração em M=1 idêntica à do A2-MULTIPOS-SIM).
+
+3. REGRA DE DECISÃO (a mesma do A2-MULTIPOS-SIM: M ≤ 8, ganho ≥ 15% do custo por posição, os dois modelos a 10%, decide o modelo mais fraco; 25% descritivo)
+- VALE PROTOTIPAR NO MOTOR (sob as hipóteses): com w medido e g_M = M·g (desfavorável), o ganho com M ≤ 8 é ≥ 15% nos dois modelos.
+- DEPENDE DO g_M: não vale com g_M = M·g, mas com w medido e g_M = g o ganho com M ≤ 8 é ≥ 15% nos dois. A próxima medida é a atenção e o roteador em lote.
+- NÃO VALE AGORA: com w medido e g_M = g, em algum dos dois modelos o ganho com M ≤ 8 é < 15%.
+- Portão reprovado: "O MICROBENCH NÃO REPRESENTA O MOTOR" ou correção falha: sem decisão; a medida é refeita ou o resultado fica como pendência.
+
+4. LIMITES DECLARADOS
+- O kernel de GPU é de lote dedicado em CUDA C++, e a CPU usa o dot do projeto estendido para n acumuladores; ambos medem o custo do expert, não o passo de camada nem a sincronização do motor.
+- O custo por posição supõe M posições úteis seguidas (como no A2-MULTIPOS-SIM; com decodificação especulativa só as aceitas servem).
+- O sistema de memória em rodízio de 64 experts aproxima a leitura da DRAM do motor, mas o motor lê os 8 experts de uma camada em sequência com outros kernels no meio.
+- Nada aqui mede g_M, a atenção entre as M posições, o roteador em lote nem a sincronização do passo.
