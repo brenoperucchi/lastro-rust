@@ -22,7 +22,7 @@
 //!   espera é um ponto de troca. É o que o `proptest` usa;
 //! - executor ([`FakeGpu::new_executor`]): uma thread que anda a fila de cálculo, e a cópia roda na hora em que é
 //!   enfileirada. É o que o `loom` usa (a GPU como terceira thread), e um teste com threads de verdade.
-use super::backend::{geq, Backend, HostExperts, LayerIo, Role};
+use super::backend::{geq, Backend, CpuStep, HostExperts, LayerIo, Role};
 use super::engine::Parts;
 use super::mem::{AllocId, Device, Mapped, Pinned, Release};
 use super::sync::{lock, thread, AtomicU32, Mutex, Ordering};
@@ -144,6 +144,12 @@ pub fn expert_out(key: u32, x: u32) -> u32 {
     x.wrapping_mul(0x9E37_79B1).wrapping_add(key.wrapping_mul(40503)).rotate_left(key % 31 + 1)
 }
 
+/// O peso (inteiro pequeno, distinto por posição global, camada e posto no top-k) que o falso publica nas áreas de várias posições e que
+/// entra na soma do conferidor e do `FakeCpu` ponderado: um peso trocado de posição ou de posto muda o `y`.
+pub(crate) fn peso(gpos: usize, layer: usize, rank: usize) -> u32 {
+    1 + ((gpos * 3 + layer * 5 + rank * 7) % 11) as u32
+}
+
 pub(crate) fn x_value(token: usize, layer: usize, j: usize) -> u32 {
     (((token as u32).wrapping_add(1)) << 16) ^ ((layer as u32) << 8) ^ (j as u32 + 1)
 }
@@ -202,7 +208,7 @@ fn step(st: &mut State, cfg: &FakeCfg, q: usize) -> bool {
                     let ids = &cfg.routing[gpos % cfg.routing.len()][*layer];
                     for (j, &e) in ids.iter().enumerate() {
                         io.ids[p * k + j].store(e, Ordering::Relaxed);
-                        io.w[p * k + j].store((1.0f32 / k as f32).to_bits(), Ordering::Relaxed);
+                        io.w[p * k + j].store(peso(gpos, *layer, j), Ordering::Relaxed);
                     }
                     for j in 0..w {
                         io.x[p * w + j].store(x_value(gpos, *layer, j), Ordering::Relaxed);
@@ -240,11 +246,18 @@ fn step(st: &mut State, cfg: &FakeCfg, q: usize) -> bool {
             if !st.released {
                 let (m, k, w) = (if io.m.is_empty() { 1 } else { st.m }, cfg.topk, cfg.width);
                 let (x, ids, got) = (LayerIo::load(&io.x), LayerIo::load(&io.ids), LayerIo::load(&io.y));
+                let ponderado = !io.m.is_empty();
                 for p in 0..m {
-                    let cpu: Vec<u32> = ids[p * k..(p + 1) * k].iter().map(|&e| (*layer * cfg.experts) as u32 + e)
-                        .filter(|key| !st.hits[*layer][p].contains(key)).collect();
-                    let expected: Vec<u32> =
-                        x[p * w..(p + 1) * w].iter().map(|&xj| cpu.iter().fold(0u32, |a, &key| a.wrapping_add(expert_out(key, xj)))).collect();
+                    // As faltas da posição com o posto de cada uma; nas áreas de várias posições o peso entra na soma.
+                    let cpu: Vec<(usize, u32)> = ids[p * k..(p + 1) * k].iter().enumerate().map(|(j, &e)| (j, (*layer * cfg.experts) as u32 + e))
+                        .filter(|(_, key)| !st.hits[*layer][p].contains(key)).collect();
+                    let gpos = st.pos + p;
+                    let expected: Vec<u32> = x[p * w..(p + 1) * w].iter().map(|&xj| {
+                        cpu.iter().fold(0u32, |a, &(j, key)| {
+                            let o = expert_out(key, xj);
+                            a.wrapping_add(if ponderado { peso(gpos, *layer, j).wrapping_mul(o) } else { o })
+                        })
+                    }).collect();
                     if expected != got[p * w..(p + 1) * w] {
                         let token = st.token;
                         st.violations.push(Violation::Y { token, pos: p, layer: *layer, expected, got: got[p * w..(p + 1) * w].to_vec() });
@@ -609,19 +622,21 @@ impl Backend for FakeGpu {
     }
 }
 
-/// A CPU de mentira: `y[j] = Σ expert_out(chave, x[j])` sobre as faltas. Falha ou entra em `panic` na `n`-ésima camada
-/// calculada, se pedido.
+/// A CPU de mentira: `y[j] = Σ expert_out(chave, x[j])` sobre as faltas, ou, com `weighted`, `Σ peso · expert_out(chave, x[j])` (os pesos
+/// inteiros que o falso publica nas áreas de várias posições). Falha ou entra em `panic` na `n`-ésima camada calculada, se pedido: uma
+/// chamada por camada, qualquer que seja o caminho (`compute` ou o `compute_step` em lote, que ela sobrescreve).
 #[derive(Default)]
 pub struct FakeCpu {
     pub(crate) calls: usize,
     pub fail_at: Option<usize>,
     pub panic_at: Option<usize>,
+    pub weighted: bool,
+    /// Mutante de teste: o lote usa o peso da primeira posição do expert em todas as posições dele.
+    pub peso_errado: bool,
 }
 
-impl HostExperts for FakeCpu {
-    type Error = String;
-
-    fn compute(&mut self, layer: usize, keys: &[u32], _weights: &[u32], x: &[u32], y: &mut [u32]) -> Result<(), String> {
+impl FakeCpu {
+    fn tick(&mut self, layer: usize) -> Result<(), String> {
         let c = self.calls;
         self.calls += 1;
         if self.panic_at == Some(c) {
@@ -630,8 +645,40 @@ impl HostExperts for FakeCpu {
         if self.fail_at == Some(c) {
             return Err(format!("falha injetada na CPU de mentira (camada {layer}, chamada {c})"));
         }
+        Ok(())
+    }
+
+    fn termo(&self, key: u32, w: u32, xj: u32) -> u32 {
+        let o = expert_out(key, xj);
+        if self.weighted { w.wrapping_mul(o) } else { o }
+    }
+}
+
+impl HostExperts for FakeCpu {
+    type Error = String;
+
+    fn compute(&mut self, layer: usize, keys: &[u32], weights: &[u32], x: &[u32], y: &mut [u32]) -> Result<(), String> {
+        self.tick(layer)?;
         for (yj, &xj) in y.iter_mut().zip(x) {
-            *yj = keys.iter().fold(0u32, |a, &k| a.wrapping_add(expert_out(k, xj)));
+            *yj = keys.iter().zip(weights).fold(0u32, |a, (&k, &w)| a.wrapping_add(self.termo(k, w, xj)));
+        }
+        Ok(())
+    }
+
+    /// Em lote, por expert: cada grupo soma `peso · expert(chave, x)` na posição de cada pedido. Outra ordem de soma que a do caminho por
+    /// posição (a soma em `u32` com volta é comutativa, então o resultado é o mesmo).
+    fn compute_step(&mut self, layer: usize, step: &CpuStep, x: &[u32], y: &mut [u32]) -> Result<(), String> {
+        self.tick(layer)?;
+        y.fill(0);
+        let w = step.width;
+        for g in &step.groups {
+            for (i, &p) in g.positions.iter().enumerate() {
+                let peso = if self.peso_errado { g.weights[0] } else { g.weights[i] };
+                for j in 0..w {
+                    let t = self.termo(g.key, peso, x[p * w + j]);
+                    y[p * w + j] = y[p * w + j].wrapping_add(t);
+                }
+            }
         }
         Ok(())
     }

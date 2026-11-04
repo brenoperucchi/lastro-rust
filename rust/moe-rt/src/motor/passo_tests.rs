@@ -2,7 +2,7 @@
 //! Layout da área da camada, `begin_step` em ordem FIFO no backend falso, `Route` por posição global, validação de `m` e das peças.
 //! Com `max_positions == 1` o motor é o de sempre: a suíte de `tests.rs` roda sem alteração de asserção.
 use super::backend::Backend;
-use super::fake::{expert_out, x_value, FakeCfg, FakeCpu, FakeGpu, Violation};
+use super::fake::{expert_out, peso, x_value, FakeCfg, FakeCpu, FakeGpu, Violation};
 use super::sync::Ordering;
 use std::sync::Arc;
 use super::*;
@@ -112,7 +112,7 @@ fn add_y_confere_cada_posicao() {
         for p in 0..3 {
             for j in 0..W {
                 let x = x_value(p, 0, j);
-                let mut y = r[p][0].iter().fold(0u32, |a, &e| a.wrapping_add(expert_out(e, x)));
+                let mut y = r[p][0].iter().enumerate().fold(0u32, |a, (j2, &e)| a.wrapping_add(peso(p, 0, j2).wrapping_mul(expert_out(e, x))));
                 if erra == Some(p) {
                     y ^= 1;
                 }
@@ -276,7 +276,7 @@ fn roda_b(c: &CasoB, sched: SchedCfg, max_positions: usize) -> (Stats, Vec<Viola
     let cfg = Config { layers: c.layers, experts: c.experts, topk: c.topk, width: 2, slots: c.slots, backlog: c.backlog,
                        admit: AdmitMode::TokenBarrier, first_token: 1, prefill: vec![], max_positions, mutant: None };
     let parts = gpu.parts(&cfg);
-    let mut eng = Engine::new(gpu.clone(), parts, cfg, FakeCpu::default()).expect("motor");
+    let mut eng = Engine::new(gpu.clone(), parts, cfg, FakeCpu { weighted: true, ..Default::default() }).expect("motor");
     for &m in &c.passos {
         let p = eng.next_published().expect("published");
         eng.enqueue_step(p, m).expect("enfileira");
@@ -396,7 +396,7 @@ fn m_divergente_entre_camadas_derruba_o_motor() {
         }
         let cfg = config(MP);
         let parts = gpu.parts(&cfg);
-        let mut eng = Engine::new(gpu.clone(), parts, cfg, FakeCpu::default()).unwrap();
+        let mut eng = Engine::new(gpu.clone(), parts, cfg, FakeCpu { weighted: true, ..Default::default() }).unwrap();
         let p = eng.next_published().unwrap();
         let r = eng.enqueue_step(p, 2).and_then(|_| eng.finish_token());
         assert_eq!(r.is_ok(), ok, "diverge = {diverge}: {r:?}");
@@ -406,5 +406,126 @@ fn m_divergente_entre_camadas_derruba_o_motor() {
         assert!(!gpu.stalled());
         assert_eq!(gpu.violations(), vec![], "diverge = {diverge}");
         assert_eq!(gpu.queued(), (0, 0), "filas drenadas, diverge = {diverge}");
+    }
+}
+
+// --- U3: o oráculo A (tabela congelada), o `compute_step` em lote e o padrão, o mutante de peso ------------------------------------
+
+use super::backend::{CpuStep, HostExperts};
+
+/// A CPU sem o override: usa o `compute_step` padrão (laço por posição sobre `compute`).
+struct PorPosicao(FakeCpu);
+
+impl HostExperts for PorPosicao {
+    type Error = String;
+    fn compute(&mut self, layer: usize, keys: &[u32], weights: &[u32], x: &[u32], y: &mut [u32]) -> Result<(), String> {
+        self.0.compute(layer, keys, weights, x, y)
+    }
+}
+
+const TOTAL_A: usize = 39;
+
+fn rota_a(p: usize, l: usize) -> Vec<u32> {
+    vec![((p + l) % 4) as u32, ((p + l + 1 + (p / 4) % 3) % 4) as u32]
+}
+
+fn passos_de(m: usize) -> Vec<usize> {
+    let mut v = vec![m; TOTAL_A / m];
+    if TOTAL_A % m != 0 {
+        v.push(TOTAL_A % m);
+    }
+    v
+}
+
+/// Roda `passos` com a tabela congelada (`backlog = 0`, só o `prefill` residente) e devolve os contadores, as violações, o travamento e o
+/// resultado da execução.
+fn roda_a<C: HostExperts>(passos: &[usize], prefill: Vec<u32>, slots: usize, cpu: C, sched: SchedCfg) -> (Stats, Vec<Violation>, bool, Result<(), String>) {
+    let total: usize = passos.iter().sum();
+    let routing: Vec<Vec<Vec<u32>>> = (0..total).map(|p| (0..2).map(|l| rota_a(p, l)).collect()).collect();
+    let gpu = FakeGpu::new_sched(
+        FakeCfg { layers: 2, experts: 4, topk: K, width: W, routing, fail_main_at: None, copy_immediate: false, max_positions: 8 },
+        sched,
+    );
+    let cfg = Config { layers: 2, experts: 4, topk: K, width: W, slots, backlog: 0, admit: AdmitMode::TokenBarrier, first_token: 1,
+                       prefill, max_positions: 8, mutant: None };
+    let parts = gpu.parts(&cfg);
+    let mut eng = Engine::new(gpu.clone(), parts, cfg, cpu).expect("motor");
+    let mut res = Ok(());
+    for &m in passos {
+        let r = eng.next_published().map_err(|e| format!("{e:?}")).and_then(|p| eng.enqueue_step(p, m).map_err(|e| format!("{e:?}")))
+            .and_then(|_| eng.finish_token().map_err(|e| format!("{e:?}")));
+        if r.is_err() {
+            res = r;
+            break;
+        }
+    }
+    let st = if res.is_ok() { eng.next_published().map(|p| p.stats().clone()).unwrap_or_default() } else { Stats::default() };
+    let _ = eng.close();
+    (st, gpu.violations(), gpu.stalled(), res)
+}
+
+/// A referência independente do agrupador: com a tabela congelada, cada pedido de chave no `prefill` é acerto e os outros são CPU.
+fn esperado_a(prefill: &[u32]) -> Stats {
+    let (mut hits, mut cpu) = (0u64, 0u64);
+    for p in 0..TOTAL_A {
+        for l in 0..2usize {
+            for e in rota_a(p, l) {
+                if prefill.contains(&((l * 4) as u32 + e)) { hits += 1 } else { cpu += 1 }
+            }
+        }
+    }
+    Stats { needed: hits + cpu, hits, cpu, ..Default::default() }
+}
+
+fn sched_a() -> SchedCfg {
+    SchedCfg { seed: 0xA0A, weights: [1, 1, 1, 1], budget: 300_000 }
+}
+
+/// Oráculo A: passo contra posição a posição com a tabela congelada, M em {1, 2, 4, 8} (com bloco parcial no fim) e a sequência
+/// 8, 1, 7, 2, 8, 8, 3, 1, 1: contadores exatos, sem violação (o conferidor do falso soma `peso · expert` por posição, por conta própria).
+/// Com o override em lote e com o padrão por posição.
+#[test]
+fn oraculo_a_tabela_congelada_em_lote_e_por_posicao() {
+    let prefill_variantes: [(Vec<u32>, usize); 3] = [(vec![], 0), (vec![0, 5], 2), (vec![0, 1, 2, 3, 4, 5, 6, 7], 8)];
+    let mut seqs: Vec<Vec<usize>> = [1usize, 2, 4, 8].iter().map(|&m| passos_de(m)).collect();
+    seqs.push(vec![8, 1, 7, 2, 8, 8, 3, 1, 1]);
+    for (pre, slots) in &prefill_variantes {
+        let want = esperado_a(pre);
+        for passos in &seqs {
+            assert_eq!(passos.iter().sum::<usize>(), TOTAL_A);
+            let lote = roda_a(passos, pre.clone(), *slots, FakeCpu { weighted: true, ..Default::default() }, sched_a());
+            let padrao = roda_a(passos, pre.clone(), *slots, PorPosicao(FakeCpu { weighted: true, ..Default::default() }), sched_a());
+            for (nome, (st, viol, stalled, res)) in [("lote", lote), ("padrão", padrao)] {
+                assert!(res.is_ok() && viol.is_empty() && !stalled, "{nome}, {passos:?}, prefill {pre:?}: {res:?} {viol:?}");
+                // `dropped` conta uma admissão recusada por chave da união em cada passo: depende de M e é do oráculo B.
+                assert_eq!(Stats { dropped: 0, ..st }, want, "{nome}, {passos:?}, prefill {pre:?}");
+            }
+        }
+    }
+}
+
+/// O mutante de peso (o lote usa o peso da primeira posição do expert em todas) é acusado pelo conferidor com a posição e a camada; a
+/// mesma execução com a CPU certa sai limpa. Sem acertos, todo expert repetido em posições com pesos diferentes expõe o erro.
+#[test]
+fn mutante_de_peso_na_cpu_em_lote_e_acusado() {
+    let passos = [8usize, 8, 8, 8, 7];
+    let certa = roda_a(&passos, vec![], 0, FakeCpu { weighted: true, ..Default::default() }, sched_a());
+    assert!(certa.1.is_empty() && certa.3.is_ok());
+    let errada = roda_a(&passos, vec![], 0, FakeCpu { weighted: true, peso_errado: true, ..Default::default() }, sched_a());
+    assert!(errada.3.is_ok() && !errada.2);
+    assert!(!errada.1.is_empty() && errada.1.iter().all(|v| matches!(v, Violation::Y { .. })), "{:?}", errada.1);
+}
+
+/// `fail_at` conta uma chamada por camada com `m > 1`, nos dois caminhos: a falha na segunda chamada derruba o motor no primeiro passo
+/// (duas camadas), e a execução termina sem travar.
+#[test]
+fn falha_da_cpu_conta_uma_chamada_por_camada_com_m_maior_que_um() {
+    let f = |c: FakeCpu| FakeCpu { weighted: true, fail_at: Some(1), ..c };
+    let lote = roda_a(&[8, 8], vec![], 0, f(FakeCpu::default()), sched_a());
+    let padrao = roda_a(&[8, 8], vec![], 0, PorPosicao(f(FakeCpu::default())), sched_a());
+    for (nome, (_, viol, stalled, res)) in [("lote", lote), ("padrão", padrao)] {
+        assert!(res.is_err(), "{nome}: a falha da CPU tem de chegar ao chamador");
+        assert!(!stalled, "{nome}");
+        let _ = viol;
     }
 }
