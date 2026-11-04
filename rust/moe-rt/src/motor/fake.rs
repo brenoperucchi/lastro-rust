@@ -177,7 +177,8 @@ fn step(st: &mut State, cfg: &FakeCfg, q: usize) -> bool {
             st.m = *m;
         }
         Op::Route { layer, io, .. } => {
-            if cfg.max_positions == 1 {
+            // O caminho vem do formato da área recebida (a palavra `m`), não do teto do backend: um backend de capacidade 4 serve áreas de 1.
+            if io.m.is_empty() {
                 let tok = st.token.saturating_sub(1);
                 let ids = &cfg.routing[tok % cfg.routing.len()][*layer];
                 for (a, &e) in io.ids.iter().zip(ids) {
@@ -209,7 +210,7 @@ fn step(st: &mut State, cfg: &FakeCfg, q: usize) -> bool {
             }
         }
         Op::Launch { layer, table, io, .. } => {
-            let (m, k) = (if cfg.max_positions == 1 { 1 } else { st.m }, cfg.topk);
+            let (m, k) = (if io.m.is_empty() { 1 } else { st.m }, cfg.topk);
             let ids = LayerIo::load(&io.ids);
             let mut por_pos = vec![Vec::new(); cfg.max_positions];
             for p in 0..m {
@@ -231,7 +232,7 @@ fn step(st: &mut State, cfg: &FakeCfg, q: usize) -> bool {
         }
         Op::AddY { layer, io, .. } => {
             if !st.released {
-                let (m, k, w) = (if cfg.max_positions == 1 { 1 } else { st.m }, cfg.topk, cfg.width);
+                let (m, k, w) = (if io.m.is_empty() { 1 } else { st.m }, cfg.topk, cfg.width);
                 let (x, ids, got) = (LayerIo::load(&io.x), LayerIo::load(&io.ids), LayerIo::load(&io.y));
                 for p in 0..m {
                     let cpu: Vec<u32> = ids[p * k..(p + 1) * k].iter().map(|&e| (*layer * cfg.experts) as u32 + e)

@@ -221,11 +221,12 @@ impl<B: Backend> Engine<B> {
             self.shutdown();
             return Err(Error::Config("m fora de 1..=max_positions"));
         }
-        // U1: a linha de serviço ainda lê uma posição por camada. Sem esta recusa, um passo de m > 1 seria servido como um token só,
-        // em silêncio. A U2 (união, listas por posição, LFU) remove a recusa.
-        if m > 1 {
+        // U1: a linha de serviço ainda lê as áreas inteiras como uma posição. Com áreas de várias posições, qualquer passo (inclusive
+        // m = 1, com a cauda zerada ou velha) seria servido errado, em silêncio. Construir e fechar continuam valendo. A U2 (leitura
+        // do `m` depois do `Acquire`, fatiamento, união, listas por posição, LFU) remove a recusa.
+        if self.cfg.max_positions > 1 {
             self.shutdown();
-            return Err(Error::Config("passo de m > 1 ainda não servido pela linha de serviço (U2)"));
+            return Err(Error::Config("áreas de várias posições ainda não servidas pela linha de serviço (U2)"));
         }
         if p.origin != self.sh.id {
             self.shutdown();

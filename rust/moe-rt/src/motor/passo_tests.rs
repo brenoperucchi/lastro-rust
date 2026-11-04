@@ -91,6 +91,7 @@ fn begin_step_e_route_andam_em_ordem_fifo_por_posicao_global() {
         assert_eq!(io1.x[p * W].load(Ordering::Relaxed), x_value(3 + p, 1, 0));
     }
     assert!(LayerIo::load(&io1.ids)[2 * K..].iter().all(|&v| v == 0xDEAD));
+    gpu.shutdown();
     assert_eq!(gpu.violations(), vec![]);
 }
 
@@ -120,6 +121,7 @@ fn add_y_confere_cada_posicao() {
         }
         gpu.add_y(s, 0, io).unwrap();
         gpu.sync(s).unwrap();
+        gpu.shutdown();
         match erra {
             None => assert_eq!(gpu.violations(), vec![]),
             Some(p) => {
@@ -131,10 +133,11 @@ fn add_y_confere_cada_posicao() {
     }
 }
 
+/// Com áreas de várias posições a linha de serviço (U1) ainda lê a capacidade inteira: qualquer passo, até m = 1, é recusado e derruba o
+/// motor sem travar. Fora da faixa (0 e acima do máximo) também. Hoje isto vale para todo m; a U2 troca a recusa pelo fatiamento.
 #[test]
-fn m_fora_da_faixa_derruba_o_motor_sem_travar() {
-    // m = 2 está na faixa, mas a linha de serviço só aprende m > 1 na U2: a recusa explícita (e temporária) também derruba o motor.
-    for m in [0usize, 2, MP + 1] {
+fn qualquer_m_com_areas_de_varias_posicoes_derruba_o_motor_sem_travar() {
+    for m in [0usize, 1, 2, MP + 1] {
         let gpu = fake(MP);
         let cfg = config(MP);
         let parts = gpu.parts(&cfg);
@@ -143,9 +146,35 @@ fn m_fora_da_faixa_derruba_o_motor_sem_travar() {
         assert!(matches!(eng.enqueue_step(p, m), Err(Error::Config(_))), "m = {m}");
         assert!(matches!(eng.finish_token(), Err(Error::Cancelled)), "o motor ficou derrubado");
         drop(eng);
+        gpu.shutdown();
         assert!(!gpu.stalled());
         assert_eq!(gpu.violations(), vec![]);
     }
+}
+
+/// Um backend de capacidade 4 com áreas e configuração de uma posição (combinação que `Engine::new` aceita) roda no caminho legado:
+/// o falso escolhe o layout pela área recebida, não pelo teto. Três tokens com rotas diferentes, sem pânico nem violação.
+#[test]
+fn capacidade_maior_que_a_configuracao_roda_no_caminho_legado() {
+    let gpu = fake(MP);
+    let cfg = config(1);
+    let parts = gpu.parts(&cfg);
+    let mut eng = Engine::new(gpu.clone(), parts, cfg, FakeCpu::default()).unwrap();
+    let mut ultimo = None;
+    for _ in 0..3 {
+        let p = eng.next_published().unwrap();
+        ultimo = Some(p.stats().clone());
+        eng.run_token(p).unwrap();
+    }
+    let p = eng.next_published().unwrap();
+    let st = p.stats().clone();
+    assert_eq!(st.needed, 3 * 2 * K as u64, "três tokens, duas camadas, topk pedidos cada: {ultimo:?} {st:?}");
+    assert_eq!(st.hits + st.cpu, st.needed);
+    drop(p);
+    assert!(eng.close().is_ok());
+    gpu.shutdown();
+    assert!(!gpu.stalled());
+    assert_eq!(gpu.violations(), vec![]);
 }
 
 #[test]
@@ -155,17 +184,21 @@ fn pecas_que_nao_batem_com_max_positions_sao_recusadas() {
     let cfg = config(2);
     let parts = gpu.parts(&config(1));
     assert!(matches!(Engine::new(gpu.clone(), parts, cfg, FakeCpu::default()), Err(Error::Config(_))));
+    gpu.shutdown();
     // As áreas das camadas têm de ter o tamanho do `max_positions` da configuração.
     let gpu = fake(MP);
     let parts = gpu.parts(&config(1));
     assert!(matches!(Engine::new(gpu.clone(), parts, config(MP), FakeCpu::default()), Err(Error::Config(_))));
+    gpu.shutdown();
     let gpu = fake(MP);
     let parts = gpu.parts(&config(MP));
     assert!(matches!(Engine::new(gpu.clone(), parts, config(1), FakeCpu::default()), Err(Error::Config(_))));
+    gpu.shutdown();
     // max_positions = 0 nunca vale.
     let gpu = fake(MP);
     let parts = gpu.parts(&config(MP));
     assert!(matches!(Engine::new(gpu.clone(), parts, config(0), FakeCpu::default()), Err(Error::Config(_))));
+    gpu.shutdown();
 }
 
 #[test]
@@ -175,6 +208,7 @@ fn motor_com_varias_posicoes_constroi_e_fecha() {
     let parts = gpu.parts(&cfg);
     let eng = Engine::new(gpu.clone(), parts, cfg, FakeCpu::default()).unwrap();
     assert!(eng.close().is_ok());
+    gpu.shutdown();
     assert!(!gpu.stalled());
     assert_eq!(gpu.violations(), vec![]);
 }
