@@ -103,14 +103,18 @@ class SimM(moe_sim.Sim):
                 blk = a[:, b * M:(b + 1) * M, :]
                 for l in range(self.L):
                     # ordem da primeira aparição (posição por posição): em M=1 é a ordem do roteador, como no moe_sim (a ordem decide quem é admitido primeiro)
-                    flat = blk[l].reshape(-1).tolist()
-                    es = list(dict.fromkeys(flat))
-                    ns = [flat.count(e) for e in es]
+                    es, ns = primeira_aparicao(blk[l])
                     assert len(es) <= min(self.E, M * self.k)
                     self.layer_m(l, es, ns)
                 self.stats["tokens"] += M
         if measure:
             self.stats["ms"] = self.now - t0
+
+
+def primeira_aparicao(x):
+    flat = x.reshape(-1).tolist()
+    es = list(dict.fromkeys(flat))
+    return es, [flat.count(e) for e in es]
 
 
 def roda(mod, frac, M, limite, treino, teste, bw=BW_GBS):
@@ -128,6 +132,20 @@ def carrega(mod):
     return moe_sim.load(d, "treino"), moe_sim.load(d, "teste")
 
 
+def avalia_calibracao(mod, r):
+    """Confere um resultado de M=1 contra os alvos medidos. Devolve (ok, linha)."""
+    e_ms = (r["ms"] - MEDIDO_L1[mod]) / MEDIDO_L1[mod]
+    e_cop = (r["cop"] - MEDIDO_COP[mod]) / MEDIDO_COP[mod]
+    b_ms, b_cop = abs(e_ms) <= TOL_MS, abs(e_cop) <= TOL_COP
+    linha = f"  {mod}: {r['ms']:.3f} ms/token (medido {MEDIDO_L1[mod]:.1f}, {e_ms:+.1%}, {'ok' if b_ms else 'FORA'}); cópias {r['cop']:.2f}/token (medido {MEDIDO_COP[mod]:.2f}, {e_cop:+.1%}, {'ok' if b_cop else 'FORA'}); acerto {r['acerto']:.1%}"
+    ok = b_ms and b_cop
+    if mod in MEDIDO_ACERTO:
+        b_ac = abs(r["acerto"] - MEDIDO_ACERTO[mod]) <= TOL_ACERTO
+        ok = ok and b_ac
+        linha += f" (medido {MEDIDO_ACERTO[mod]:.1%}, {'ok' if b_ac else 'FORA'})"
+    return ok, linha
+
+
 def calibra():
     ok = True
     print(f"=== Calibração (M=1, 10% de slots; banda de cópia {BW_GBS} GB/s) ===")
@@ -137,19 +155,22 @@ def calibra():
         r = roda(mod, 0.10, 1, "otimista", tr, te)
         rp = roda(mod, 0.10, 1, "pessimista", tr, te)
         assert r == rp, "no M=1 os dois limites têm de coincidir"
-        e_ms = (r["ms"] - MEDIDO_L1[mod]) / MEDIDO_L1[mod]
-        e_cop = (r["cop"] - MEDIDO_COP[mod]) / MEDIDO_COP[mod]
-        b_ms, b_cop = abs(e_ms) <= TOL_MS, abs(e_cop) <= TOL_COP
-        linha = f"  {mod}: {r['ms']:.3f} ms/token (medido {MEDIDO_L1[mod]:.1f}, {e_ms:+.1%}, {'ok' if b_ms else 'FORA'}); cópias {r['cop']:.2f}/token (medido {MEDIDO_COP[mod]:.2f}, {e_cop:+.1%}, {'ok' if b_cop else 'FORA'}); acerto {r['acerto']:.1%}"
-        bom = b_ms and b_cop
-        if mod in MEDIDO_ACERTO:
-            b_ac = abs(r["acerto"] - MEDIDO_ACERTO[mod]) <= TOL_ACERTO
-            bom &= b_ac
-            linha += f" (medido {MEDIDO_ACERTO[mod]:.1%}, {'ok' if b_ac else 'FORA'})"
+        bom, linha = avalia_calibracao(mod, r)
         print(linha)
         ok &= bom
+    print("  [informativo, não decide] medido no A1.4: acerto do 3B a 10% 29,06%; cópias adiadas por token 0,64 (1B) e 1,03 (3B); 1B a 25%: 1,95 cópias/token e acerto 50,3%")
     print("  calibração:", "PASSOU" if ok else "REPROVOU: SIMULADOR NÃO SERVE (nenhuma previsão de M > 1)")
     return ok
+
+
+def metricas(t1, tm, M):
+    """a_eq: menor fração de posições úteis que mantém ganho de GANHO_MIN; folga: custo extra por passo (ms) que ainda deixa esse ganho."""
+    return tm / t1 / (1 - GANHO_MIN), M * ((1 - GANHO_MIN) * t1 - tm)
+
+
+def achata(gs):
+    """Menor M cujo ganho está a menos de 2 pontos (em valor absoluto) do ganho em M=32."""
+    return next(M for M, x in zip(MS, gs) if abs(gs[-1] - x) < 0.02)
 
 
 def decide(res):
@@ -178,12 +199,10 @@ def varredura():
                     t1 = r["ms"] if M == 1 else t1
                     g = 1 - r["ms"] / t1
                     res[(mod, frac, lim, M)] = g
-                    aeq = r["ms"] / t1 / (1 - GANHO_MIN)
-                    folga = M * ((1 - GANHO_MIN) * t1 - r["ms"])
+                    aeq, folga = metricas(t1, r["ms"], M)
                     print(f"  {M:>3}  {r['ms']:7.3f}  {g:7.1%}  {r['acerto']:7.1%}  {r['cop']:10.2f}  {aeq:6.2f}  {folga:12.2f}")
                 gs = [res[(mod, frac, lim, M)] for M in MS]
-                achata = next(M for M, x in zip(MS, gs) if gs[-1] - x < 0.02)
-                print(f"  a curva achata (a menos de 2 pontos do ganho em M=32) em M={achata}")
+                print(f"  a curva achata (a menos de 2 pontos do ganho em M=32) em M={achata(gs)}")
     print("\n=== Regra de decisão (criterio.txt v1.1, seção 4; M ≤ %d, ganho mínimo %.0f%%, 10%% de slots) ===" % (M_MAX, 100 * GANHO_MIN))
     for lim in LIMITES:
         for mod in ("1b", "3b"):
@@ -192,8 +211,13 @@ def varredura():
     print("  DECISÃO:", decide(res))
 
 
-if __name__ == "__main__":
+def principal(argv):
     if not calibra():
-        sys.exit(1)
-    if "--calibra" not in sys.argv:
+        return 1
+    if "--calibra" not in argv:
         varredura()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(principal(sys.argv))

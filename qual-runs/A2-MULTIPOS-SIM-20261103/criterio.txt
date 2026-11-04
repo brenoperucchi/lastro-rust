@@ -19,7 +19,7 @@ PERGUNTA: a partir de que M o passo multiposição reduz o tempo por posição p
 2. CALIBRAÇÃO (M=1, 10% de slots; antes de qualquer previsão)
 - Alvos do binário C congelado do A1.4 (5 repetições; qual-runs/A1-DIAG10-20261103/analise-e1.txt e os contadores do A1.4): ms/token L1 de 8,0 (1B) e 14,4 (3B); cópias de fundo por token de 1,17 (1B) e 1,84 (3B); acerto de 25,0% (1B).
 - Tolerâncias: ms/token ±10%; cópias/token ±15%; acerto ±2 pontos (só 1B). Fora de qualquer uma: "SIMULADOR NÃO SERVE" e nenhuma tabela de M > 1 vale como previsão.
-- Informativo: o ideal "tudo residente" do simulador contra L3/L4.
+- Informativo, impresso e sem decidir: o acerto do 3B a 10% (29,06% medido), as cópias adiadas por token (0,64 no 1B, 1,03 no 3B), o 1B a 25% (1,95 cópias/token, acerto 50,3%) e o ideal "tudo residente" contra L3/L4. O acerto do 3B não é gate porque a tolerância ficou fixada só para o 1B no v1.1; não se acrescenta gate depois de ver o número.
 
 3. VARREDURA (só depois da aprovação nível 2 desta v1.1 e do script)
 - M = 1, 2, 4, 8, 16, 32; slots 10% e 25%; 1B e 3B; conversas de teste; os dois cenários. Uma tabela por modelo, fração e cenário: custo por posição, ganho = 1 − t(M)/t(1), acerto, cópias por posição, a_eq e folga, e o M em que a curva achata (menor M com ganho a menos de 2 pontos do ganho em M=32).
@@ -34,5 +34,6 @@ PERGUNTA: a partir de que M o passo multiposição reduz o tempo por posição p
 5. LIMITES DECLARADOS NO RESULTADO
 - O custo por posição supõe M posições úteis seguidas do mesmo texto. O decode de hoje é autorregressivo: uma fonte de M posições seria decodificação especulativa, decodificador paralelo ou prefill, e nessa carga só as posições aceitas contam (ver a_eq) e o rascunho tem custo. O projeto não tem essa carga nem a mediu.
 - Os traços vêm de passada causal sobre texto fixo; em lote de sequências diferentes a união é outra.
+- O passo de M posições usa o backlog (4 cópias em voo) e a admissão uma vez por camada do D1 de hoje; um motor com passo de M posições poderia admitir mais por passo, e isso não foi simulado (conservador: tende a subestimar o ganho do cache).
 - O simulador não prevê a sincronização do motor; a espera de 0,15 a 0,5 ms do A1-DIAG10 não foi reproduzida e nada se afirma sobre a sua causa.
 - Os dois cenários cobrem só os custos modelados (ver seção 1); a folga mede quanto de custo não modelado cabe.

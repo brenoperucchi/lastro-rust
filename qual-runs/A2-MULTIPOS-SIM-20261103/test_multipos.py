@@ -113,6 +113,64 @@ class T(unittest.TestCase):
             self.assertGreaterEqual(p, o)
         self.assertEqual(MP.roda("1b", 0.25, 4, "otimista", [a], [a]), MP.roda("1b", 0.25, 4, "otimista", [a], [a]))
 
+    def test_acertos_contam_n_pedidos(self):
+        s = MP.SimM("1b", 1.0, 1, 4, 1, "otimista")
+        s.M = 3
+        s.resident[(0, 0)] = None
+        s.layer_m(0, np.array([0]), np.array([3]))
+        self.assertEqual((s.stats["needed"], s.stats["hits"]), (3, 3))
+
+    def test_ordem_de_primeira_aparicao(self):
+        es, ns = MP.primeira_aparicao(np.array([[5, 3], [3, 7]]))
+        self.assertEqual((es, ns), ([5, 3, 7], [1, 2, 1]))
+
+    def test_vitima_nao_e_expert_da_propria_camada(self):
+        # cap = 1; (0,0) residente e pedido (acerto) 1 vez; (0,1) falta pedida 5 vezes (frequência maior): sem despejar o fixo da camada, não há cópia
+        s = MP.SimM("1b", 0.25, 1, 4, 1, "otimista")
+        s.M = 6
+        s.resident[(0, 0)] = None
+        s.push((0, 0))
+        s.layer_m(0, np.array([0, 1]), np.array([1, 5]))
+        self.assertEqual(s.stats["copies_bg"], 0)
+        self.assertEqual(s.stats["dropped"], 1)
+
+    def test_calibracao_limites(self):
+        base = {"ms": MP.MEDIDO_L1["1b"], "cop": MP.MEDIDO_COP["1b"], "acerto": MP.MEDIDO_ACERTO["1b"]}
+        self.assertTrue(MP.avalia_calibracao("1b", base)[0])
+        self.assertTrue(MP.avalia_calibracao("1b", dict(base, cop=base["cop"] * 1.149))[0])
+        self.assertFalse(MP.avalia_calibracao("1b", dict(base, cop=base["cop"] * 1.16))[0])      # só as cópias fora
+        self.assertFalse(MP.avalia_calibracao("1b", dict(base, ms=base["ms"] * 1.11))[0])        # só o ms fora
+        self.assertTrue(MP.avalia_calibracao("1b", dict(base, acerto=base["acerto"] + 0.019))[0])
+        self.assertFalse(MP.avalia_calibracao("1b", dict(base, acerto=base["acerto"] + 0.021))[0])  # só o acerto fora
+        b3 = {"ms": MP.MEDIDO_L1["3b"], "cop": MP.MEDIDO_COP["3b"], "acerto": 0.0}                # o 3B não confere acerto
+        self.assertTrue(MP.avalia_calibracao("3b", b3)[0])
+
+    def test_principal_nao_varre_se_a_calibracao_reprova(self):
+        chamadas = []
+        orig = (MP.calibra, MP.varredura)
+        try:
+            MP.calibra, MP.varredura = (lambda: False), (lambda: chamadas.append("varre"))
+            self.assertEqual(MP.principal(["x"]), 1)
+            self.assertEqual(chamadas, [])
+            MP.calibra = lambda: True
+            self.assertEqual(MP.principal(["x", "--calibra"]), 0)
+            self.assertEqual(chamadas, [])
+            self.assertEqual(MP.principal(["x"]), 0)
+            self.assertEqual(chamadas, ["varre"])
+        finally:
+            MP.calibra, MP.varredura = orig
+
+    def test_metricas_a_mao(self):
+        aeq, folga = MP.metricas(10.0, 6.0, 4)
+        self.assertAlmostEqual(aeq, 6.0 / 10.0 / 0.85, places=12)
+        self.assertAlmostEqual(folga, 4 * (0.85 * 10.0 - 6.0), places=12)
+        self.assertLess(MP.metricas(10.0, 9.0, 2)[1], 0)                                          # ganho menor que 15%: folga negativa
+
+    def test_achata_usa_distancia_absoluta(self):
+        self.assertEqual(MP.achata([0.0, 0.30, 0.40, 0.35, 0.20, 0.10]), 32)                      # não monotônica: M=2 está a 20 pontos de M=32
+        self.assertEqual(MP.achata([0.0, 0.10, 0.20, 0.29, 0.305, 0.31]), 16)
+        self.assertEqual(MP.achata([0.0, 0.1, 0.2, 0.3, 0.4, 0.5]), 32)
+
     def test_decisao(self):
         def res(gp, go, so_em=None):
             r = {}
