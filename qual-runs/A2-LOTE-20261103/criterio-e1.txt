@@ -1,0 +1,42 @@
+A2-PASSO E1: sensibilidade do passo zero. Só simulador, sem GPU. Critério escrito ANTES de rodar (04/11/2026).
+
+Autorização: Breno, 04/11/2026 ("siga com as respostas acima": prefill em lote como primeira fonte, uso de agente de código com prompts longos,
+decode estacionado, ordem E1 -> protótipo sem GPU -> janela de GPU, A2 atrás do A1-DIAG10 na 4090). Origem das perguntas: respostas cegas dos
+dois revisores (consulta lastro-rust-3). Limiares do A2-MULTIPOS e do A2-LOTE-LIMITE não mudam: M <= 8, ganho >= 15%, os dois modelos, 10% de slots.
+
+Base fixa de todas as medidas: SimA do limite.py, CPU de cpu.txt (salvo onde a seção 2 muda o w_C), GPU no pior caso (w_G(n) = n), 10% de slots,
+conversas de teste. 25% é descritivo. Antes de qualquer número novo, o instrumento tem de reproduzir o resultado commitado (teste da seção 5).
+
+1. Perguntas e medidas
+   P1 (caminho crítico): por camada, o lado da CPU domina quando cpu_t > gpu_end (ou seja, a espera pelas faltas é maior que os acertos da GPU).
+      Reporta, por modelo, M em {1,2,4,8} e a em {0,1}: fração das camadas com a CPU dominante e fração do tempo de camada (pelo tempo, não pela
+      contagem) em que a CPU está acima da GPU: soma de (cpu_t - gpu_end)+ dividida pela soma dos tempos de camada.
+   P2 (fração útil): a_eq = (t(M)/t(1))/0,85 por M em {2,4,8} e a em {0,1}. É a menor fração de posições úteis que mantém 15%. Não é limiar novo.
+   P3 (folga): M·(0,85·t(1) - t(M)) em ms por passo, M em {2,4,8}, a em {0,1}: custo extra por passo que ainda deixa 15%.
+   P4 (sensibilidade do custo de lote da CPU), com a = 1, M em {1,2,4,8}, GPU no pior caso:
+      (i) w_C,beta(n) = 1 + beta·(n-1), beta em {0; 0,03; 0,1; 0,2; 0,3; 0,45; 0,65; 1,0};
+      (ii) w_C,lambda(n) = w_med(n) + lambda·(n - w_med(n)), lambda em {0; 0,25; 0,5; 0,75; 1}, que preserva w(1) = 1 e percorre do medido até custo linear.
+      Para cada modelo, reporta o maior beta (e lambda) da grade com ganho >= 15% em algum M <= 8 (beta*, lambda*), mais o beta medido
+      (w_med(n)-1)/(n-1) em n = 2, 4, 8, 16, 32.
+   P5 (distribuição de n_e, descritiva): em M = 8, parcela dos experts da união com n_e <= 4 e com n_e = 8, e o w_C efetivo médio ponderado.
+
+2. Regra de leitura (escrita antes do número; não troca o limiar de 15%)
+   - ROBUSTO: nos dois modelos, lambda* >= 0,5 e beta* >= 0,30 (folga de uma ordem de grandeza sobre o beta medido, que fica perto de 0,03).
+   - FRÁGIL: em algum modelo, lambda* < 0,25 ou beta* < 0,10. Então o E4 é reconsiderado com o Breno antes de qualquer código.
+   - INTERMEDIÁRIO: o resto. Segue o plano, mas o E4 mede o w_C no motor logo no início.
+   - Se a fração do tempo com a CPU dominante em M = 8 e a = 1 for < 50% em algum modelo, a hipótese "a GPU fica atrás da CPU" não se sustenta:
+     o w da GPU volta a importar e o resultado do passo zero passa a valer só como limite condicionado ao kernel de GPU do motor (aviso, não parada).
+   - Prefill, descritivo: o ganho a = 1 até M = 32. A regra M <= 8 foi pensada para o decode; nenhum limiar novo.
+
+3. Fração útil da especulação (para o Breno ver lado a lado, não decide nada agora): a_eq de P2 com a = 0 e com a = 1, M = 8.
+
+4. Limites que continuam valendo
+   - max(GPU, CPU) por camada vem da estrutura do motor (acertos e faltas em paralelo, espera das duas); o simulador não mede sobreposição real.
+   - Posições consecutivas da mesma sequência, todas úteis, roteamentos conhecidos, traços de passada causal. Prefill responde pelo tempo até o primeiro
+     token, não pelo decode. Cabeça de saída: no prefill só a última posição precisa de logits (g_M = M·g é então conservador para a cabeça).
+   - w_G(n) = n é o cenário sem economia no cálculo dos experts, não um teto físico: preparação, agrupamento e lançamentos podem custar mais.
+   - Sensibilidade não é critério novo de decisão: só mostra a margem. Qualquer limiar de robustez acima é fixo, não muda depois de ver a curva.
+
+5. Instrumento (teste antes de rodar)
+   - O SimA instrumentado (cópia de layer_m com contadores) tem de reproduzir os ganhos do resultado-limite.txt: 1B e 3B, a em {0, 1}, M = 8,
+     diferença <= 0,05 ponto percentual. Se não reproduzir, nenhuma tabela vale.
