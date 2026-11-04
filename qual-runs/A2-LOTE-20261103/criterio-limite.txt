@@ -1,0 +1,29 @@
+A2-LOTE-LIMITE: passo zero, análise de limite no simulador. Sem GPU. Critério escrito ANTES de rodar (04/11/2026).
+
+Origem: o A2-LOTE terminou sem decisão (portão de representatividade da GPU do 3B em n=1). Os dois revisores, sem ver um ao outro, apontaram esta
+análise como primeiro passo: se o resultado vale mesmo com a GPU no pior caso, o w da GPU deixa de importar. Autorizada pelo Breno em 04/11/2026
+("sigo a recomendação 2"). Nenhuma janela de GPU, nenhum limiar do A2-LOTE v1.2 alterado.
+
+1. Pergunta
+   Com a CPU como foi medida (cpu.txt, que passou todos os portões) e a GPU no pior caso possível, o passo de M posições ainda ganha 15% sobre M=1?
+
+2. Cenários (todos com o SimM e as conversas de teste do A2-MULTIPOS-SIM, 10% de slots, calibração do M=1 já aprovada)
+   - custo do expert na CPU: w_C(n) = t(n)/t(1) de cpu.txt (interpolação linear), fixo.
+   - custo do expert na GPU: w_G(n) = n (nenhum aproveitamento de lote; cada posição paga o expert inteiro). É o teto: qualquer kernel real fica abaixo.
+   - g_M (custo fixo da camada com M posições): g_M = g·(1 + a·(M−1)), a em {0 (g1), 1 (gM)} para a decisão; a em {0; 0,25; 0,5; 0,75; 1} descritivo.
+   - M em {1, 2, 4, 8, 16, 32}; só M ≤ 8 decide.
+
+3. Regra (a mesma do A2: ganho ≥ 15% em algum M ≤ 8, nos DOIS modelos, 1B e 3B)
+   - a=1 passa: VALE PROTOTIPAR NO MOTOR mesmo no pior caso da GPU e do g_M. O w da GPU e o g_M deixam de decidir.
+   - a=1 não passa e a=0 passa: DEPENDE DO g_M. Reporta-se a* = maior a da grade (passo 0,05) que ainda passa nos dois modelos (fator máximo de g_M tolerável).
+   - a=0 não passa: NÃO VALE AGORA, mesmo com g constante e GPU no pior caso. O A2 se fecha sem mais GPU.
+
+4. Descritivo (não decide)
+   - mesma tabela com w_G medido (gpu.txt, v1.2), para ver quanto a GPU pesa.
+   - 25% de slots.
+   - qual lado (GPU ou CPU) fica no caminho crítico, em fração dos passos de camada, por M.
+
+5. Limites que valem para qualquer leitura
+   - w_C vem de um kernel de CPU próprio (K=6 em dois despachos); n ≥ 16 é conservador, mas só M ≤ 8 decide.
+   - O SimM supõe que as M posições são da mesma sequência e que os roteamentos já existem (não mede causalidade nem KV).
+   - Resultado é condicional a essas hipóteses; não autoriza protótipo sozinho, só diz se a próxima proposta ao Breno vale ser escrita.
