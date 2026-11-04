@@ -440,13 +440,20 @@ fn passos_de(m: usize) -> Vec<usize> {
 /// Roda `passos` com a tabela congelada (`backlog = 0`, só o `prefill` residente) e devolve os contadores, as violações, o travamento e o
 /// resultado da execução.
 fn roda_a<C: HostExperts>(passos: &[usize], prefill: Vec<u32>, slots: usize, cpu: C, sched: SchedCfg) -> (Stats, Vec<Violation>, bool, Result<(), String>) {
+    let (st, v, stalled, r, _) = roda_a_t(passos, prefill, slots, cpu, sched, 1);
+    (st, v, stalled, r)
+}
+
+/// Como [`roda_a`], com o primeiro valor do contador de gerações e a contagem de `sync` lida antes de fechar.
+fn roda_a_t<C: HostExperts>(passos: &[usize], prefill: Vec<u32>, slots: usize, cpu: C, sched: SchedCfg, first_token: u32)
+    -> (Stats, Vec<Violation>, bool, Result<(), String>, [[u64; 2]; 3]) {
     let total: usize = passos.iter().sum();
     let routing: Vec<Vec<Vec<u32>>> = (0..total).map(|p| (0..2).map(|l| rota_a(p, l)).collect()).collect();
     let gpu = FakeGpu::new_sched(
         FakeCfg { layers: 2, experts: 4, topk: K, width: W, routing, fail_main_at: None, copy_immediate: false, max_positions: 8 },
         sched,
     );
-    let cfg = Config { layers: 2, experts: 4, topk: K, width: W, slots, backlog: 0, admit: AdmitMode::TokenBarrier, first_token: 1,
+    let cfg = Config { layers: 2, experts: 4, topk: K, width: W, slots, backlog: 0, admit: AdmitMode::TokenBarrier, first_token,
                        prefill, max_positions: 8, mutant: None };
     let parts = gpu.parts(&cfg);
     let mut eng = Engine::new(gpu.clone(), parts, cfg, cpu).expect("motor");
@@ -460,8 +467,9 @@ fn roda_a<C: HostExperts>(passos: &[usize], prefill: Vec<u32>, slots: usize, cpu
         }
     }
     let st = if res.is_ok() { eng.next_published().map(|p| p.stats().clone()).unwrap_or_default() } else { Stats::default() };
+    let syncs = gpu.sync_counts();
     let _ = eng.close();
-    (st, gpu.violations(), gpu.stalled(), res)
+    (st, gpu.violations(), gpu.stalled(), res, syncs)
 }
 
 /// A referência independente do agrupador: com a tabela congelada, cada pedido de chave no `prefill` é acerto e os outros são CPU.
@@ -529,4 +537,70 @@ fn falha_da_cpu_conta_uma_chamada_por_camada_no_lote_e_uma_por_posicao_no_padrao
     // E com `fail_at = 1` o lote cai na segunda camada.
     let g = || FakeCpu { weighted: true, fail_at: Some(1), ..Default::default() };
     assert!(roda_a(&[8], vec![], 0, g(), sched_a()).3.is_err());
+}
+
+/// Gerações cruzando 2^31 e 2^32 com passos de até 8 posições e tamanhos variáveis: `t` conta passos e a comparação cíclica (`geq`) segue
+/// certa na volta. Contadores iguais aos de sem volta e sem violação.
+#[test]
+fn contador_de_geracoes_cruza_as_voltas_com_passos_de_tamanho_variavel() {
+    let seqs: [Vec<usize>; 3] = [vec![8, 1, 7, 2, 8, 8, 3, 1, 1], passos_de(8), passos_de(3)];
+    let pre = vec![0u32, 5];
+    let base_want = esperado_a(&pre);
+    for first in [(1u32 << 31) - 3, u32::MAX - 3, u32::MAX, 0x8000_0000] {
+        for passos in &seqs {
+            for w in [[1u32, 1, 1, 1], [8, 8, 1, 8]] {
+                let sched = SchedCfg { seed: 0xC0DE ^ first as u64, weights: w, budget: 300_000 };
+                let (st, viol, stalled, res, _) =
+                    roda_a_t(passos, pre.clone(), 2, FakeCpu { weighted: true, ..Default::default() }, sched, first);
+                assert!(res.is_ok() && viol.is_empty() && !stalled, "primeiro {first:#x}, {passos:?}: {res:?} {viol:?}");
+                assert_eq!(Stats { dropped: 0, ..st }, base_want, "primeiro {first:#x}, {passos:?}");
+            }
+        }
+    }
+}
+
+/// O contador de `sync` por papel e stream: quem dirige o motor (a thread do chamador, sem papel registrado) sincroniza a stream de
+/// cálculo uma vez por passo (o `finish_token`), qualquer que seja o `m`, e nunca a de cópia antes de fechar; o serviço só sincroniza a
+/// cópia, uma vez por passo mais a da partida. Passo de 8 não custa mais sincronizações que o de 1 por posição servida.
+#[test]
+fn sync_por_papel_e_stream_conta_uma_vez_por_passo() {
+    let f = || FakeCpu { weighted: true, ..Default::default() };
+    for passos in [vec![1usize; 8], vec![8], vec![8, 1, 7, 2, 8, 8, 3, 1, 1]] {
+        let (_, viol, stalled, res, sy) = roda_a_t(&passos, vec![0], 2, f(), sched_a(), 1);
+        assert!(res.is_ok() && viol.is_empty() && !stalled);
+        let n = passos.len() as u64;
+        assert_eq!(sy[2], [n, 0], "chamador: cálculo uma vez por passo, cópia nenhuma: {sy:?}");
+        assert_eq!(sy[0], [0, 0], "a linha principal não sincroniza nada aqui: {sy:?}");
+        assert_eq!(sy[1], [0, n + 1], "serviço: só a cópia, uma por passo e a da partida: {sy:?}");
+    }
+}
+
+/// Semeaduras do escalonador com passos de `m` variável (M até 8): em 96 intercalações sorteadas, com a tabela congelada, os contadores
+/// são os do oráculo A, sem violação nem travamento.
+#[test]
+fn semeaduras_do_escalonador_com_m_variavel() {
+    let pre = vec![0u32, 3, 6];
+    let want = esperado_a(&pre);
+    let mut x = 0x9E37_79B9_7F4A_7C15u64;
+    let mut rnd = move || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        x
+    };
+    for i in 0..96 {
+        // Tamanhos sorteados de 1 a 8 até somar 39 posições.
+        let mut passos = Vec::new();
+        let mut falta = TOTAL_A;
+        while falta > 0 {
+            let m = (1 + (rnd() % 8) as usize).min(falta);
+            passos.push(m);
+            falta -= m;
+        }
+        let w = [1 + (rnd() % 8) as u32, 1 + (rnd() % 8) as u32, 1 + (rnd() % 8) as u32, 1 + (rnd() % 8) as u32];
+        let sched = SchedCfg { seed: rnd(), weights: w, budget: 300_000 };
+        let (st, viol, stalled, res, _) = roda_a_t(&passos, pre.clone(), 3, FakeCpu { weighted: true, ..Default::default() }, sched, 1);
+        assert!(res.is_ok() && viol.is_empty() && !stalled, "sorteio {i}, {passos:?}, {w:?}: {res:?} {viol:?}");
+        assert_eq!(Stats { dropped: 0, ..st }, want, "sorteio {i}, {passos:?}");
+    }
 }

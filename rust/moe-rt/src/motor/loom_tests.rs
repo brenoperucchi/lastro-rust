@@ -23,7 +23,7 @@
 
 use super::backend::LayerIo;
 use super::engine::{close_order, signal_done, CloseStep};
-use super::line::{exit_service, ExitSkip, held_due, read_layer, release_flags, release_layer, write_answer};
+use super::line::{exit_service, ExitSkip, held_due, read_layer, read_step, release_flags, release_layer, write_answer};
 use super::sync::{thread, Arc, AtomicBool, AtomicU32, Ordering};
 use loom::cell::UnsafeCell;
 use loom::model::Builder;
@@ -79,6 +79,55 @@ fn doorbell(seq_relaxed: bool, flag_first: bool) {
 
     let visto = gpu.join().expect("thread da GPU");
     viola(visto == [13, 23], &format!("a GPU leu y velho: {visto:?}"));
+}
+
+/// O doorbell de um passo de `M = 2` posições com a palavra `m` no fim da área: a GPU escreve ids e `x` das `m` posições, depois a palavra
+/// `m` (`Relaxed`), depois `seq` (`Release`); o host lê pelo helper real `read_step` (a palavra `m` só depois do `Acquire`), escreve o `y`
+/// de todas as posições e a flag; a GPU lê todo o `y`. `seq_relaxed` e `flag_first` são os mutantes de sempre; `m_depois` grava a palavra
+/// `m` depois de `seq` (o host pode ver a palavra velha ou nenhuma).
+fn doorbell_passo(seq_relaxed: bool, flag_first: bool, m_depois: bool) {
+    const T: u32 = 7;
+    const M: u32 = 2;
+    let seq = Arc::new(AtomicU32::new(0));
+    let flag = Arc::new(AtomicU32::new(0));
+    let io = Arc::new(LayerIo::with_positions(1, 2, 2));
+
+    let gpu = {
+        let (seq, flag, io) = (seq.clone(), flag.clone(), io.clone());
+        thread::spawn(move || {
+            for (p, id) in [3u32, 4].into_iter().enumerate() {
+                io.ids[p].store(id, Ordering::Relaxed);
+                io.x[2 * p].store(10 * (p as u32 + 1), Ordering::Relaxed);
+                io.x[2 * p + 1].store(10 * (p as u32 + 1) + 1, Ordering::Relaxed);
+            }
+            if !m_depois {
+                io.m[0].store(M, Ordering::Relaxed);
+            }
+            seq.store(T, Ordering::Release);
+            if m_depois {
+                io.m[0].store(M, Ordering::Relaxed);
+            }
+            espera(|| super::backend::geq(flag.load(Ordering::Acquire), T));
+            LayerIo::load(&io.y)
+        })
+    };
+
+    let r = loop {
+        if let Some(r) = read_step(&seq, &io, T, seq_relaxed, 1, 2, 2) {
+            break r;
+        }
+        thread::yield_now();
+    };
+    let r = match r {
+        Ok(r) => r,
+        Err(m) => panic!("MOTOR_VIOLACAO: o host leu a palavra m velha ou fora da faixa: {m}"),
+    };
+    viola(r.m == 2 && r.ids == [3, 4] && r.x == [10, 11, 20, 21], &format!("o host leu dado velho: m={} {:?} {:?}", r.m, r.ids, r.x));
+    let y: Vec<u32> = (0..r.m).flat_map(|p| (0..2).map(move |j| (p, j))).map(|(p, j)| r.x[p * 2 + j] + r.ids[p]).collect();
+    write_answer(&io.y, &flag, T, &y, flag_first);
+
+    let visto = gpu.join().expect("thread da GPU");
+    viola(visto == [13, 14, 24, 25], &format!("a GPU leu y velho: {visto:?}"));
 }
 
 /// O modelo da cópia guardada: duas camadas, vítima na camada 1 (`after = 1`), lida pelo lançamento dela.
@@ -343,4 +392,24 @@ fn loom_mutante_falha_sem_cancelar() {
 #[test]
 fn loom_mutante_falha_publica_o_estado_depois_da_soltura() {
     acusado("FalhaEstadoDepois", || encerramento(Fecha { falha: true, sozinha: true, skip: ExitSkip::StateLast, ..LIMPO }));
+}
+
+#[test]
+fn loom_doorbell_de_passo_limpo() {
+    limpa("doorbell_passo", || doorbell_passo(false, false, false));
+}
+
+#[test]
+fn loom_passo_mutante_seq_relaxed() {
+    acusado("passo SeqRelaxed", || doorbell_passo(true, false, false));
+}
+
+#[test]
+fn loom_passo_mutante_flag_antes_do_y() {
+    acusado("passo FlagBeforeY", || doorbell_passo(false, true, false));
+}
+
+#[test]
+fn loom_passo_mutante_m_depois_do_seq() {
+    acusado("passo m depois do seq", || doorbell_passo(false, false, true));
 }

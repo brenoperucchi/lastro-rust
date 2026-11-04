@@ -130,6 +130,8 @@ struct State {
     m: usize,
     /// Só para teste: a palavra `m` escrita na camada indicada, no lugar do `m` do passo (um backend que erra entre camadas).
     m_word_override: Option<(usize, u32)>,
+    /// Chamadas de `sync` por papel da thread (principal, serviço, outra) e stream (cálculo, cópia).
+    syncs: [[u64; 2]; 3],
     /// `hits[camada][posição]`: as chaves lançadas na GPU naquela posição.
     hits: Vec<Vec<Vec<u32>>>,
     /// A fila de cálculo passou de uma flag com o valor de soltura: dali em diante o `y` não é conferido.
@@ -300,6 +302,7 @@ impl FakeGpu {
             pos: 0,
             m: 1,
             m_word_override: None,
+            syncs: [[0; 2]; 3],
             hits: vec![vec![Vec::new(); cfg.max_positions]; cfg.layers],
             released: false,
             violations: Vec::new(),
@@ -347,6 +350,11 @@ impl FakeGpu {
         });
         *g.exec.lock().unwrap_or_else(|e| e.into_inner()) = Some(h);
         g
+    }
+
+    /// Só para teste: quantos `sync` cada papel (0 principal, 1 serviço, 2 outro) fez em cada stream (0 cálculo, 1 cópia).
+    pub fn sync_counts(&self) -> [[u64; 2]; 3] {
+        lock(&self.st).syncs
     }
 
     /// Só para teste: a camada `layer` passa a gravar `word` na palavra `m` (diferente da dos outros passos).
@@ -588,6 +596,7 @@ impl Backend for FakeGpu {
     }
 
     fn sync(&self, s: &FakeStream) -> Result<(), FakeError> {
+        lock(&self.st).syncs[papel_atual()][s.0] += 1;
         loop {
             if lock(&self.st).q[s.0].is_empty() {
                 return Ok(());
@@ -606,6 +615,7 @@ impl Backend for FakeGpu {
     }
 
     fn on_thread_start(&self, role: Role) {
+        PAPEL.with(|p| p.set(match role { Role::Main => 0, Role::Service => 1 }));
         #[cfg(not(motor_loom))]
         if let Some(s) = &self.sched {
             s.start(role);
@@ -620,6 +630,15 @@ impl Backend for FakeGpu {
         }
         let _ = role;
     }
+}
+
+thread_local! {
+    /// 0 = principal, 1 = serviço, 2 = nenhum papel registrado (o teste, o `Drop`).
+    static PAPEL: std::cell::Cell<usize> = const { std::cell::Cell::new(2) };
+}
+
+fn papel_atual() -> usize {
+    PAPEL.with(|p| p.get())
 }
 
 /// A CPU de mentira: `y[j] = Σ expert_out(chave, x[j])` sobre as faltas, ou, com `weighted`, `Σ peso · expert_out(chave, x[j])` (os pesos
