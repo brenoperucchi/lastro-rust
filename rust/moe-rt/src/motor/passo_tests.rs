@@ -516,16 +516,17 @@ fn mutante_de_peso_na_cpu_em_lote_e_acusado() {
     assert!(!errada.1.is_empty() && errada.1.iter().all(|v| matches!(v, Violation::Y { .. })), "{:?}", errada.1);
 }
 
-/// `fail_at` conta uma chamada por camada com `m > 1`, nos dois caminhos: a falha na segunda chamada derruba o motor no primeiro passo
-/// (duas camadas), e a execução termina sem travar.
+/// `fail_at` no `FakeCpu`: o lote conta UMA chamada por camada e o padrão por posição (que chama `compute` `m` vezes) conta uma por
+/// posição. Passo de 8 posições e 2 camadas: por camada são as chamadas 0 e 1, então `fail_at = 2` não dispara no lote e dispara no
+/// padrão (posição 2 da camada 0). Um lote que contasse por posição seria acusado aqui.
 #[test]
-fn falha_da_cpu_conta_uma_chamada_por_camada_com_m_maior_que_um() {
-    let f = |c: FakeCpu| FakeCpu { weighted: true, fail_at: Some(1), ..c };
-    let lote = roda_a(&[8, 8], vec![], 0, f(FakeCpu::default()), sched_a());
-    let padrao = roda_a(&[8, 8], vec![], 0, PorPosicao(f(FakeCpu::default())), sched_a());
-    for (nome, (_, viol, stalled, res)) in [("lote", lote), ("padrão", padrao)] {
-        assert!(res.is_err(), "{nome}: a falha da CPU tem de chegar ao chamador");
-        assert!(!stalled, "{nome}");
-        let _ = viol;
-    }
+fn falha_da_cpu_conta_uma_chamada_por_camada_no_lote_e_uma_por_posicao_no_padrao() {
+    let f = || FakeCpu { weighted: true, fail_at: Some(2), ..Default::default() };
+    let lote = roda_a(&[8], vec![], 0, f(), sched_a());
+    assert!(lote.3.is_ok() && lote.1.is_empty() && !lote.2, "{:?}", lote);
+    let padrao = roda_a(&[8], vec![], 0, PorPosicao(f()), sched_a());
+    assert!(padrao.3.is_err() && !padrao.2, "{:?}", padrao);
+    // E com `fail_at = 1` o lote cai na segunda camada.
+    let g = || FakeCpu { weighted: true, fail_at: Some(1), ..Default::default() };
+    assert!(roda_a(&[8], vec![], 0, g(), sched_a()).3.is_err());
 }

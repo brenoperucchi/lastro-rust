@@ -624,7 +624,7 @@ impl Backend for FakeGpu {
 
 /// A CPU de mentira: `y[j] = Σ expert_out(chave, x[j])` sobre as faltas, ou, com `weighted`, `Σ peso · expert_out(chave, x[j])` (os pesos
 /// inteiros que o falso publica nas áreas de várias posições). Falha ou entra em `panic` na `n`-ésima camada calculada, se pedido: uma
-/// chamada por camada, qualquer que seja o caminho (`compute` ou o `compute_step` em lote, que ela sobrescreve).
+/// chamada por camada no `compute_step` em lote (que ela sobrescreve) e uma por posição no caminho padrão (`compute` por posição).
 #[derive(Default)]
 pub struct FakeCpu {
     pub(crate) calls: usize,
