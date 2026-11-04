@@ -7,7 +7,7 @@ MP = LT.MP
 
 
 def gpu_txt(f1b, f3b, err=1e-5, t1=(4.96, 5.19), err_ref=None, cab=True):
-    out = [f"# dispositivo: NVIDIA GeForce RTX 4090 uuid={LT.UUID_4090}", "# modo=completo reps=15 replays=10"] if cab else []
+    out = [f"# dispositivo: NVIDIA GeForce RTX 4090 uuid={LT.UUID_4090}", "# modo=completo reps=15 replays=10", "# variante=0"] if cab else []
     for mod, t, f in (("1b", t1[0], f1b), ("3b", t1[1], f3b)):
         for n in LT.NS:
             out.append(f"GPU {mod} n={n} lote_us={t * f(n):.2f} serial_us={t * n:.2f} err_lote_serial={err:.2e} err_ref={(err if err_ref is None else err_ref):.2e}")
@@ -173,6 +173,41 @@ class Reforcos(unittest.TestCase):
         for m in ("1b", "3b"):
             g[(m, "gM", 8)] = MP.GANHO_MIN - 1e-9
         self.assertIn("NÃO VALE", LT.decide(g, True))
+
+
+def so_n1(var, t1b, t3b, err=1e-7, modo="so-n1"):
+    return (f"# dispositivo: x uuid={LT.UUID_4090}\n# modo={modo} reps=15 replays=10\n# variante={var}\n"
+            f"GPU 1b n=1 lote_us={t1b} serial_us={t1b} err_lote_serial=0.00e+00 err_ref={err:.2e}\n"
+            f"GPU 3b n=1 lote_us={t3b} serial_us={t3b} err_lote_serial=0.00e+00 err_ref={err:.2e}\n")
+
+
+class Escolha(unittest.TestCase):
+    def test_menor_desvio_do_pior_modelo(self):
+        # h: 1b 4.96, 3b 5.19. v0: 3b +47% ; v1: 1b +30% e 3b +20%; v2: 1b -10% e 3b +40%
+        v, d = LT.escolhe_variante({0: so_n1(0, 6.05, 7.65), 1: so_n1(1, 6.45, 6.23), 2: so_n1(2, 4.46, 7.27)})
+        self.assertEqual(v, 1)
+        self.assertLess(d[1], d[2])
+        self.assertLess(d[2], d[0])
+
+    def test_empate_vai_para_o_menor_numero(self):
+        v, _ = LT.escolhe_variante({2: so_n1(2, 5.0, 5.2), 1: so_n1(1, 5.0, 5.2)})
+        self.assertEqual(v, 1)
+
+    def test_correcao_ou_tempo_invalido_nao_concorre(self):
+        v, d = LT.escolhe_variante({0: so_n1(0, 5.0, 5.2, err=2e-3), 1: so_n1(1, 7.0, 7.0)})
+        self.assertEqual(v, 1)
+        self.assertNotIn(0, d)
+        v, d = LT.escolhe_variante({0: so_n1(0, 0.0, 5.2), 1: so_n1(1, 7.0, 7.0)})
+        self.assertEqual(v, 1)
+
+    def test_modo_ou_variante_trocados_nao_concorrem(self):
+        v, d = LT.escolhe_variante({0: so_n1(0, 5.0, 5.2, modo="completo"), 1: so_n1(2, 5.0, 5.2)})
+        self.assertIsNone(v)
+
+    def test_principal_exige_linha_de_variante(self):
+        sem = gpu_txt(lambda n: 1, lambda n: 1).replace("# variante=0\n", "")
+        self.assertTrue(any("variante" in m for m in LT.cabecalho(sem, "GPU")))
+        self.assertFalse(any("variante" in m for m in LT.cabecalho(gpu_txt(lambda n: 1, lambda n: 1), "GPU")))
 
 
 class CamposGpu(unittest.TestCase):

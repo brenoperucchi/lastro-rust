@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A2-LOTE: aplica o custo de lote MEDIDO do expert (lote_gpu e lote-cpu) ao SimM do A2-MULTIPOS-SIM. Critério: criterio.txt (v1.1).
+"""A2-LOTE: aplica o custo de lote MEDIDO do expert (lote_gpu e lote-cpu) ao SimM do A2-MULTIPOS-SIM. Critério: criterio.txt (v1.2).
 Uso: tools/.venv-ref/bin/python -I -B qual-runs/A2-LOTE-20261103/lote.py <gpu.txt> <cpu.txt>     (sem GPU; só lê as duas saídas)
 A calibração em M=1 é a do A2-MULTIPOS-SIM (w(1)=1 por definição, nada muda em M=1) e não se repete aqui."""
 import math, os, re, sys
@@ -45,6 +45,8 @@ def cabecalho(texto, lado):
         mot.append(f"{lado}: sem a linha '# modo=completo reps={REPS}' (teste rápido ou saída sem cabeçalho não decide)")
     if lado == "GPU":
         u = re.search(r"^# dispositivo: .* uuid=(\S+)", texto, re.M)
+        if not re.search(r"^# variante=[012]\s*$", texto, re.M):
+            mot.append("GPU: sem a linha '# variante=0|1|2'")
         if not u or u.group(1) != UUID_4090:
             mot.append(f"GPU: sem a linha '# dispositivo: ... uuid={UUID_4090}' (não provado que rodou na 4090)")
     return mot
@@ -60,6 +62,25 @@ def validos(tab, lado):
         if not (math.isfinite(r["err"]) and r["err"] >= 0):
             mot.append(f"{lado} {mod} n={n}: erro inválido {r['err']}")
     return mot
+
+
+def escolhe_variante(textos):
+    """Seleção da variante do kernel de GPU (criterio.txt v1.2, seção 6): textos = {variante: saída de `lote_gpu --so-n1 --var=V`}.
+    Vale a de menor max sobre os dois modelos de |t(1)/h − 1| (h do motor); empate, a de menor número. Só olha n=1 e a correção;
+    variante com correção reprovada ou tempo inválido não concorre. Devolve (variante, {variante: desvio})."""
+    desv = {}
+    for v, t in sorted(textos.items()):
+        tab = parse(t, "gpu")
+        if not re.search(r"^# modo=so-n1\b", t, re.M) or not re.search(rf"^# variante={v}\s*$", t, re.M):
+            continue
+        if any((mod, 1) not in tab for mod in ("1b", "3b")) or validos({k: r for k, r in tab.items()}, "GPU"):
+            continue
+        if not all(tab[(mod, 1)]["err"] <= TOL_GPU_ERR for mod in ("1b", "3b")):
+            continue
+        desv[v] = max(abs(tab[(mod, 1)]["lote"] / (MP.moe_sim.PARAMS_RUNTIME[mod]["h"] * 1000) - 1) for mod in ("1b", "3b"))
+    if not desv:
+        return None, desv
+    return min(desv, key=lambda v: (desv[v], v)), desv
 
 
 def portoes(gpu, cpu):
@@ -195,4 +216,16 @@ def principal(gpu_txt, cpu_txt, carrega=MP.carrega):
 
 
 if __name__ == "__main__":
+    if sys.argv[1] == "--escolhe":
+        txt = {}
+        for f in sys.argv[2:]:
+            with open(f) as h:
+                t = h.read()
+            m = re.search(r"^# variante=(\d)", t, re.M)
+            if m:
+                txt[int(m.group(1))] = t
+        v, d = escolhe_variante(txt)
+        print("desvios |t(1)/h-1| (pior dos dois modelos):", {k: round(x, 3) for k, x in d.items()})
+        print("VARIANTE ESCOLHIDA:", v)
+        sys.exit(0 if v is not None else 1)
     sys.exit(principal(sys.argv[1], sys.argv[2]))
