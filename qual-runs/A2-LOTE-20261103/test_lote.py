@@ -225,9 +225,9 @@ class Principal(unittest.TestCase):
         self.assertEqual(rc, 1)
 
     def test_decide_so_ve_10_por_cento_e_roda_usa_coluna_lote(self):
-        vistos, wgs = [], []
+        vistos, wgs, valores = [], [], []
         od, orr = LT.decide, LT.roda
-        LT.decide = lambda g, ok: vistos.append(set(g)) or "x"
+        LT.decide = lambda g, ok: vistos.append(set(g)) or valores.append(dict(g)) or "x"
         def roda(mod, frac, M, wg, wc, modo, tr, te):
             wgs.append((mod, wg(8), wc(8)))
             return orr(mod, frac, M, wg, wc, modo, tr, te)
@@ -239,6 +239,10 @@ class Principal(unittest.TestCase):
             LT.decide, LT.roda = od, orr
         self.assertEqual(len(vistos[0]), 2 * 2 * len(MP.MS))        # 2 modelos x 2 modos x 6 M, só 10%
         g = LT.parse(gt, "gpu")
+        gan, _ = LT.calcula(g, LT.parse(cpu_txt(lambda n: 1 + 0.02 * (n - 1)), "cpu"), self.carrega, (0.10, 0.25))
+        for (mod, modo, M), v in valores[0].items():
+            self.assertAlmostEqual(v, gan[(mod, 0.10, modo, M)])    # valores de 10%, não de 25%
+        self.assertTrue(any(abs(gan[(m, 0.10, mo, M)] - gan[(m, 0.25, mo, M)]) > 1e-6 for (m, mo, M) in valores[0]))
         esperado = LT.tabela_w(g, "1b")[0](8)
         self.assertTrue(any(m == "1b" and abs(a - esperado) < 1e-9 for m, a, _ in wgs))
         self.assertFalse(any(abs(a - 8.0) < 1e-6 for _, a, _ in wgs))   # a coluna serial daria w=8
