@@ -15,8 +15,9 @@
 //!     as duas pelo caminho do passo (`begin_step_tokens`, `enqueue_step`, `finish_token`; M = 1 com `m = 1`). Região cronometrada:
 //!     do início do primeiro `begin_step_tokens` ao fim do último `finish_token`; os logits são lidos depois dela.
 //!  5. Controle C depois: nova instância, 5 repetições. Roda também quando os pares pararam por erro (o motor dos pares é solto antes).
-//!  6. Portão (b) em toda repetição: logits da última posição contra X, L2 relativa 1e-4 e argmax igual. Falhou: INVALIDA, e o relatório
-//!     diz "tempo NÃO LIDO" (o CSV sai com `-NAO-LER` no nome).
+//!  6. Portão (b) em toda repetição, também nas que a carga alheia descartou: logits da última posição contra X, L2 relativa 1e-4 e argmax
+//!     igual. Falhou: INVALIDA (a correção vence a perda por carga), e o relatório diz "tempo NÃO LIDO" (o CSV sai com `-NAO-LER` no nome).
+//!     O mesmo vale se a integridade falhar: relatórios e CSV são montados só depois dela (`renderiza`). `--saida` tem de ser nova ou vazia.
 //!  7. Carga alheia (critério, seção 3, "sem outra carga na GPU"): antes e depois de cada repetição consulta-se `nvidia-smi` pelos PIDs com
 //!     contexto na GPU; diferente do conjunto-base da célula (sem o próprio PID), a repetição é perdida e o par não é refeito (seção 4).
 //!     Falha na consulta falha fechada. Não vê carga de processo que já existia e passou a trabalhar, nem o que começou e terminou
@@ -24,8 +25,8 @@
 //!  8. Rótulo pela regra de `moe_rt::e4b_regra` (a mesma testada em CPU); no fim o resultado do A2 se as células 1b e 3b rodaram.
 //!     Os relatórios são escritos DEPOIS da checagem de integridade, com o rótulo final.
 //!
-//! Descritivo (não decide): o tempo da cabeça de saída (`CudaBackend::cronometra_cabeca`, depois dos pares), com o por posição de M = 1
-//! (uma cabeça por posição) e de M = 8 (uma por passo).
+//! Descritivo (não decide): o tempo da cabeça de saída (`CudaBackend::cronometra_cabeca`), medido na instância do C de depois, com o motor
+//! já fechado e fora das observações; por posição, M = 1 (uma cabeça por posição) e M = 8 (uma por passo). Se não sair, o relatório diz PENDENTE e a causa.
 //!
 //! Não implementado: os carimbos de g_M (5 pares extras com evento de GPU no início e no fim de cada camada). Os eventos do backend são
 //! criados sem cronometragem e instrumentar as camadas é mudança de backend. O critério aprovado prevê esse item; sair sem ele é uma
@@ -134,6 +135,14 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
     Ok(r)
 }
 
+/// A pasta de saída tem de ser nova ou vazia: resultados de uma execução anterior (um `decisao.txt` com PASSA) não podem sobreviver a esta.
+fn prepara_saida(p: &Path) -> Result<(), String> {
+    if p.exists() && std::fs::read_dir(p).map_err(|e| format!("--saida {}: {e}", p.display()))?.next().is_some() {
+        return Err(format!("--saida {} já existe e não está vazia", p.display()));
+    }
+    std::fs::create_dir_all(p).map_err(|e| format!("--saida {}: {e}", p.display()))
+}
+
 /// O portão de autorização: só `1` abre. Recusa antes de qualquer acesso ao device.
 fn exige_autorizacao(valor: Option<&str>) -> Result<(), String> {
     match valor {
@@ -202,7 +211,7 @@ fn pids_alheios() -> Option<BTreeSet<u32>> {
 
 /// O estado da GPU, em texto, para o relatório (link PCIe, memória, uso e processos de computação).
 fn estado_gpu() -> String {
-    let g = nvidia_smi(&["--query-gpu=pci.link.gen.current,pci.link.width.current,memory.used,utilization.gpu", "--format=csv,noheader"]).unwrap_or_else(|| "nvidia-smi falhou".into());
+    let g = nvidia_smi(&["--query-gpu=pci.link.gen.current,pci.link.width.current,memory.used,utilization.gpu,clocks.sm,temperature.gpu", "--format=csv,noheader"]).unwrap_or_else(|| "nvidia-smi falhou".into());
     let p = nvidia_smi(&["--query-compute-apps=pid,process_name,used_memory", "--format=csv,noheader"]).unwrap_or_else(|| "nvidia-smi falhou".into());
     format!("GPU [{}]; processos [{}]", g.trim(), p.trim().replace('\n', " | "))
 }
@@ -280,17 +289,22 @@ impl Motor {
         Ok((secs, logits))
     }
 
-    /// A repetição com a checagem de carga alheia antes e depois. `Err` é erro do motor (ele não segue); `Ok(None)` é a repetição perdida
-    /// por carga (ou por consulta que falhou), com o motor vivo.
-    fn repeticao_monitorada(&mut self, tokens: &[usize], m: usize, base: &BTreeSet<u32>) -> Result<Option<(f64, Vec<f32>)>, String> {
+    /// A repetição com a checagem de carga alheia antes e depois. `Err` é erro do motor (ele não segue). Os logits voltam sempre: a validade
+    /// numérica (portão (b)) é independente da validade do tempo (`carga_ok`), e a correção tem precedência (`classifica`).
+    fn repeticao_monitorada(&mut self, tokens: &[usize], m: usize, base: &BTreeSet<u32>) -> Result<Rep, String> {
         let antes = pids_alheios();
-        let r = self.repeticao(tokens, m)?;
+        let (secs, logits) = self.repeticao(tokens, m)?;
         let depois = pids_alheios();
-        match (antes, depois) {
-            (Some(a), Some(d)) if !contaminada(base, &a, &d) => Ok(Some(r)),
-            _ => Ok(None),
-        }
+        let carga_ok = matches!((&antes, &depois), (Some(a), Some(d)) if !contaminada(base, a, d));
+        Ok(Rep { secs, logits, carga_ok })
     }
+}
+
+/// Uma repetição concluída: o tempo, os logits da última posição e se a GPU ficou sem carga alheia durante ela.
+struct Rep {
+    secs: f64,
+    logits: Vec<f32>,
+    carga_ok: bool,
 }
 
 #[derive(Default)]
@@ -360,44 +374,83 @@ struct LinhaPar {
     erro8: f64,
 }
 
-/// As repetições do controle C: 5 num motor por token novo, depois de um bloco de partida sem cronômetro. `None` é a observação perdida.
-fn controle(c: &Cenario, tokens: &[usize], x: &[f32], base: &BTreeSet<u32>, portoes_ok: &mut bool, afin: moe_rt::affinity::Afin) -> Vec<Option<f64>> {
+/// O controle C de um lado: as 5 observações (`None` é a perdida), as ocorrências em texto e, se pedido, o tempo da cabeça de saída.
+struct SaidaC {
+    obs: Vec<Option<f64>>,
+    ocorrencias: String,
+    /// Descritivo: medido na instância do C de depois, com o motor já fechado e fora das observações (`Err` guarda a causa).
+    cabeca: Option<Result<f64, String>>,
+}
+
+/// As repetições do controle C: 5 num motor por token novo, depois de um bloco de partida sem cronômetro. Cada perda e cada erro ficam em
+/// `ocorrencias`, que vai ao relatório.
+fn controle(c: &Cenario, tokens: &[usize], x: &[f32], base: &BTreeSet<u32>, portoes_ok: &mut bool, afin: moe_rt::affinity::Afin, lado: &str, com_cabeca: bool) -> SaidaC {
     let slots = c.slots_10();
-    let mut out: Vec<Option<f64>> = vec![None; C_REPETICOES_LADO];
+    let mut r = SaidaC { obs: vec![None; C_REPETICOES_LADO], ocorrencias: String::new(), cabeca: None };
     let mut go = || -> Result<(), String> {
         let mut mt = c.sobe(slots, BACKLOG, vec![], 1)?;
         let fixa = Fixa::nova(afin)?;
         mt.repeticao(tokens, 0)?; // partida, sem cronômetro e sem contar
-        for slot in out.iter_mut() {
-            if let Some((secs, lg)) = mt.repeticao_monitorada(tokens, 0, base)? {
-                if !portao_repeticao(&lg, x) {
+        for i in 0..C_REPETICOES_LADO {
+            let rep = mt.repeticao_monitorada(tokens, 0, base)?;
+            match classifica(rep.carga_ok, portao_repeticao(&rep.logits, x)) {
+                Classe::Valida => r.obs[i] = Some(rep.secs / tokens.len() as f64),
+                Classe::Perdida => r.ocorrencias += &format!("C {lado}, repetição {}: perdida por carga alheia na GPU (ou consulta ao nvidia-smi falhou)\n", i + 1),
+                Classe::Invalida => {
                     *portoes_ok = false;
+                    r.ocorrencias += &format!("C {lado}, repetição {}: logits fora do portão (b)\n", i + 1);
                 }
-                *slot = Some(secs / tokens.len() as f64);
             }
         }
-        let r = mt.eng.close().d();
+        let Motor { b, compute, eng } = mt;
+        let fechou = eng.close().d();
         drop(fixa);
-        r
+        if com_cabeca {
+            // A cabeça só depois do `close` (sem cópias de admissão em curso) e de ler os logits das observações.
+            r.cabeca = Some(b.cronometra_cabeca(&compute, CABECA_AQUECIMENTO, CABECA_N).d());
+        }
+        fechou
     };
     if let Err(e) = go() {
-        eprintln!("controle C: {e}");
+        r.ocorrencias += &format!("C {lado}: erro do motor ou da fixação ({e})\n");
+        if com_cabeca && r.cabeca.is_none() {
+            r.cabeca = Some(Err(format!("não medida: o controle C {lado} não completou ({e})")));
+        }
     }
-    out
+    r
 }
 
 struct SaidaCelula {
     nome: String,
     rotulo: Rotulo,
-    /// O relatório sem a linha do rótulo: ela é escrita depois da checagem de integridade.
+    /// O relatório sem os tempos e sem a linha do rótulo: eles entram depois da checagem de integridade (`renderiza`).
     corpo: String,
+    /// As linhas com tempos (controle C, ganhos, tp(1)) e o CSV dos pares: só são publicados se a integridade e o portão (b) passaram.
+    tempos: Option<String>,
+    csv: Option<String>,
+    portoes_ok: bool,
 }
 
 fn invalida(nome: &str, corpo: String) -> SaidaCelula {
-    SaidaCelula { nome: nome.to_string(), rotulo: Rotulo::Invalida, corpo }
+    SaidaCelula { nome: nome.to_string(), rotulo: Rotulo::Invalida, corpo, tempos: None, csv: None, portoes_ok: false }
 }
 
-fn celula(c: &Cenario, nome: &str, ref_dir: &Path, saida: &Path, afin: moe_rt::affinity::Afin) -> Result<SaidaCelula, Box<dyn std::error::Error>> {
+/// O relatório final de uma célula e o CSV (nome e texto). Com a integridade falha ou o portão (b) falho o tempo NÃO É LIDO: as linhas de
+/// tempo saem do relatório e o CSV vai marcado `-NAO-LER`. O rótulo e a nota de integridade entram por último.
+fn renderiza(s: &SaidaCelula, integro: bool, nota: &str) -> (String, Option<(String, String)>) {
+    let lido = integro && s.portoes_ok && s.tempos.is_some();
+    let mut r = s.corpo.clone();
+    match (&s.tempos, lido) {
+        (Some(t), true) => r += t,
+        (Some(_), false) => r += &format!("tempo NÃO LIDO: {} (critério, seção 3); o CSV tem -NAO-LER no nome\n", if integro { "o portão por repetição (b) falhou" } else { "a integridade falhou" }),
+        (None, _) => {}
+    }
+    r += &format!("rótulo: {}\n{nota}\n", s.rotulo.nome());
+    let csv = s.csv.as_ref().map(|c| (if lido { format!("{}-pares.csv", s.nome) } else { format!("{}-pares-NAO-LER.csv", s.nome) }, c.clone()));
+    (r, csv)
+}
+
+fn celula(c: &Cenario, nome: &str, ref_dir: &Path, afin: moe_rt::affinity::Afin) -> Result<SaidaCelula, Box<dyn std::error::Error>> {
     let ref_tokens = Npy::read(&ref_dir.join("tokens.npy"))?.i32()?;
     if ref_tokens.len() < BLOCO {
         return Err(format!("a referência tem {} tokens, menos que o bloco de {BLOCO}", ref_tokens.len()).into());
@@ -441,13 +494,13 @@ fn celula(c: &Cenario, nome: &str, ref_dir: &Path, saida: &Path, afin: moe_rt::a
     let mut portoes_ok = true;
 
     // 3. Controle C antes.
-    let c_antes = controle(c, &tokens, &x, &base, &mut portoes_ok, afin);
+    let c_antes = controle(c, &tokens, &x, &base, &mut portoes_ok, afin, "antes", false);
+    rel += &c_antes.ocorrencias;
 
     // 4. Os pares.
     let slots = c.slots_10();
     let mut linhas: Vec<LinhaPar> = Vec::new();
     let mut parado = false;
-    let mut cabeca: Option<f64> = None;
     match c.sobe(slots, BACKLOG, vec![], POSICOES_MAX) {
         Err(e) => {
             rel += &format!("motor dos pares não subiu: {e}\n");
@@ -459,20 +512,28 @@ fn celula(c: &Cenario, nome: &str, ref_dir: &Path, saida: &Path, afin: moe_rt::a
                 let primeiro_m1 = aquecimento || m1_primeiro(par - AQUECIMENTO);
                 let (mut tp1, mut tp8, mut e1, mut e8) = (None, None, 0.0, 0.0);
                 for &com_m1 in if primeiro_m1 { &[true, false] } else { &[false, true] } {
+                    let braco = if com_m1 { "M=1" } else { "M=8" };
                     match mt.repeticao_monitorada(&tokens, if com_m1 { 1 } else { POSICOES_MAX }, &base) {
-                        Ok(Some((secs, lg))) => {
-                            let tp = secs / BLOCO as f64;
-                            let erro = erro_l2_rel(&lg, &x);
-                            if !portao_repeticao(&lg, &x) {
-                                portoes_ok = false;
-                            }
+                        Ok(r) => {
+                            let erro = erro_l2_rel(&r.logits, &x);
+                            let tp = match classifica(r.carga_ok, portao_repeticao(&r.logits, &x)) {
+                                Classe::Valida => Some(r.secs / BLOCO as f64),
+                                Classe::Perdida => {
+                                    rel += &format!("par {} ({braco}): repetição perdida por carga alheia na GPU (ou consulta ao nvidia-smi falhou); o par não é refeito\n", par + 1);
+                                    None
+                                }
+                                Classe::Invalida => {
+                                    portoes_ok = false;
+                                    rel += &format!("par {} ({braco}): logits fora do portão (b): a célula é INVALIDA\n", par + 1);
+                                    None
+                                }
+                            };
                             if com_m1 {
-                                (tp1, e1) = (Some(tp), erro);
+                                (tp1, e1) = (tp, erro);
                             } else {
-                                (tp8, e8) = (Some(tp), erro);
+                                (tp8, e8) = (tp, erro);
                             }
                         }
-                        Ok(None) => rel += &format!("par {} ({}): repetição perdida por carga alheia na GPU (ou consulta ao nvidia-smi falhou); o par não é refeito\n", par + 1, if com_m1 { "M=1" } else { "M=8" }),
                         Err(e) => {
                             rel += &format!("par {}: erro do motor ({e}); os pares seguintes ficam perdidos\n", par + 1);
                             parado = true;
@@ -486,8 +547,6 @@ fn celula(c: &Cenario, nome: &str, ref_dir: &Path, saida: &Path, afin: moe_rt::a
                 }
             }
             if !parado {
-                // Relatório descritivo, depois de todas as repetições e de ler os logits: a cabeça de saída, fora da região dos pares.
-                cabeca = mt.b.cronometra_cabeca(&mt.compute, CABECA_AQUECIMENTO, CABECA_N).ok();
                 if let Err(e) = mt.eng.close().d() {
                     rel += &format!("fechamento do motor dos pares: {e}\n");
                 }
@@ -498,12 +557,17 @@ fn celula(c: &Cenario, nome: &str, ref_dir: &Path, saida: &Path, afin: moe_rt::a
     }
 
     // 5. Controle C depois (dois motores com pesos densos e 10% de slots não cabem juntos na VRAM).
-    let c_depois = if linhas.is_empty() { vec![None; C_REPETICOES_LADO] } else { controle(c, &tokens, &x, &base, &mut portoes_ok, afin) };
+    let c_depois = if linhas.is_empty() {
+        SaidaC { obs: vec![None; C_REPETICOES_LADO], ocorrencias: "C depois: não rodou (o motor dos pares não subiu)\n".into(), cabeca: Some(Err("não medida: o motor dos pares não subiu".into())) }
+    } else {
+        controle(c, &tokens, &x, &base, &mut portoes_ok, afin, "depois", true)
+    };
+    rel += &c_depois.ocorrencias;
     rel += &format!("estado da GPU depois: {}\n", estado_gpu());
 
     // 7. A regra, sobre os pares medidos.
     let pares: Vec<ParMedido> = linhas.iter().map(|l| ParMedido { aquecimento: l.aquecimento, tp1: l.tp1, tp8: l.tp8 }).collect();
-    let cel = celula_dos_pares(&pares, ControleC { antes: c_antes.clone(), depois: c_depois.clone() }, portoes_ok);
+    let cel = celula_dos_pares(&pares, ControleC { antes: c_antes.obs.clone(), depois: c_depois.obs.clone() }, portoes_ok);
     let rotulo = decide(&cel);
     let ganhos = cel.ganhos.clone();
 
@@ -513,35 +577,30 @@ fn celula(c: &Cenario, nome: &str, ref_dir: &Path, saida: &Path, afin: moe_rt::a
         let f = |v: Option<f64>| v.map(|x| format!("{:.6}", x * 1e3)).unwrap_or_else(|| "perdido".into());
         csv += &format!("{},{},{},{},{},{},{:.3e},{:.3e}\n", l.par + 1, l.aquecimento, l.m1_primeiro, f(l.tp1), f(l.tp8), g.map(|v| format!("{v:.4}")).unwrap_or_else(|| "perdido".into()), l.erro1, l.erro8);
     }
-    // Com o portão (b) falho o tempo não é lido: o CSV sai marcado e o relatório não imprime ganhos nem tempos.
-    let csv_nome = if portoes_ok { format!("{nome}-pares.csv") } else { format!("{nome}-pares-NAO-LER.csv") };
-    std::fs::write(saida.join(csv_nome), csv)?;
+    // O CSV e as linhas de tempo ficam na saída da célula: só `renderiza` decide se são publicados (integridade e portão (b)).
     let linha_c = |v: &[Option<f64>]| v.iter().map(|x| x.map(|t| format!("{:.6}", t * 1e3)).unwrap_or_else(|| "perdido".into())).collect::<Vec<_>>().join(" ");
-    if portoes_ok {
-        rel += &format!("controle C (ms por posição): antes [{}] depois [{}]; mediana {}\n", linha_c(&c_antes), linha_c(&c_depois), cel.c.mediana().map(|m| format!("{:.6}", m * 1e3)).unwrap_or_else(|| "incompleto".into()));
-        let r = resumo(&ganhos);
-        rel += &format!(
-            "pares usados n = {} (de {PARES_USADOS}); ganhos: mín {:.3} q1 {:.3} mediana {:.3} q3 {:.3} máx {:.3}; positivos {} (mínimo para PASSA {})\n",
-            ganhos.len(),
-            r[0],
-            r[1],
-            r[2],
-            r[3],
-            r[4],
-            ganhos.iter().filter(|&&g| g > 0.0).count(),
-            if ganhos.len() >= N_MINIMO { minimo_positivos(ganhos.len()).to_string() } else { "n/a".into() }
-        );
-        rel += &format!("tp(1) do passo (mediana) {:.6} ms\n", cel.tp1_passo_mediana * 1e3);
-    } else {
-        rel += "tempo NÃO LIDO: o portão por repetição (b) falhou (critério, seção 3); o CSV tem -NAO-LER no nome\n";
+    let mut tempos = format!("controle C (ms por posição): antes [{}] depois [{}]; mediana {}\n", linha_c(&c_antes.obs), linha_c(&c_depois.obs), cel.c.mediana().map(|m| format!("{:.6}", m * 1e3)).unwrap_or_else(|| "incompleto".into()));
+    let r = resumo(&ganhos);
+    tempos += &format!(
+        "pares usados n = {} (de {PARES_USADOS}); ganhos: mín {:.3} q1 {:.3} mediana {:.3} q3 {:.3} máx {:.3}; positivos {} (mínimo para PASSA {})\n",
+        ganhos.len(),
+        r[0],
+        r[1],
+        r[2],
+        r[3],
+        r[4],
+        ganhos.iter().filter(|&&g| g > 0.0).count(),
+        if ganhos.len() >= N_MINIMO { minimo_positivos(ganhos.len()).to_string() } else { "n/a".into() }
+    );
+    tempos += &format!("tp(1) do passo (mediana) {:.6} ms\n", cel.tp1_passo_mediana * 1e3);
+    match &c_depois.cabeca {
+        Some(Ok(t)) => rel += &format!("cabeça de saída (descritivo, medida no C depois com o motor fechado): {:.6} ms por chamada; por posição: M=1 {:.6} ms (uma por posição), M=8 {:.6} ms (uma por passo, dividida por 8)\n", t * 1e3, t * 1e3, t * 1e3 / POSICOES_MAX as f64),
+        Some(Err(e)) => rel += &format!("cabeça de saída: PENDENTE ({e})\n"),
+        None => rel += "cabeça de saída: PENDENTE (não chegou a ser pedida)\n",
     }
-    match cabeca {
-        Some(t) => rel += &format!("cabeça de saída (descritivo): {:.6} ms por chamada; por posição: M=1 {:.6} ms (uma por posição), M=8 {:.6} ms (uma por passo, dividida por 8)\n", t * 1e3, t * 1e3, t * 1e3 / POSICOES_MAX as f64),
-        None => rel += "cabeça de saída: não medida (motor parou antes ou a cronometragem falhou)\n",
-    }
-    rel += "g_M: não medido (carimbos não implementados; ver a doc do programa)\n";
-    rel += "limite do monitor de carga: só vê processos que apareceram ou saíram entre as consultas antes e depois de cada repetição\n";
-    Ok(SaidaCelula { nome: nome.to_string(), rotulo, corpo: rel })
+    rel += "g_M: não medido (decisão do Breno de 06/11/2026: fora desta janela; registro em decisoes-e4b-medida.txt)\n";
+    rel += "limite do monitor de carga: só vê processos que apareceram ou saíram entre as consultas antes e depois de cada repetição; orientação: sem usar a máquina (ditado, vídeo) durante a janela\n";
+    Ok(SaidaCelula { nome: nome.to_string(), rotulo, corpo: rel, tempos: Some(tempos), csv: Some(csv), portoes_ok })
 }
 
 fn sha256(p: &Path) -> Result<String, String> {
@@ -556,7 +615,7 @@ fn roda(device: &Arc<Device>, args: &Args, nome: &str, mdir: &Path, rdir: &Path)
     let cfg = ModelConfig::from_json(&serde_json::from_slice(&std::fs::read(mdir.join("config.json"))?)?)?;
     let host = HostModel::load(&Checkpoint::open(mdir)?, cfg.clone())?;
     let c = Cenario { device, host: &host, cfg: &cfg, max_len: (BLOCO + 1).next_multiple_of(ATTN_BN), threads: args.threads };
-    celula(&c, nome, rdir, &args.saida, args.afin)
+    celula(&c, nome, rdir, args.afin)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -568,7 +627,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     exige_autorizacao(std::env::var(VARIAVEL).ok().as_deref())?;
-    std::fs::create_dir_all(&args.saida)?;
+    prepara_saida(&args.saida)?;
+    std::fs::write(args.saida.join("decisao.txt"), "em execução: sem decisão\n")?;
     let (h_bin0, h_crit0) = (sha256(&exe)?, sha256(&args.criterio)?);
     println!("integridade antes: binário {h_bin0}; critério {h_crit0}");
     moe_rt::affinity::set_compute_plan(args.afin.compute_plan(args.threads));
@@ -594,7 +654,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut dec = String::from("decisão do E4b (rótulos pela regra do critério):\n");
     let rotulos: Vec<(String, Rotulo)> = saidas.iter().map(|s| (s.nome.clone(), s.rotulo)).collect();
     for s in &saidas {
-        std::fs::write(args.saida.join(format!("{}-relatorio.txt", s.nome)), format!("{}rótulo: {}\n{nota}\n", s.corpo, s.rotulo.nome()))?;
+        let (relatorio, csv) = renderiza(s, integro, &nota);
+        std::fs::write(args.saida.join(format!("{}-relatorio.txt", s.nome)), relatorio)?;
+        if let Some((nome_csv, texto)) = csv {
+            std::fs::write(args.saida.join(nome_csv), texto)?;
+        }
         dec += &format!("  {}: {}\n", s.nome, s.rotulo.nome());
     }
     match a2_conjunto(&rotulos) {
@@ -682,5 +746,40 @@ mod tests {
             assert!(f.0.is_none());
         }
         assert_eq!(moe_rt::affinity::get_current().unwrap(), antes);
+    }
+
+    #[test]
+    fn saida_nao_vazia_e_recusada() {
+        let d = std::env::temp_dir().join(format!("e4b-medida-teste-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        assert!(prepara_saida(&d).is_ok(), "pasta nova");
+        assert!(prepara_saida(&d).is_ok(), "pasta vazia");
+        std::fs::write(d.join("decisao.txt"), "PASSA").unwrap();
+        assert!(prepara_saida(&d).is_err(), "pasta com resultado antigo");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    fn saida_exemplo(rotulo: Rotulo, portoes_ok: bool) -> SaidaCelula {
+        SaidaCelula { nome: "1b".into(), rotulo, corpo: "== célula 1b\n".into(), tempos: Some("pares usados n = 13; ganhos: mediana 0.200\n".into()), csv: Some("par,tp1\n".into()), portoes_ok }
+    }
+
+    #[test]
+    fn com_a_integridade_falha_o_tempo_nao_e_lido_e_nao_sobra_passa() {
+        let ok = saida_exemplo(Rotulo::Passa, true);
+        let (r, csv) = renderiza(&ok, true, "integridade: IGUAIS");
+        assert!(r.contains("mediana 0.200") && r.contains("rótulo: PASSA"));
+        assert_eq!(csv.unwrap().0, "1b-pares.csv");
+        // Integridade falha: main troca o rótulo para INVALIDA; o relatório não pode ter o tempo nem PASSA, e o CSV leva NAO-LER.
+        let mut falha = saida_exemplo(Rotulo::Passa, true);
+        falha.rotulo = Rotulo::Invalida;
+        let (r, csv) = renderiza(&falha, false, "integridade: DIFERENTES");
+        assert!(!r.contains("mediana") && !r.contains("PASSA") && r.contains("tempo NÃO LIDO") && r.contains("INVALIDA"), "{r}");
+        assert_eq!(csv.unwrap().0, "1b-pares-NAO-LER.csv");
+        // Portão (b) falho com integridade ok: mesma regra.
+        let (r, csv) = renderiza(&saida_exemplo(Rotulo::Invalida, false), true, "n");
+        assert!(!r.contains("mediana") && r.contains("portão por repetição (b)"));
+        assert_eq!(csv.unwrap().0, "1b-pares-NAO-LER.csv");
+        // Uma célula que nem chegou aos tempos (portão (a)) não tem CSV.
+        let (r, csv) = renderiza(&invalida("3b", "== célula 3b\n".into()), true, "n");
+        assert!(csv.is_none() && r.contains("INVALIDA") && !r.contains("tempo NÃO LIDO"));
     }
 }

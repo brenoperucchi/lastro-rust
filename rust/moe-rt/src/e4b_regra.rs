@@ -227,6 +227,27 @@ pub fn contaminada(base: &std::collections::BTreeSet<u32>, antes: &std::collecti
     antes != base || depois != base
 }
 
+/// O destino de uma repetição concluída: a validade numérica (portão (b)) vem antes da validade do tempo (carga alheia).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Classe {
+    /// Logits dentro do portão e sem carga alheia: o tempo vale.
+    Valida,
+    /// Logits dentro do portão, mas houve carga alheia (ou a consulta falhou): o tempo é perdido e o par não é refeito.
+    Perdida,
+    /// Logits fora do portão (com ou sem carga): a célula é INVALIDA, por precedência da correção.
+    Invalida,
+}
+
+pub fn classifica(carga_ok: bool, portao_ok: bool) -> Classe {
+    if !portao_ok {
+        Classe::Invalida
+    } else if !carga_ok {
+        Classe::Perdida
+    } else {
+        Classe::Valida
+    }
+}
+
 /// A ordem dos pares usados: a ordem das repetições inverte a cada par, a partir do primeiro par usado (par 3):
 /// M=1 M=8 | M=8 M=1 | M=1 M=8 | M=8 M=1 ... Leitura A do critério, escolhida pelo Breno em 06/11/2026 (registro em
 /// `decisoes-e4b-medida.txt`). `true` = o M=1 vai primeiro.
@@ -486,5 +507,21 @@ mod testes {
         assert!(contaminada(&base, &b(&[6276, 20782, 999]), &base), "processo novo antes");
         assert!(contaminada(&base, &base, &b(&[6276, 20782, 999])), "processo novo durante");
         assert!(contaminada(&base, &base, &b(&[6276])), "processo que saiu");
+    }
+
+    #[test]
+    fn falha_de_correcao_vence_a_perda_por_carga() {
+        assert_eq!(classifica(true, true), Classe::Valida);
+        assert_eq!(classifica(false, true), Classe::Perdida);
+        assert_eq!(classifica(true, false), Classe::Invalida);
+        assert_eq!(classifica(false, false), Classe::Invalida, "logits ruins com carga alheia não são só um par perdido");
+        // A consequência na regra: 12 pares bons e C completo, mas uma repetição com logits ruins sob carga: INVALIDA, não PASSA.
+        let pares: Vec<ParMedido> = (0..15).map(|i| ParMedido { aquecimento: i < 2, tp1: Some(1.0), tp8: Some(0.5) }).collect();
+        let mut pares = pares;
+        pares[14] = ParMedido { aquecimento: false, tp1: None, tp8: None };
+        let portoes_ok = classifica(false, false) != Classe::Invalida;
+        assert_eq!(decide(&celula_dos_pares(&pares, c_ok(1.0), portoes_ok)), Rotulo::Invalida);
+        let portoes_ok = classifica(false, true) != Classe::Invalida;
+        assert_eq!(decide(&celula_dos_pares(&pares, c_ok(1.0), portoes_ok)), Rotulo::Passa);
     }
 }
