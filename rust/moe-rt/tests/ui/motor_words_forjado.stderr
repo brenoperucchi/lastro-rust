@@ -4,6 +4,7 @@ error[E0423]: cannot initialize a tuple struct which contains private fields
 7 |     let _w = Words(std::ptr::null::<AtomicU32>());
   |              ^^^^^
   |
+  = note: a struct named `Words` exists in another namespace
 note: constructor is not visible here due to private fields
  --> src/motor/backend.rs
   |

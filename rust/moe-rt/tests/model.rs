@@ -681,6 +681,9 @@ fn cache_lfu_cpu_segue_o_lfu_de_referencia_e_bate_com_a_cpu() {
 fn cache_lfu_cpu_por_evento_bate_com_a_cpu_e_clear_zera_as_frequencias() {
     use moe_rt::cache::{AdmitMode, CacheConfig, Policy};
     use moe_rt::gpu_model::Experts;
+    if gpu_or_skip().is_none() {
+        return;
+    }
     let s = cached_matches_cpu(Policy::LfuCpu, 4, 2);
     assert_eq!(s.sync_copies, 0, "{s:?}");
     assert!(s.cpu > 0 && s.hits > 0, "{s:?}");
