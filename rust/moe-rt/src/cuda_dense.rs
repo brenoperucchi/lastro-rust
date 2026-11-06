@@ -83,6 +83,10 @@ fn dtod(dst: &Tensor<f32>, off: usize, src: &Tensor<f32>, n: usize, s: &Arc<Stre
 
 /// Só para o teste de regressão: faz `read_logits` falhar depois de trocar o tensor de logits.
 pub(crate) static FALHA_NA_COPIA_DOS_LOGITS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Só para o teste de regressão do caminho de erro de `read_kv`.
+pub static FALHA_NA_LEITURA_DO_KV: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Só para o mutante do oráculo do E4b: `attn_block_at` usa o comprimento da última posição do passo em todas (atenção não causal).
+pub static MUTANTE_LENS_DA_ULTIMA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 impl Dense {
     pub fn new(m: &HostModel, s: &Arc<Stream>, max_len: usize) -> Result<Self, CudaError> {
@@ -201,12 +205,13 @@ impl Dense {
         if p >= self.step_cs.len() {
             return Err(CudaError::Config("posição fora do passo"));
         }
+        let pl = if MUTANTE_LENS_DA_ULTIMA.load(std::sync::atomic::Ordering::SeqCst) { self.step_lens.len() - 1 } else { p };
         std::mem::swap(&mut self.cs, &mut self.step_cs[p]);
-        std::mem::swap(&mut self.lens, &mut self.step_lens[p]);
+        std::mem::swap(&mut self.lens, &mut self.step_lens[pl]);
         let old_cur = std::mem::replace(&mut self.cur, self.step_base + p);
         let r = self.attn_block(s, l, h, xn);
         std::mem::swap(&mut self.cs, &mut self.step_cs[p]);
-        std::mem::swap(&mut self.lens, &mut self.step_lens[p]);
+        std::mem::swap(&mut self.lens, &mut self.step_lens[pl]);
         self.cur = old_cur;
         r
     }
@@ -288,8 +293,15 @@ impl Dense {
             let slot = if k { &mut lay.k_cache } else { &mut lay.v_cache };
             let t = std::mem::replace(slot, zeros(&[self.max_len, kvd], s)?);
             let t = Arc::new(t);
-            let mut v = api::copy_device_to_host_vec(&t).sync_on(s).map_err(kernel_err)?;
+            // O resultado da cópia só é propagado depois de devolver o tensor original: uma leitura que falha não pode deixar o cache
+            // da sequência trocado por zeros.
+            let copia = if FALHA_NA_LEITURA_DO_KV.load(std::sync::atomic::Ordering::SeqCst) {
+                Err(CudaError::Config("falha injetada na leitura do KV"))
+            } else {
+                api::copy_device_to_host_vec(&t).sync_on(s).map_err(kernel_err)
+            };
             *slot = Arc::try_unwrap(t).map_err(|_| CudaError::Config("cache KV ainda referenciado"))?;
+            let mut v = copia?;
             v.truncate(len * kvd);
             Ok(v)
         };

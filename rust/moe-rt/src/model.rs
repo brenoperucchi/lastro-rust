@@ -173,6 +173,11 @@ impl<'m> CpuSession<'m> {
     }
 
     /// Um token: devolve os logits da próxima posição e a decisão do roteador em cada camada.
+    /// O cache K e V da camada `l` até a posição corrente (`pos·kv_dim` valores cada): a referência do oráculo do KV do E4b.
+    pub fn kv(&self, l: usize) -> (&[f32], &[f32]) {
+        (&self.k_cache[l], &self.v_cache[l])
+    }
+
     pub fn step(&mut self, token: usize) -> (Vec<f32>, Vec<Routing>) {
         let m = self.model;
         let c = &m.cfg;

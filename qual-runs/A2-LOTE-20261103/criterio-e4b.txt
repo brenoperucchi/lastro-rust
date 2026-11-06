@@ -16,20 +16,27 @@ Por isso aqui as repetições são mais numerosas, pareadas e intercaladas.
    - Prefill de um bloco de prompt, 10% de slots como no A1-DIAG10, mesma afinidade de CPU, mesma GPU (4090, x16), 3080 Ti ausente.
    - M em {1, 8}. O M=1 usa o MESMO binário e o mesmo caminho do passo (com max_positions = 8 e m = 1), mais o motor atual sem o passo como controle de regressão.
    - Tamanho do bloco medido: 64 posições por repetição (8 passos de M=8 contra 64 passos de M=1)  [PROPOSTO].
+   - Controle de regressão: o motor atual sem o passo (max_positions = 1), medido nos mesmos pares como terceiro braço. Se a mediana de tp(1) do caminho do passo for mais de X%
+     pior que a do motor atual (X = 5 [PROPOSTO, DECISÃO DO BRENO]), a célula é SEM CONCLUSÃO e o ganho também é reportado contra o motor atual.
 
 3. Portão de correção (antes de qualquer tempo valer)
    - Oráculo: logits da última posição de cada bloco (M=8 e blocos parciais) e o KV de todas as camadas e posições, lidos direto do cache (read_kv),
-     passo de M posições contra token a token do mesmo motor. A fixture pequena do harness é quase insensível ao contexto nos logits (sondada na rodada 70),
-     por isso o KV é lido do cache e não conferido por efeito.
+     passo de M posições contra token a token do mesmo motor. O harness usa uma fixture com atenção quase plana (attention_multiplier 1e-5, pesos 0,3), onde o KV da
+     camada 1 muda de 1e-4 a 2e-4 relativo com o contexto (teste de sensibilidade em CPU, margem de uns 10 vezes sobre 1e-5). Há um mutante de causalidade (lens da última posição) que o oráculo tem de acusar.
    - Tolerância [DECISÃO DO BRENO, recomendação do exec = opção 1; achado da rodada 70]: com o cache ativo o M=8 e o M=1 não dividem os experts entre GPU e CPU do mesmo
      jeito (a tabela fica fixa por passo; no Event a admissão depende do tempo) e o lote soma em outra ordem; nos dados do A1-DIAG10 o próprio M=1 contra a
      passada residente já chega a 1,1e-5 (L2, 1B, 25% de slots), então 1e-5 em toda repetição pode reprovar sem bug.
-       opção 1: igualdade a 1e-5 (norma máxima relativa do vetor) só na sub-rodada de portão com a tabela congelada (todos os experts residentes ou slots=0), onde a
-                divisão é a mesma nos dois braços; nas repetições de tempo a 10% de slots o portão é o do a1-motor: 1e-4 em L2 relativo contra a referência e argmax igual.
-       opção 2: manter 1e-5 em toda repetição, mas calibrado antes: medir M=1 contra M=1 em duas execuções com cache ativo e fixar a tolerância em um múltiplo
-                registrado do pior valor.
+       opção 1: igualdade a 1e-5 (norma máxima relativa do vetor) só na passada de portão com a tabela congelada e DIVISÃO MISTA FIXA (o prefill deixa parte dos experts
+                residente e parte na CPU; é o oráculo A do contrato E4a), onde a divisão é a mesma nos dois braços e a igualdade exercita juntos os kernels de acerto da GPU
+                e o kernel de CPU em lote. Contadores da passada registrados: hits > 0 e cpu > 0, e iguais entre M=8 e M=1. Pode-se somar uma passada com tudo residente e outra
+                com slots=0. Nas repetições de tempo a 10% de slots o portão é o do a1-motor: 1e-4 em L2 relativo e argmax igual (referência X: ver o item "portão por repetição").
+       opção 2: 1e-5 é o TETO e a tolerância é tau = max(tau_min, k * erro_max_calibracao), com calibração de P pares de M=1 contra M=1 (cache ativo) feita antes da janela. Antes de
+                escolher a opção 2 o Breno fixa k, tau_min e P e a ação se tau passar de 1e-5 (célula INVALIDA). Calibração sem erro observado dá tau = tau_min.
        opção 3: trocar a métrica pela L2 do a1-motor e usar 1e-4 em tudo (o limite já aprovado no A1).
-   - Se o portão falhar em qualquer repetição, a célula (modelo) é INVALIDA: o tempo não é lido e a célula nunca conta como NAO_PASSA por velocidade.
+   - Dois portões. (a) Passada de portão, uma por modelo e antes dos pares: logits de todos os fins de bloco e o KV inteiro, M=8 contra token a token, com a tabela congelada, na
+     tolerância escolhida (1e-5 na opção 1). (b) Portão por repetição de tempo: os logits da última posição do bloco, lidos DEPOIS da região cronometrada, contra a referência X com
+     a tolerância das repetições (opção 1: 1e-4 L2 e argmax igual); X = a passada residente do mesmo modelo, calculada uma vez antes da janela [PROPOSTO].
+   - Se qualquer portão falhar, a célula (modelo) é INVALIDA: o tempo não é lido e a célula nunca conta como NAO_PASSA por velocidade.
    - A referência do oráculo soma na ordem do top-k de cada posição (contrato, item 6). O passo em lote soma na ordem da união dos experts; a diferença tem de ficar dentro da tolerância.
    - Integridade: hash do binário e do critério registrados antes e depois, sem outra carga na GPU (regras de carga do A1-DIAG10).
 
@@ -57,6 +64,8 @@ Por isso aqui as repetições são mais numerosas, pareadas e intercaladas.
      n=13, mediana 14,9%, 13 positivos -> NAO_PASSA    | n=12, mediana 20%, 10 positivos -> PASSA
      n=12, mediana 20%, 9 positivos -> NAO_PASSA       | n=11, mediana 20%, 9 positivos -> PASSA
      n=11, mediana 20%, 8 positivos -> NAO_PASSA       | n=10 (qualquer mediana) -> INVALIDA
+   Nota para o Breno [DECISÃO DO BRENO]: mediana >= 15% com poucos pares positivos (ex.: 9 de 13) é um resultado ruidoso e aqui conta como NAO_PASSA; duas NAO_PASSA fecham o A2.
+   Alternativa: um rótulo RUIDOSO que conta como SEM CONCLUSÃO. A recomendação do exec é a alternativa (fechar o A2 por ruído é pior que repetir).
    Resultado do A2:
    - 1B e 3B PASSAM: o ganho se sustenta no motor; abre-se a proposta de próximo passo ao Breno (não é autorização).
    - 1B e 3B NAO_PASSAM: fecha o A2 (parada da proposta).

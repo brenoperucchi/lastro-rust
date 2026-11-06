@@ -76,11 +76,15 @@ fn roda_blocos(blocos: &[Vec<usize>], slots: usize, admit: AdmitMode) -> Saida {
     (out, kv)
 }
 
-/// O modelo do harness: a fixture do A1.3c. Ela é quase insensível ao contexto nos logits (sondei escalas de atenção e multiplicadores:
-/// os logits ficam iguais bit a bit com outro contexto), então o KV NÃO é conferido pelos logits: é lido do cache e comparado direto
-/// (`read_kv`), passo contra token a token.
+/// O modelo do harness: a fixture do A1.3c com a atenção quase plana (`attention_multiplier` 1e-5) e pesos de atenção 0,3. Com a
+/// configuração de sempre (0,125 e 0,1) o contexto não muda os logits nem o KV da camada 1, e o oráculo não teria sensibilidade à
+/// causalidade. Sondagem da rodada 71 (CpuSession, contextos que diferem nos 8 primeiros tokens): o KV da camada 0 não depende do
+/// contexto (só do token e da posição), o da camada 1 muda de 1e-4 a 2e-4 relativo nas posições 9 a 13, contra a tolerância de 1e-5
+/// do oráculo (margem de uns 10 vezes, pequena: veja `o_contexto_muda_o_kv_da_camada_1`).
 fn modelo(name: &str) -> (common::Scratch, moe_rt::model::HostModel) {
-    common::tiny_model(name)
+    let mut c = common::tiny_config(33);
+    c["attention_multiplier"] = serde_json::json!(1e-5);
+    common::tiny_model_attn(name, c, 0.3)
 }
 
 const CORTES: [usize; 4] = [8, 3, 1, 2];
@@ -191,5 +195,78 @@ fn prefill_em_lote_e_depois_decode_por_begin_token() {
         let got = b.read_logits(&compute).unwrap();
         assert!(erro_rel(&got, &want[i]) <= 1e-4, "decode {i} depois do prefill em lote");
     }
+    eng.close().unwrap();
+}
+
+/// Controle de sensibilidade (só CPU, roda sempre): contextos que diferem só nos 8 primeiros tokens (mesmo último token de cada
+/// posição) mudam o K e o V da camada 1 acima de 5e-5 relativo nas posições 9 e 13, 5 vezes a tolerância de 1e-5 do oráculo do KV.
+/// O KV da camada 0 não depende do contexto e fica igual. Sem isso o oráculo da GPU não acusaria um `lens` errado no passo.
+#[test]
+fn o_contexto_muda_o_kv_da_camada_1() {
+    let (_s, m) = modelo("motor_passo_ctx");
+    let cpu = Cpu::new(2);
+    let mut outro = TOKENS.to_vec();
+    for t in outro.iter_mut().take(8) {
+        *t = (*t + 1) % 33;
+    }
+    let (mut s1, mut s2) = (CpuSession::new(&m, &cpu), CpuSession::new(&m, &cpu));
+    TOKENS.iter().for_each(|&t| {
+        s1.step(t);
+    });
+    outro.iter().for_each(|&t| {
+        s2.step(t);
+    });
+    let kvd = m.cfg.kv_heads * m.cfg.head_dim;
+    let rel = |a: &[f32], b: &[f32], p: usize| erro_rel(&a[p * kvd..(p + 1) * kvd], &b[p * kvd..(p + 1) * kvd]);
+    for p in [9usize, 13] {
+        let ((k1, v1), (k2, v2)) = (s1.kv(1), s2.kv(1));
+        let (ek, ev) = (rel(k2, k1, p), rel(v2, v1, p));
+        assert!(ek > 5e-5 && ev > 5e-5, "camada 1, posição {p}: o contexto quase não muda o KV (K {ek:e}, V {ev:e}); o oráculo não teria sensibilidade");
+    }
+    let ((k1, _), (k2, _)) = (s1.kv(0), s2.kv(0));
+    assert_eq!(rel(k2, k1, 13), 0.0, "o KV da camada 0 de uma posição só depende do token e da posição");
+}
+
+/// O mutante de causalidade (cada posição lê o comprimento da última do passo): o oráculo tem de acusar no KV da camada 1.
+#[test]
+#[ignore = "GPU: só com o autorizo do Breno (E4B_GPU_AUTORIZADO=1)"]
+fn mutante_de_lens_e_acusado_pelo_oraculo_do_kv() {
+    exige_autorizacao();
+    let blocos = vec![TOKENS[..8].to_vec(), TOKENS[8..11].to_vec()];
+    let uns: Vec<Vec<usize>> = TOKENS[..11].iter().map(|&t| vec![t]).collect();
+    let (_, kv_tok) = roda_blocos(&uns, 5, AdmitMode::TokenBarrier);
+    CudaBackend::mutante_lens_da_ultima(true);
+    let (_, kv_mut) = roda_blocos(&blocos, 5, AdmitMode::TokenBarrier);
+    CudaBackend::mutante_lens_da_ultima(false);
+    let (ek, ev) = (erro_rel(&kv_mut[1].0, &kv_tok[1].0), erro_rel(&kv_mut[1].1, &kv_tok[1].1));
+    assert!(ek > 1e-5 || ev > 1e-5, "o mutante de lens passou pelo oráculo do KV (K {ek:e}, V {ev:e})");
+}
+
+/// Uma leitura do KV que falha não pode trocar o cache da sequência por zeros: depois do erro, uma nova leitura devolve o mesmo KV.
+#[test]
+#[ignore = "GPU: só com o autorizo do Breno (E4B_GPU_AUTORIZADO=1)"]
+fn leitura_do_kv_que_falha_preserva_o_cache() {
+    exige_autorizacao();
+    let _trava = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    let device = cuda_core::Device::new(0).expect("GPU");
+    device.bind_to_thread().unwrap();
+    let (_scratch, m) = modelo("motor_passo_kv");
+    let (compute, copy) = (CudaStream(device.new_stream().unwrap()), CudaStream(device.new_stream().unwrap()));
+    let (b, ex) = CudaBackend::new_model_positions(device.clone(), &m, 5, 64, &compute, 8).unwrap();
+    let cfg = Config { layers: m.cfg.layers, experts: m.cfg.experts, topk: m.cfg.k, width: m.cfg.hidden, slots: 5, backlog: 4, admit: AdmitMode::TokenBarrier, first_token: 1, prefill: vec![], max_positions: 8 };
+    let parts = b.parts(compute.clone(), copy, b.weights(&ex).unwrap(), cfg.first_token).unwrap();
+    let cpu = CpuServe { cpu: Cpu::new(2), hidden: m.cfg.hidden, inter: m.cfg.inter, experts: m.cfg.experts, weights: ex.clone() };
+    let mut eng = Engine::new(b.clone(), parts, cfg, cpu).unwrap();
+    b.begin_step_tokens(&compute, &TOKENS[..4]).unwrap();
+    let p = eng.next_published().unwrap();
+    eng.enqueue_step(p, 4).unwrap();
+    eng.finish_token().unwrap();
+    let antes = b.read_kv(&compute, 1, 4).unwrap();
+    assert!(antes.0.iter().any(|v| *v != 0.0));
+    CudaBackend::injeta_falha_na_leitura_do_kv(true);
+    let r = b.read_kv(&compute, 1, 4);
+    CudaBackend::injeta_falha_na_leitura_do_kv(false);
+    assert!(r.is_err());
+    assert_eq!(b.read_kv(&compute, 1, 4).unwrap(), antes, "o cache mudou depois de uma leitura que falhou");
     eng.close().unwrap();
 }

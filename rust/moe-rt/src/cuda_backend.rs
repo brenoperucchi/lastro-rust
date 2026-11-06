@@ -547,6 +547,18 @@ impl CudaBackend {
         Ok(())
     }
 
+    /// Só para o teste de regressão do caminho de erro de `read_kv`.
+    #[doc(hidden)]
+    pub fn injeta_falha_na_leitura_do_kv(on: bool) {
+        crate::cuda_dense::FALHA_NA_LEITURA_DO_KV.store(on, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Só para o mutante do oráculo do E4b (atenção não causal no passo).
+    #[doc(hidden)]
+    pub fn mutante_lens_da_ultima(on: bool) {
+        crate::cuda_dense::MUTANTE_LENS_DA_ULTIMA.store(on, std::sync::atomic::Ordering::SeqCst);
+    }
+
     /// Só para o teste de regressão do caminho de erro de `read_logits`.
     #[doc(hidden)]
     pub fn injeta_falha_na_copia_dos_logits(on: bool) {
@@ -1226,8 +1238,9 @@ mod tests {
         assert!(srv.compute_step(0, &step, &x[..h], &mut got).is_err());
     }
 
-    /// Com M = 1 o `compute_step` é o `compute` de sempre: mesmo `y` bit a bit, e (com a feature `diag`) a injeção `Site::Cpu` age nele
-    /// e no lote. Tirar o ramo `m == 1` derruba o teste de igualdade bit a bit, porque o lote soma em outra ordem.
+    /// Com M = 1 o `compute_step` dá o mesmo `y` do `compute` bit a bit, e (com a feature `diag`) a injeção `Site::Cpu` age nele e no
+    /// lote. O ramo `m == 1` preserva o caminho antigo (injeção e carimbos) mas NÃO é observável por valor: o lote com m = 1 dá os mesmos
+    /// bits. O que o teste derruba é a falta da injeção nos dois caminhos.
     #[test]
     fn compute_step_com_uma_posicao_e_o_compute_de_sempre() {
         use crate::motor::{CpuGroup, CpuStep};
