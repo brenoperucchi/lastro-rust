@@ -1,0 +1,14 @@
+A2-PASSO E4b: decisões do Breno sobre o programa de medida (06/11/2026, 10:32 -03). Esclarecimentos do critério imutável
+/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/criterio-e4b.txt (SHA-256 92133bc81b4695eefc8cc4a8a90c63cab6f0dfdf98e5d3303f0d64f4853627be), que NÃO foi alterado.
+Frase do Breno: "A e aceito sem g_M".
+
+1. Ordem dos pares (critério, seção 4: "A ordem alterna entre pares (ABBA)"). Escolhida a leitura A, a inversão a cada par, a partir do primeiro
+   par usado (par 3): M=1 M=8 | M=8 M=1 | M=1 M=8 | M=8 M=1 | ... A leitura B (ciclo A,B,B,A das orientações) foi descartada.
+   Motivo: a ambiguidade do texto foi confirmada pelo scout (consulta lastro-rust-6, que recomendou A) e a rodada 78 dividiu os revisores.
+   Código: m1_primeiro(par_usado) = par_usado % 2 == 0, em rust/moe-rt/src/e4b_regra.rs; o índice vem do par planejado (par - 2), não do número de pares que sobraram.
+2. g_M por carimbo (critério, seção 4: 5 pares extras com evento de GPU por camada). NÃO será medido nesta janela. O relatório de cada célula diz "g_M: não medido".
+   Fica para depois, se o E3 for adiante (exige mudança de backend). O g_M só alimenta a leitura do E3 e não entra em nenhum rótulo do A2.
+3. Escolhas do programa que o critério não fixa, avaliadas pelos dois revisores na rodada 78 (sem exigir decisão nova do Breno): bloco de partida sem cronômetro em cada
+   instância do controle C; erro do motor numa repetição encerra os pares dali em diante; integridade (hash) falha ou não calculável = tudo INVALIDA;
+   repetição com processo alheio novo na GPU (nvidia-smi antes e depois) é perdida e não refeita; afinidade a1m fixada só depois de o motor subir.
+Esta decisão NÃO autoriza janela de GPU. A janela de medida pede outro "autorizo" que a nomeie.

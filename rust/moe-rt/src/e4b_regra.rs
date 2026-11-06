@@ -227,9 +227,11 @@ pub fn contaminada(base: &std::collections::BTreeSet<u32>, antes: &std::collecti
     antes != base || depois != base
 }
 
-/// A ordem dos pares usados: ABBA a partir do primeiro par usado. `true` = o M=1 vai primeiro.
+/// A ordem dos pares usados: a ordem das repetições inverte a cada par, a partir do primeiro par usado (par 3):
+/// M=1 M=8 | M=8 M=1 | M=1 M=8 | M=8 M=1 ... Leitura A do critério, escolhida pelo Breno em 06/11/2026 (registro em
+/// `decisoes-e4b-medida.txt`). `true` = o M=1 vai primeiro.
 pub fn m1_primeiro(par_usado: usize) -> bool {
-    matches!(par_usado % 4, 0 | 3)
+    par_usado % 2 == 0
 }
 
 #[cfg(test)]
@@ -404,9 +406,21 @@ mod testes {
     }
 
     #[test]
-    fn abba_comeca_no_primeiro_par_usado() {
-        let ordem: Vec<bool> = (0..8).map(m1_primeiro).collect();
-        assert_eq!(ordem, [true, false, false, true, true, false, false, true]);
+    fn a_ordem_inverte_a_cada_par_a_partir_do_primeiro_usado() {
+        use std::fmt::Write;
+        // Os 13 pares usados: o primeiro (par global 3) começa por M=1 e a ordem inverte a cada par.
+        let ordem: Vec<bool> = (0..PARES_USADOS).map(m1_primeiro).collect();
+        assert_eq!(ordem, [true, false, true, false, true, false, true, false, true, false, true, false, true]);
+        // A expansão em repetições (o que o laço executa), para não confundir letras de orientação com letras de braço.
+        let mut seq = String::new();
+        for u in 0..4 {
+            let _ = write!(seq, "{}|", if m1_primeiro(u) { "M1 M8" } else { "M8 M1" });
+        }
+        assert_eq!(seq, "M1 M8|M8 M1|M1 M8|M8 M1|");
+        // Dois pares consecutivos nunca começam pelo mesmo braço.
+        assert!(ordem.windows(2).all(|w| w[0] != w[1]));
+        // Com 13 pares completos, M=1 vai primeiro 7 vezes e M=8 6 vezes.
+        assert_eq!(ordem.iter().filter(|&&x| x).count(), 7);
     }
 
     #[test]

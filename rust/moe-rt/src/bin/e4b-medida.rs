@@ -10,7 +10,8 @@
 //!     recusa toda admissão) e divisão mista fixa; M = 8 contra token a token, logits dos fins de bloco e o KV inteiro a 1e-5 (norma
 //!     máxima relativa), contadores `hits > 0` e `cpu > 0` e iguais entre os dois. Falhou: a célula é INVALIDA e nenhum tempo é lido.
 //!  3. Controle C antes: instância à parte do motor por token (`max_positions = 1`), 5 repetições do bloco de 64 posições.
-//!  4. 15 pares (2 de aquecimento), ABBA a partir do primeiro par usado: uma repetição de M = 1 e uma de M = 8 sobre o mesmo bloco,
+//!  4. 15 pares (2 de aquecimento), a ordem inverte a cada par a partir do primeiro usado (M1 M8 | M8 M1 | ...; leitura A, ver
+//!     `decisoes-e4b-medida.txt`): uma repetição de M = 1 e uma de M = 8 sobre o mesmo bloco,
 //!     as duas pelo caminho do passo (`begin_step_tokens`, `enqueue_step`, `finish_token`; M = 1 com `m = 1`). Região cronometrada:
 //!     do início do primeiro `begin_step_tokens` ao fim do último `finish_token`; os logits são lidos depois dela.
 //!  5. Controle C depois: nova instância, 5 repetições. Roda também quando os pares pararam por erro (o motor dos pares é solto antes).
@@ -28,7 +29,7 @@
 //!
 //! Não implementado: os carimbos de g_M (5 pares extras com evento de GPU no início e no fim de cada camada). Os eventos do backend são
 //! criados sem cronometragem e instrumentar as camadas é mudança de backend. O critério aprovado prevê esse item; sair sem ele é uma
-//! decisão do Breno, pedida no texto da autorização. O relatório diz "g_M: não medido".
+//! decisão do Breno, tomada em 06/11/2026 ("aceito sem g_M", registro em `decisoes-e4b-medida.txt`). O relatório diz "g_M: não medido".
 //!
 //! Pontos que o critério não fixa e que este programa decide (registrados no relatório e na revisão):
 //!  - cada instância do controle C faz um bloco de partida SEM cronômetro antes das 5 repetições (a instância nasce fria e o critério
