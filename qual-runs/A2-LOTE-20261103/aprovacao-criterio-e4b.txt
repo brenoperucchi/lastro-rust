@@ -1,0 +1,8 @@
+A2-PASSO E4b: aprovação do critério pelo Breno (06/11/2026, 09:17 -03).
+Frase do Breno: "aprovo o critério". Escolhas anteriores: "aceito tudo" (tolerância 1, cabeça de saída contada, RUIDOSO, X = 5%, parâmetros [PROPOSTO]).
+Arquivo aprovado: /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/criterio-e4b.txt
+SHA-256 do arquivo: 92133bc81b4695eefc8cc4a8a90c63cab6f0dfdf98e5d3303f0d64f4853627be
+Commit na aprovação: 18abef3d26f31a004c42d5ca808adf54a53c2f32
+Revisão: rodada 77, rev-1 APPROVE e rev-2 APPROVE.
+A partir daqui o critério é imutável: qualquer mudança exige novo arquivo e nova aprovação.
+Esta aprovação NÃO autoriza janela de GPU de medida. O programa de medida e a passada mista ainda precisam ser escritos e revisados, e a janela pede novo "autorizo" nomeado.
