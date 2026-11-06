@@ -594,7 +594,7 @@ fn celula(c: &Cenario, nome: &str, ref_dir: &Path, afin: moe_rt::affinity::Afin)
     );
     tempos += &format!("tp(1) do passo (mediana) {:.6} ms\n", cel.tp1_passo_mediana * 1e3);
     match &c_depois.cabeca {
-        Some(Ok(t)) => rel += &format!("cabeça de saída (descritivo, medida no C depois com o motor fechado): {:.6} ms por chamada; por posição: M=1 {:.6} ms (uma por posição), M=8 {:.6} ms (uma por passo, dividida por 8)\n", t * 1e3, t * 1e3, t * 1e3 / POSICOES_MAX as f64),
+        Some(Ok(t)) => tempos += &format!("cabeça de saída (descritivo, medida no C depois com o motor fechado): {:.6} ms por chamada; por posição: M=1 {:.6} ms (uma por posição), M=8 {:.6} ms (uma por passo, dividida por 8)\n", t * 1e3, t * 1e3, t * 1e3 / POSICOES_MAX as f64),
         Some(Err(e)) => rel += &format!("cabeça de saída: PENDENTE ({e})\n"),
         None => rel += "cabeça de saída: PENDENTE (não chegou a ser pedida)\n",
     }
@@ -759,7 +759,7 @@ mod tests {
     }
 
     fn saida_exemplo(rotulo: Rotulo, portoes_ok: bool) -> SaidaCelula {
-        SaidaCelula { nome: "1b".into(), rotulo, corpo: "== célula 1b\n".into(), tempos: Some("pares usados n = 13; ganhos: mediana 0.200\n".into()), csv: Some("par,tp1\n".into()), portoes_ok }
+        SaidaCelula { nome: "1b".into(), rotulo, corpo: "== célula 1b\n".into(), tempos: Some("pares usados n = 13; ganhos: mediana 0.200\ncabeça de saída (descritivo): 1.234000 ms por chamada\n".into()), csv: Some("par,tp1\n".into()), portoes_ok }
     }
 
     #[test]
@@ -767,12 +767,14 @@ mod tests {
         let ok = saida_exemplo(Rotulo::Passa, true);
         let (r, csv) = renderiza(&ok, true, "integridade: IGUAIS");
         assert!(r.contains("mediana 0.200") && r.contains("rótulo: PASSA"));
+        assert!(r.contains("cabeça de saída (descritivo): 1.234000"), "{r}");
         assert_eq!(csv.unwrap().0, "1b-pares.csv");
         // Integridade falha: main troca o rótulo para INVALIDA; o relatório não pode ter o tempo nem PASSA, e o CSV leva NAO-LER.
         let mut falha = saida_exemplo(Rotulo::Passa, true);
         falha.rotulo = Rotulo::Invalida;
         let (r, csv) = renderiza(&falha, false, "integridade: DIFERENTES");
         assert!(!r.contains("mediana") && !r.contains("PASSA") && r.contains("tempo NÃO LIDO") && r.contains("INVALIDA"), "{r}");
+        assert!(!r.contains("cabeça de saída") && !r.contains("1.234000"), "a cabeça escapou do tempo NÃO LIDO: {r}");
         assert_eq!(csv.unwrap().0, "1b-pares-NAO-LER.csv");
         // Portão (b) falho com integridade ok: mesma regra.
         let (r, csv) = renderiza(&saida_exemplo(Rotulo::Invalida, false), true, "n");

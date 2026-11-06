@@ -340,4 +340,7 @@ fn cabeca_cronometrada_devolve_tempo_valido_e_o_motor_segue() {
     let got = b.read_logits(&compute).unwrap();
     assert!(erro_rel(&got, &want[5]) <= 1e-4, "passo depois da cronometragem da cabeça");
     eng.close().unwrap();
+    // Caminho do programa de medida: a cabeça é cronometrada depois do `close` (o backend e a stream seguem vivos pelos `Arc`).
+    let t = b.cronometra_cabeca(&compute, 2, 5).unwrap();
+    assert!(t.is_finite() && t > 0.0, "tempo da cabeça depois do close {t}");
 }
