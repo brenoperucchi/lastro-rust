@@ -1,8 +1,8 @@
-A2-PASSO E4b: critério pré-registrado do passo de várias posições na GPU. RASCUNHO do exec para o Breno aprovar (05/11/2026). Nada foi medido.
+A2-PASSO E4b: critério pré-registrado do passo de várias posições na GPU. Escolhas do Breno registradas em 06/11/2026 ("aceito tudo", ou seja, todas as recomendações do exec). Nada foi medido.
 
-Estado: este arquivo é escrito e revisado ANTES de qualquer janela de GPU. Nenhuma janela está autorizada. Depois da aprovação do Breno e da rodada de revisão nível 2,
-o arquivo é commitado e vira imutável (qualquer mudança exige novo arquivo e nova aprovação). Os números marcados [PROPOSTO] são escolhas do exec, para o Breno aceitar ou trocar
-ANTES da janela; os demais vêm da proposta (proposta-passo-multiposicao.md, seção 5) e do contrato (contrato-e4a.md, seção 3).
+Estado: este arquivo é escrito e revisado ANTES de qualquer janela de GPU. Nenhuma janela de medida está autorizada. Depois da rodada de revisão nível 2 da versão com as escolhas,
+o arquivo é commitado e vira imutável (qualquer mudança exige novo arquivo e nova aprovação). Os números marcados [PROPOSTO] foram aceitos pelo Breno em 06/11/2026
+sem troca; os demais vêm da proposta (proposta-passo-multiposicao.md, seção 5) e do contrato (contrato-e4a.md, seção 3).
 
 Origem: o E4a fechou o protocolo do passo de M posições no backend falso (U0 a U4, rodadas 58 a 68, commit a6fec05). O E4b leva o mesmo passo ao backend de CUDA,
 repetindo por posição os kernels de GPU que já existem e pondo em lote só o kernel de CPU. Lição do A1-DIAG10 (etapa 1, 5 repetições): a medida de d oscilou tanto quanto o efeito.
@@ -21,26 +21,23 @@ Por isso aqui as repetições são mais numerosas, pareadas e intercaladas.
      C é por isso entre blocos medidos em sequência, com C medido em 5 repetições antes e 5 depois dos 15 pares [PROPOSTO]. Validade de C: exigem-se as 10 observações válidas,
      sem refazer perdas; com menos (uma perda antes, uma depois, um bloco inteiro ou C inteiro perdido) o controle é INCOMPLETO e a célula é SEM CONCLUSÃO, sem alterar
      os pares M=1/M=8 (que continuam servindo à descrição). Perda de repetição só do C não remove par do n da regra da seção 5. Se a mediana de tp(1) do caminho do passo
-     for mais de X% pior que a mediana de C (X = 5 [PROPOSTO, DECISÃO DO BRENO]), a célula é SEM CONCLUSÃO e o ganho também é reportado contra C.
+     for mais de X% pior que a mediana de C (X = 5, aceito pelo Breno em 06/11/2026), a célula é SEM CONCLUSÃO e o ganho também é reportado contra C.
      Tabela: 10 válidas -> a mediana de C decide a regra de X; 9 ou menos (qualquer padrão) -> INCOMPLETO -> SEM CONCLUSÃO.
 
 3. Portão de correção (antes de qualquer tempo valer)
    - Oráculo: logits da última posição de cada bloco (M=8 e blocos parciais) e o KV de todas as camadas e posições, lidos direto do cache (read_kv),
      passo de M posições contra token a token do mesmo motor. O harness usa uma fixture com atenção quase plana (attention_multiplier 1e-5, pesos 0,3), onde o KV da
      camada 1 muda de 1e-4 a 2e-4 relativo com o contexto (teste de sensibilidade em CPU, margem de uns 10 vezes sobre 1e-5). Há um mutante de causalidade (lens da última posição) que o oráculo tem de acusar.
-   - Tolerância [DECISÃO DO BRENO, recomendação do exec = opção 1; achado da rodada 70]: com o cache ativo o M=8 e o M=1 não dividem os experts entre GPU e CPU do mesmo
+   - Tolerância [DECIDIDO pelo Breno em 06/11/2026: opção 1; as opções 2 e 3 foram descartadas e removidas deste critério; achado da rodada 70]: com o cache ativo o M=8 e o M=1 não dividem os experts entre GPU e CPU do mesmo
      jeito (a tabela fica fixa por passo; no Event a admissão depende do tempo) e o lote soma em outra ordem; nos dados do A1-DIAG10 o próprio M=1 contra a
      passada residente já chega a 1,1e-5 (L2, 1B, 25% de slots), então 1e-5 em toda repetição pode reprovar sem bug.
        opção 1: igualdade a 1e-5 (norma máxima relativa do vetor) só na passada de portão com a tabela congelada e DIVISÃO MISTA FIXA (o prefill deixa parte dos experts
                 residente e parte na CPU; é o oráculo A do contrato E4a), onde a divisão é a mesma nos dois braços e a igualdade exercita juntos os kernels de acerto da GPU
                 e o kernel de CPU em lote. Contadores da passada registrados: hits > 0 e cpu > 0, e iguais entre M=8 e M=1. Pode-se somar uma passada com tudo residente e outra
                 com slots=0. Nas repetições de tempo a 10% de slots o portão é o do a1-motor: 1e-4 em L2 relativo e argmax igual (referência X: ver o item "portão por repetição").
-       opção 2: 1e-5 é o TETO e a tolerância é tau = max(tau_min, k * erro_max_calibracao), com calibração de P pares de M=1 contra M=1 (cache ativo) feita antes da janela. Antes de
-                escolher a opção 2 o Breno fixa k, tau_min e P e a ação se tau passar de 1e-5 (célula INVALIDA). Calibração sem erro observado dá tau = tau_min.
-       opção 3: trocar a métrica pela L2 do a1-motor e usar 1e-4 em tudo (o limite já aprovado no A1).
    - Dois portões. (a) Passada de portão, uma por modelo e antes dos pares: logits de todos os fins de bloco e o KV inteiro, M=8 contra token a token, com a tabela congelada, na
-     tolerância escolhida (1e-5 na opção 1). (b) Portão por repetição de tempo: os logits da última posição do bloco, lidos DEPOIS da região cronometrada, contra a referência X com
-     a tolerância das repetições (opção 1: 1e-4 L2 e argmax igual); X = a passada residente do mesmo modelo, calculada uma vez antes da janela [PROPOSTO].
+     tolerância escolhida (1e-5). (b) Portão por repetição de tempo: os logits da última posição do bloco, lidos DEPOIS da região cronometrada, contra a referência X com
+     a tolerância das repetições (1e-4 L2 e argmax igual); X = a passada residente do mesmo modelo, calculada uma vez antes da janela [PROPOSTO].
    - Se qualquer portão falhar, a célula (modelo) é INVALIDA: o tempo não é lido e a célula nunca conta como NAO_PASSA por velocidade.
    - A referência do oráculo soma na ordem do top-k de cada posição (contrato, item 6). O passo em lote soma na ordem da união dos experts; a diferença tem de ficar dentro da tolerância.
    - Integridade: hash do binário e do critério registrados antes e depois, sem outra carga na GPU (regras de carga do A1-DIAG10).
@@ -50,7 +47,7 @@ Por isso aqui as repetições são mais numerosas, pareadas e intercaladas.
      par usado (par 3).
    - Região cronometrada: do início do primeiro begin_step_tokens ao fim do último finish_token do bloco. Os logits e o KV do oráculo são lidos FORA da região,
      numa passada de portão separada. A cabeça de saída roda em toda posição no M=1 e só na última do passo no M=8; esse ganho é real no prefill e entra na medida
-     [DECISÃO DO BRENO: (a) aceitar assim e registrar à parte o tempo da cabeça por posição, só descritivo; ou (b) excluir a cabeça das duas regiões].
+     [DECIDIDO pelo Breno em 06/11/2026: opção (a), aceitar assim e registrar à parte o tempo da cabeça por posição, só descritivo].
    - tp(M) = tempo da região / número de posições do bloco (64 posições por repetição [PROPOSTO]). Ganho do par = 1 - tp(8)/tp(1).
    - Repetições: 15 pares por modelo [PROPOSTO]; os 2 primeiros são aquecimento, registrados e não usados; n = 13 pares usados.
    - Par perdido (carga, erro do driver) NÃO é refeito. Com 11 <= n <= 13 a regra vale sobre os n pares usados; com n < 11 a célula é INVALIDA.
@@ -62,32 +59,32 @@ Por isso aqui as repetições são mais numerosas, pareadas e intercaladas.
 5. Regra de decisão (uma célula = um modelo). Precedência dos rótulos, nesta ordem: (1) INVALIDA; (2) SEM_CONCLUSAO; (3) PASSA; (4) NAO_PASSA.
    Os rótulos PASSA e NAO_PASSA valem para n pares usados, 11 <= n <= 13, com o portão ok e só se nenhuma condição de SEM_CONCLUSAO se aplica:
    - PASSA: mediana do ganho >= 15% E pelo menos ceil(10*n/13) pares com ganho > 0 (n=13: 10; n=12: 10; n=11: 9).
-   - NAO_PASSA: qualquer outro caso com o portão ok (mediana < 15%, ou mediana >= 15% sem a contagem de pares positivos).
+   - RUIDOSO (conta como SEM_CONCLUSAO): mediana >= 15% mas com menos de ceil(10*n/13) pares com ganho > 0.
+   - NAO_PASSA: mediana < 15% com o portão ok.
    - INVALIDA: portão falhou, ou n < 11.
-   - SEM_CONCLUSAO (vence PASSA e NAO_PASSA): o controle C INCOMPLETO, ou tp(1) do passo mais de X% pior que C (seção 2), e, se o Breno escolher a alternativa, RUIDOSO.
+   - SEM_CONCLUSAO (vence PASSA e NAO_PASSA): o controle C INCOMPLETO, ou tp(1) do passo mais de X% pior que C (seção 2), ou RUIDOSO.
    Tabela de conferência (cada caso tem um rótulo; nenhum fica sem):
-     n=13, mediana 20%, 10 positivos -> PASSA          | n=13, mediana 20%, 9 positivos -> NAO_PASSA
-     n=13, mediana 20%, 7 positivos  -> NAO_PASSA      | n=13, mediana 15% exato, 10 positivos -> PASSA
+     n=13, mediana 20%, 10 positivos -> PASSA          | n=13, mediana 20%, 9 positivos -> RUIDOSO (SEM_CONCLUSAO)
+     n=13, mediana 20%, 7 positivos  -> RUIDOSO            | n=13, mediana 15% exato, 10 positivos -> PASSA
      n=13, mediana 14,9%, 13 positivos -> NAO_PASSA    | n=12, mediana 20%, 10 positivos -> PASSA
-     n=12, mediana 20%, 9 positivos -> NAO_PASSA       | n=11, mediana 20%, 9 positivos -> PASSA
-     n=11, mediana 20%, 8 positivos -> NAO_PASSA       | n=10 (qualquer mediana) -> INVALIDA
+     n=12, mediana 20%, 9 positivos -> RUIDOSO           | n=11, mediana 20%, 9 positivos -> PASSA
+     n=11, mediana 20%, 8 positivos -> RUIDOSO           | n=10 (qualquer mediana) -> INVALIDA
      n=13, mediana 20%, 10 positivos, C com 9 válidas -> SEM_CONCLUSAO | n=13, mediana 5%, tp(1) do passo 8% pior que C (X=5) -> SEM_CONCLUSAO
      portão falhou e C incompleto -> INVALIDA
-   Nota para o Breno [DECISÃO DO BRENO]: mediana >= 15% com poucos pares positivos (ex.: 9 de 13) é um resultado ruidoso e aqui conta como NAO_PASSA; duas NAO_PASSA fecham o A2.
-   Alternativa: um rótulo RUIDOSO que conta como SEM CONCLUSÃO. A recomendação do exec é a alternativa (fechar o A2 por ruído é pior que repetir).
+   Decidido pelo Breno em 06/11/2026: mediana >= 15% com poucos pares positivos (ex.: 9 de 13) é RUIDOSO e conta como SEM_CONCLUSAO, não como NAO_PASSA (fechar o A2 por ruído é pior que repetir).
    Resultado do A2:
    - 1B e 3B PASSAM: o ganho se sustenta no motor; abre-se a proposta de próximo passo ao Breno (não é autorização).
    - 1B e 3B NAO_PASSAM: fecha o A2 (parada da proposta).
-   - Um passa e o outro não, ou qualquer célula INVALIDA ou SEM_CONCLUSAO (inclusive 1B NAO_PASSA com 3B SEM_CONCLUSAO): SEM CONCLUSÃO do A2, volta ao Breno. O exec não escolhe sozinho.
+   - Um passa e o outro não, ou qualquer célula INVALIDA, SEM_CONCLUSAO ou RUIDOSO (inclusive 1B NAO_PASSA com 3B SEM_CONCLUSAO): SEM CONCLUSÃO do A2, volta ao Breno. O exec não escolhe sozinho.
    - E3 (kernels densos em lote): leitura descritiva do g_M para o Breno decidir; não há limiar automático.
 
 6. O que este critério NÃO diz
    - Não autoriza janela de GPU. Só o "autorizo" explícito do Breno, depois da aprovação deste arquivo e da revisão do harness, abre a janela. Duração e comando saem no pedido de autorização.
    - Até o "autorizo", rodar a suíte inteira (cargo test sem filtro) numa máquina com GPU EXECUTA na GPU os testes antigos, que agora passam pelo CudaBackend refatorado.
-     Até lá a suíte roda com CUDA_VISIBLE_DEVICES vazio (o device falha e os testes pulam), ou com filtro (lib motor::, lib cpu::, o teste do portão). [DECISÃO DO BRENO: se uma GPU curta
-     de teste unitário do código novo também precisa do "autorizo" do E4b; a recomendação do exec é que precise.]
+     Até lá a suíte roda com CUDA_VISIBLE_DEVICES vazio (o device falha e os testes pulam), ou com filtro (lib motor::, lib cpu::, o teste do portão). [DECIDIDO pelo Breno em 06/11/2026: uma GPU curta
+     de teste unitário do código novo também precisa do "autorizo" do E4b.]
    - O resultado vale para prefill de bloco em uma sequência. Não prova ganho no decode nem na decodificação especulativa.
    - O ganho depende do kernel de CPU em lote do motor (hipótese 1 da proposta); se o kernel real escalar pior que o microbench, a célula NAO_PASSA e isso é um resultado válido.
-   - O harness atual ainda NÃO materializa a passada mista congelada da opção 1 (o teste sintético usa admissão ativa em 3 tamanhos de cache); isso é feito depois da escolha do Breno.
+   - O harness atual ainda NÃO materializa a passada mista congelada da opção 1 (o teste sintético usa admissão ativa em 3 tamanhos de cache); isso tem de ser feito e revisado antes da janela de medida.
    - O código CUDA novo (laço por posição, palavra m, atenção por posição) e o M=1 do CudaBackend refatorado nunca rodaram na GPU; a primeira execução é o portão de correção.
    - Nenhum limiar do A2-LOTE v1.2 é alterado.
