@@ -12,7 +12,7 @@
 use crate::gpu::{gemv_generics, kernels as gk, tile_k, AXPBY_B, GEMV_BM, SWIGLU_BM};
 use crate::hits::hits_kernels;
 use crate::motor::mem::{AllocId, Release};
-use crate::motor::{Backend, Device, HostExperts, LayerIo, Mapped, Pinned, Role, NO_SLOT};
+use crate::motor::{Backend, CpuStep, Device, HostExperts, LayerIo, Mapped, Pinned, Role, NO_SLOT};
 use crate::route::route_kernels;
 use cuda_core::{sys, Device as CuDevice, Stream};
 use cutile::half::bf16;
@@ -216,18 +216,23 @@ impl Release for Owner {
 /// Buffers de trabalho (reaproveitados entre camadas) e a ativação corrente.
 /// Tensores de trabalho, sempre donos aqui: os lançadores recebem partições emprestadas (`&mut`), então um lançamento que
 /// falha derruba só o empréstimo e o tensor continua vivo até a espera da stream (o cutile libera com `cuMemFreeAsync`).
-struct State {
+struct PosBuf {
     h: Tensor<f32>,
     /// A entrada do bloco MoE no modo de modelo (a norma de entrada de `h`); no modo da pilha, `h` mesmo.
     xn: Tensor<f32>,
-    /// A parte densa do modelo (A1.3c); `None` na pilha de blocos MoE do A1.2.
-    dense: Option<crate::cuda_dense::Dense>,
-    logits: Tensor<f32>,
     hs: Tensor<i32>,
     hw: Tensor<f32>,
     hc: Tensor<i32>,
     a: Tensor<f32>,
     yg: Tensor<f32>,
+}
+
+/// O estado: um `PosBuf` por posição do passo (o índice 0 é o de sempre; com `max_positions == 1` só ele existe).
+struct State {
+    bufs: Vec<PosBuf>,
+    /// A parte densa do modelo (A1.3c); `None` na pilha de blocos MoE do A1.2.
+    dense: Option<crate::cuda_dense::Dense>,
+    logits: Tensor<f32>,
 }
 
 pub struct CudaBackend {
@@ -236,6 +241,12 @@ pub struct CudaBackend {
     owner: Arc<Owner>,
     router: Vec<Tensor<bf16>>,
     st: Mutex<State>,
+    /// O teto de posições por passo (1 = o motor por token de sempre).
+    max_pos: usize,
+    /// O `m` do passo corrente (escrito por `begin_step`, lido pelas operações do passo na mesma thread de enfileiramento).
+    step_m: std::sync::atomic::AtomicUsize,
+    /// Quantos tokens `begin_step_tokens` preparou para o próximo passo (0 = nenhum).
+    prepared: std::sync::atomic::AtomicUsize,
     /// Só nos testes (A1.3d): prende a stream de cálculo antes da seleção dos acertos da camada `.0`, até a palavra mapeada
     /// `.1` chegar a `.2`, para forçar a janela entre a cópia da vítima e o kernel que ainda vai ler o slot.
     #[cfg(test)]
@@ -253,6 +264,14 @@ fn ptr<T>(addr: u64) -> DevicePointer<T> {
 impl CudaBackend {
     /// `routers[l]` é o roteador da camada `l`, `[experts, hidden]` em BF16. Deixa o contexto do device corrente na thread.
     pub fn new(device: Arc<CuDevice>, dims: Dims, routers: &[Vec<bf16>], stream: &CudaStream) -> Result<Arc<Self>, CudaError> {
+        Self::new_positions(device, dims, routers, stream, 1)
+    }
+
+    /// Como [`new`](Self::new), para passos de até `max_positions` posições (E4b).
+    pub fn new_positions(device: Arc<CuDevice>, dims: Dims, routers: &[Vec<bf16>], stream: &CudaStream, max_positions: usize) -> Result<Arc<Self>, CudaError> {
+        if max_positions == 0 || max_positions > 32 {
+            return Err(CudaError::Config("max_positions fora de 1..=32"));
+        }
         let ok = dims.topk.is_power_of_two()
             && dims.topk <= dims.experts
             && routers.len() == dims.layers
@@ -279,18 +298,21 @@ impl CudaBackend {
         let zeros_f = |n: usize| -> Result<Tensor<f32>, CudaError> { api::zeros::<f32>(&[n]).sync_on(s).map_err(kernel_err) };
         let zeros_i = |n: usize| -> Result<Tensor<i32>, CudaError> { api::zeros::<i32>(&[n]).sync_on(s).map_err(kernel_err) };
         let k = dims.topk;
-        let st = State {
-            h: zeros_f(dims.hidden)?,
-            xn: zeros_f(dims.hidden)?,
-            dense: None,
-            logits: zeros_f(dims.experts)?,
-            hs: zeros_i(k)?,
-            hw: zeros_f(k)?,
-            hc: zeros_i(1)?,
-            a: zeros_f(k * dims.inter)?,
-            yg: zeros_f(dims.hidden)?,
-        };
-        Ok(Arc::new(Self { dims, device, owner: Arc::new(Owner { dev: Mutex::new(HashMap::new()), next: AtomicU64::new(1) }), router, st: Mutex::new(st), #[cfg(test)] gate: Mutex::new(None), #[cfg(test)] hold: Mutex::new(None) }))
+        let bufs = (0..max_positions)
+            .map(|_| {
+                Ok(PosBuf {
+                    h: zeros_f(dims.hidden)?,
+                    xn: zeros_f(dims.hidden)?,
+                    hs: zeros_i(k)?,
+                    hw: zeros_f(k)?,
+                    hc: zeros_i(1)?,
+                    a: zeros_f(k * dims.inter)?,
+                    yg: zeros_f(dims.hidden)?,
+                })
+            })
+            .collect::<Result<Vec<_>, CudaError>>()?;
+        let st = State { bufs, dense: None, logits: zeros_f(dims.experts)? };
+        Ok(Arc::new(Self { dims, device, owner: Arc::new(Owner { dev: Mutex::new(HashMap::new()), next: AtomicU64::new(1) }), router, st: Mutex::new(st), max_pos: max_positions, step_m: std::sync::atomic::AtomicUsize::new(1), prepared: std::sync::atomic::AtomicUsize::new(0), #[cfg(test)] gate: Mutex::new(None), #[cfg(test)] hold: Mutex::new(None) }))
     }
 
     fn new_id(&self) -> AllocId {
@@ -351,9 +373,9 @@ impl CudaBackend {
 
     pub fn mapped_io(&self) -> Result<Mapped<LayerIo>, CudaError> {
         let (k, w) = (self.dims.topk, self.dims.hidden);
-        let (mem, dev) = host_alloc(LayerIo::offsets(k, w, 1).total * 4, true)?;
-        // SAFETY: `2k + 2w` palavras zeradas e alinhadas, vivas enquanto o `LayerGuard` viver.
-        let io = unsafe { LayerIo::from_raw(mem.0 as *const AtomicU32, k, w) };
+        let (mem, dev) = host_alloc(LayerIo::offsets(k, w, self.max_pos).total * 4, true)?;
+        // SAFETY: `offsets(..).total` palavras zeradas e alinhadas, vivas enquanto o `LayerGuard` viver.
+        let io = unsafe { LayerIo::from_raw_positions(mem.0 as *const AtomicU32, k, w, self.max_pos) };
         let guard = Arc::new(LayerGuard { io, _mem: mem });
         let p: *const LayerIo = &guard.io;
         let id = self.new_id();
@@ -422,7 +444,7 @@ impl CudaBackend {
             return Err(CudaError::Config("tamanho da entrada"));
         }
         let h = api::copy_host_vec_to_device(&Arc::new(x.to_vec())).sync_on(&s.0).map_err(kernel_err)?;
-        self.st.lock().unwrap_or_else(|e| e.into_inner()).h = h;
+        self.st.lock().unwrap_or_else(|e| e.into_inner()).bufs[0].h = h;
         Ok(())
     }
 
@@ -430,10 +452,10 @@ impl CudaBackend {
     pub fn read_output(&self, s: &CudaStream) -> Result<Vec<f32>, CudaError> {
         ck!(sys::cuStreamSynchronize(s.raw()));
         let mut st = self.st.lock().unwrap_or_else(|e| e.into_inner());
-        let h = std::mem::replace(&mut st.h, api::zeros::<f32>(&[self.dims.hidden]).sync_on(&s.0).map_err(kernel_err)?);
+        let h = std::mem::replace(&mut st.bufs[0].h, api::zeros::<f32>(&[self.dims.hidden]).sync_on(&s.0).map_err(kernel_err)?);
         let h = Arc::new(h);
         let v = api::copy_device_to_host_vec(&h).sync_on(&s.0).map_err(kernel_err)?;
-        st.h = Arc::try_unwrap(h).map_err(|_| CudaError::Config("h ainda referenciado"))?;
+        st.bufs[0].h = Arc::try_unwrap(h).map_err(|_| CudaError::Config("h ainda referenciado"))?;
         Ok(v)
     }
 
@@ -448,14 +470,58 @@ impl CudaBackend {
         max_len: usize,
         stream: &CudaStream,
     ) -> Result<(Arc<Self>, Arc<Vec<(Vec<bf16>, Vec<bf16>)>>), CudaError> {
+        Self::new_model_positions(device, m, slots, max_len, stream, 1)
+    }
+
+    /// Como [`new_model`](Self::new_model), para passos de até `max_positions` posições (E4b).
+    #[allow(clippy::type_complexity)]
+    pub fn new_model_positions(
+        device: Arc<CuDevice>,
+        m: &crate::model::HostModel,
+        slots: usize,
+        max_len: usize,
+        stream: &CudaStream,
+        max_positions: usize,
+    ) -> Result<(Arc<Self>, Arc<Vec<(Vec<bf16>, Vec<bf16>)>>), CudaError> {
         let c = &m.cfg;
         let dims = Dims { layers: c.layers, experts: c.experts, hidden: c.hidden, inter: c.inter, topk: c.k, slots };
         let routers: Vec<Vec<bf16>> = m.layers.iter().map(|l| l.moe.router.clone()).collect();
-        let b = Self::new(device, dims, &routers, stream)?;
+        let b = Self::new_positions(device, dims, &routers, stream, max_positions)?;
         let dense = crate::cuda_dense::Dense::new(m, &stream.0, max_len)?;
         b.st.lock().unwrap_or_else(|e| e.into_inner()).dense = Some(dense);
         let experts = m.layers.iter().flat_map(|l| l.moe.gate_up.iter().cloned().zip(l.moe.down.iter().cloned())).collect();
         Ok((b, Arc::new(experts)))
+    }
+
+    /// Prepara um passo de `tokens.len()` posições no modo de modelo (E4b): carrega o embedding de cada posição no `h` dela e o `cos/sin`
+    /// e o comprimento do cache de cada posição na parte densa. Com a stream ociosa, como `begin_token`. O `m` do passo tem de ser o
+    /// mesmo que `Engine::enqueue_step` passa a `begin_step`.
+    pub fn begin_step_tokens(&self, s: &CudaStream, tokens: &[usize]) -> Result<(), CudaError> {
+        if tokens.is_empty() || tokens.len() > self.max_pos {
+            return Err(CudaError::Config("tokens fora de 1..=max_positions"));
+        }
+        let xs = {
+            let mut st = self.st.lock().unwrap_or_else(|e| e.into_inner());
+            st.dense.as_mut().ok_or(CudaError::Config("sem modelo"))?.begin_step(tokens, &s.0)?
+        };
+        for (p, x) in xs.iter().enumerate() {
+            if x.len() != self.dims.hidden {
+                return Err(CudaError::Config("tamanho da entrada"));
+            }
+            let h = api::copy_host_vec_to_device(&Arc::new(x.clone())).sync_on(&s.0).map_err(kernel_err)?;
+            self.st.lock().unwrap_or_else(|e| e.into_inner()).bufs[p].h = h;
+        }
+        self.prepared.store(tokens.len(), Ordering::Release);
+        Ok(())
+    }
+
+    /// O `m` do passo em curso: 1 com `max_positions == 1`.
+    fn cur_m(&self) -> usize {
+        if self.max_pos > 1 {
+            self.step_m.load(Ordering::Acquire)
+        } else {
+            1
+        }
     }
 
     /// Começa um token no modo de modelo: carrega o embedding em `h` e a posição. Com a stream ociosa.
@@ -544,11 +610,39 @@ impl Backend for CudaBackend {
         Ok(())
     }
 
+    fn max_positions(&self) -> usize {
+        self.max_pos
+    }
+
+    /// O descritor do passo: o `m` desta enfileirada. Com a parte densa, tem de bater com os tokens que `begin_step_tokens` preparou.
+    /// O `m` vai para a GPU por operação da stream (`route` grava a palavra `m` da área da camada antes de `seq[l]`).
+    fn begin_step(&self, _s: &CudaStream, _t: u32, _pos: u64, m: usize) -> Result<(), CudaError> {
+        if m == 0 || m > self.max_pos {
+            return Err(CudaError::Config("m fora de 1..=max_positions"));
+        }
+        let has_dense = self.st.lock().unwrap_or_else(|e| e.into_inner()).dense.is_some();
+        if has_dense && self.prepared.swap(0, Ordering::AcqRel) != m {
+            return Err(CudaError::Config("m diferente dos tokens preparados por begin_step_tokens"));
+        }
+        self.step_m.store(m, Ordering::Release);
+        Ok(())
+    }
+
+    // As quatro operações por camada fazem o laço por posição DENTRO da fase (contrato do E4a, seção 3): o `pre_layer` das `m`
+    // posições, depois o `route` das `m` (e o `seq[l]` que o motor grava em seguida), depois o `launch_hits` das `m`, depois o `add_y`
+    // das `m`. Nunca "posições por fora, camadas por dentro".
     fn pre_layer(&self, s: &CudaStream, layer: usize) -> Result<(), CudaError> {
         let mut guard = self.st.lock().unwrap_or_else(|e| e.into_inner());
         let st = &mut *guard;
-        match st.dense.as_mut() {
-            Some(m) => m.attn_block(&s.0, layer, &mut st.h, &mut st.xn),
+        let State { bufs, dense, .. } = st;
+        match dense.as_mut() {
+            Some(m) => {
+                for p in 0..self.cur_m() {
+                    let b = &mut bufs[p];
+                    m.attn_block_at(&s.0, layer, p, &mut b.h, &mut b.xn)?;
+                }
+                Ok(())
+            }
             None => Ok(()),
         }
     }
@@ -556,8 +650,14 @@ impl Backend for CudaBackend {
     fn post_layers(&self, s: &CudaStream) -> Result<(), CudaError> {
         let mut guard = self.st.lock().unwrap_or_else(|e| e.into_inner());
         let st = &mut *guard;
-        match st.dense.as_mut() {
-            Some(m) => m.head(&s.0, &st.h, &mut st.xn),
+        let State { bufs, dense, .. } = st;
+        // Só a última posição do passo precisa de logits (contrato do E4a, item 8).
+        let last = self.cur_m() - 1;
+        match dense.as_mut() {
+            Some(m) => {
+                let b = &mut bufs[last];
+                m.head(&s.0, &b.h, &mut b.xn)
+            }
             None => Ok(()),
         }
     }
@@ -565,22 +665,32 @@ impl Backend for CudaBackend {
     fn route(&self, s: &CudaStream, layer: usize, io: &Mapped<LayerIo>) -> Result<(), CudaError> {
         let raw = s.raw();
         let d = self.dims;
+        let m = self.cur_m();
+        let o = LayerIo::offsets(d.topk, d.hidden, self.max_pos);
+        let base = io.dev_addr();
         let mut guard = self.st.lock().unwrap_or_else(|e| e.into_inner());
         let st = &mut *guard;
-        let xin = if st.dense.is_some() { &st.xn } else { &st.h };
-        // SAFETY: E e H são múltiplos de BM e BK (conferidos em `new`). Os tensores do estado ficam donos aqui; o lançador só
-        // recebe empréstimos, então uma falha não os solta antes da espera da stream (`fail_k`).
-        unsafe { gk::gemv((&mut st.logits).partition([GEMV_BM]), &self.router[layer], xin).generics(gemv_generics(d.hidden)).async_on(&s.0).map_err(fail_k(raw))? };
-        let base = io.dev_addr();
-        let o = LayerIo::offsets(d.topk, d.hidden, 1);
-        let (ids, w, x) = (base + (o.ids * 4) as u64, base + (o.w * 4) as u64, base + (o.x * 4) as u64);
-        // SAFETY: um bloco; as três áreas mapeadas têm K, K e H palavras; `logits` tem E elementos.
-        unsafe {
-            route_kernels::route_topk(ptr::<i32>(ids), ptr::<f32>(w), &st.logits, d.experts as i32, xin, ptr::<f32>(x))
-                .generics(vec![d.experts.next_power_of_two().to_string(), d.topk.to_string(), d.hidden.to_string(), tile_k(d.hidden).to_string(), "1".into()])
-                .grid((1, 1, 1))
-                .async_on(&s.0)
-                .map_err(fail_k(raw))?;
+        let State { bufs, dense, logits } = st;
+        for p in 0..m {
+            let b = &bufs[p];
+            let xin = if dense.is_some() { &b.xn } else { &b.h };
+            // SAFETY: E e H são múltiplos de BM e BK (conferidos em `new`). Os tensores do estado ficam donos aqui; o lançador só
+            // recebe empréstimos, então uma falha não os solta antes da espera da stream (`fail_k`).
+            unsafe { gk::gemv(logits.partition([GEMV_BM]), &self.router[layer], xin).generics(gemv_generics(d.hidden)).async_on(&s.0).map_err(fail_k(raw))? };
+            let (ids, w, x) = (base + ((o.ids + p * d.topk) * 4) as u64, base + ((o.w + p * d.topk) * 4) as u64, base + ((o.x + p * d.hidden) * 4) as u64);
+            // SAFETY: um bloco; as três áreas mapeadas da posição `p` têm K, K e H palavras (dentro de `offsets(..)`); `logits` tem E elementos.
+            unsafe {
+                route_kernels::route_topk(ptr::<i32>(ids), ptr::<f32>(w), &*logits, d.experts as i32, xin, ptr::<f32>(x))
+                    .generics(vec![d.experts.next_power_of_two().to_string(), d.topk.to_string(), d.hidden.to_string(), tile_k(d.hidden).to_string(), "1".into()])
+                    .grid((1, 1, 1))
+                    .async_on(&s.0)
+                    .map_err(fail_k(raw))?;
+            }
+        }
+        // A palavra `m` da área, por operação da stream de cálculo, na ordem: depois do `route` das `m` posições e antes do
+        // `write_value(seq[l])` que o motor grava a seguir (a linha de serviço a lê depois do `Acquire` de `seq[l]`).
+        if let Some(mo) = o.m {
+            ck!(sys::cuStreamWriteValue32_v2(raw, (base + (mo * 4) as u64) as sys::CUdeviceptr, m as u32, sys::CUstreamWriteValue_flags_enum_CU_STREAM_WRITE_VALUE_DEFAULT as _));
         }
         Ok(())
     }
@@ -597,38 +707,43 @@ impl Backend for CudaBackend {
         }
         let raw = s.raw();
         let d = self.dims;
+        let m = self.cur_m();
         let mut guard = self.st.lock().unwrap_or_else(|e| e.into_inner());
         let st = &mut *guard;
-        let xin = if st.dense.is_some() { &st.xn } else { &st.h };
+        let State { bufs, dense, .. } = st;
         let base = io.dev_addr();
-        let o = LayerIo::offsets(d.topk, d.hidden, 1);
-        let (ids, w) = (base + (o.ids * 4) as u64, base + (o.w * 4) as u64);
-        // SAFETY: um bloco; K ids e K pesos mapeados; a linha da camada cabe na tabela de L·E entradas.
-        unsafe {
-            hits_kernels::hit_select((&mut st.hs).partition([d.topk]), (&mut st.hw).partition([d.topk]), (&mut st.hc).partition([1]), ptr::<i32>(ids), ptr::<f32>(w), ptr::<i32>(table.dev_addr()), (d.layers * d.experts) as i32, (layer * d.experts) as i32, d.slots as i32)
-                .generics(vec![d.topk.to_string()])
-                .async_on(&s.0)
-                .map_err(fail_k(raw))?;
-        }
+        let o = LayerIo::offsets(d.topk, d.hidden, self.max_pos);
         let gu_bytes = d.gu_elems() * 2;
         let (gu_p, dn_p) = (bank.dev_addr(), bank.dev_addr() + (d.bank_slots() * gu_bytes) as u64);
-        // SAFETY: H e I múltiplos de BM e BK; os slots da lista estão em 0..S.
-        unsafe {
-            hits_kernels::moe_gate_up((&mut st.a).partition([SWIGLU_BM]), ptr::<bf16>(gu_p), (d.bank_slots() * 2 * d.inter) as i32, xin, &st.hs)
-                .generics(vec![SWIGLU_BM.to_string(), tile_k(d.hidden).to_string(), d.hidden.to_string(), d.inter.to_string()])
-                .async_on(&s.0)
-                .map_err(fail_k(raw))?;
-        }
-        #[cfg(test)]
-        let down_bm = if FAULT_DOWN.load(Ordering::Relaxed) { "não-é-número".to_string() } else { GEMV_BM.to_string() };
-        #[cfg(not(test))]
-        let down_bm = GEMV_BM.to_string();
-        // SAFETY: como acima; `a` tem K·I elementos.
-        unsafe {
-            hits_kernels::moe_down((&mut st.yg).partition([GEMV_BM]), ptr::<bf16>(dn_p), (d.bank_slots() * d.hidden) as i32, &st.a, &st.hs, &st.hw, &st.hc)
-                .generics(vec![down_bm, tile_k(d.inter).to_string(), d.hidden.to_string(), d.inter.to_string(), d.topk.to_string()])
-                .async_on(&s.0)
-                .map_err(fail_k(raw))?;
+        for p in 0..m {
+            let b = &mut bufs[p];
+            let xin = if dense.is_some() { &b.xn } else { &b.h };
+            let (ids, w) = (base + ((o.ids + p * d.topk) * 4) as u64, base + ((o.w + p * d.topk) * 4) as u64);
+            // SAFETY: um bloco; K ids e K pesos mapeados da posição `p`; a linha da camada cabe na tabela de L·E entradas.
+            unsafe {
+                hits_kernels::hit_select((&mut b.hs).partition([d.topk]), (&mut b.hw).partition([d.topk]), (&mut b.hc).partition([1]), ptr::<i32>(ids), ptr::<f32>(w), ptr::<i32>(table.dev_addr()), (d.layers * d.experts) as i32, (layer * d.experts) as i32, d.slots as i32)
+                    .generics(vec![d.topk.to_string()])
+                    .async_on(&s.0)
+                    .map_err(fail_k(raw))?;
+            }
+            // SAFETY: H e I múltiplos de BM e BK; os slots da lista estão em 0..S.
+            unsafe {
+                hits_kernels::moe_gate_up((&mut b.a).partition([SWIGLU_BM]), ptr::<bf16>(gu_p), (d.bank_slots() * 2 * d.inter) as i32, xin, &b.hs)
+                    .generics(vec![SWIGLU_BM.to_string(), tile_k(d.hidden).to_string(), d.hidden.to_string(), d.inter.to_string()])
+                    .async_on(&s.0)
+                    .map_err(fail_k(raw))?;
+            }
+            #[cfg(test)]
+            let down_bm = if FAULT_DOWN.load(Ordering::Relaxed) { "não-é-número".to_string() } else { GEMV_BM.to_string() };
+            #[cfg(not(test))]
+            let down_bm = GEMV_BM.to_string();
+            // SAFETY: como acima; `a` tem K·I elementos.
+            unsafe {
+                hits_kernels::moe_down((&mut b.yg).partition([GEMV_BM]), ptr::<bf16>(dn_p), (d.bank_slots() * d.hidden) as i32, &b.a, &b.hs, &b.hw, &b.hc)
+                    .generics(vec![down_bm, tile_k(d.inter).to_string(), d.hidden.to_string(), d.inter.to_string(), d.topk.to_string()])
+                    .async_on(&s.0)
+                    .map_err(fail_k(raw))?;
+            }
         }
         Ok(())
     }
@@ -636,20 +751,26 @@ impl Backend for CudaBackend {
     fn add_y(&self, s: &CudaStream, _layer: usize, io: &Mapped<LayerIo>) -> Result<(), CudaError> {
         let raw = s.raw();
         let d = self.dims;
+        let m = self.cur_m();
         let mut guard = self.st.lock().unwrap_or_else(|e| e.into_inner());
         let st = &mut *guard;
-        let y_host = io.dev_addr() + (LayerIo::offsets(d.topk, d.hidden, 1).y * 4) as u64;
-        // SAFETY: H múltiplo de AXPBY_B; a área `y` mapeada tem H palavras.
-        unsafe {
-            match &st.dense {
-                None => {
-                    add_kernels::add_y((&mut st.h).partition([AXPBY_B]), &st.yg, ptr::<f32>(y_host), d.hidden as i32).generics(vec![AXPBY_B.to_string()]).async_on(&s.0).map_err(fail_k(raw))?;
-                }
-                Some(m) => {
-                    add_kernels::add_y_scaled((&mut st.h).partition([AXPBY_B]), &st.yg, ptr::<f32>(y_host), d.hidden as i32, m.cfg().residual_multiplier)
-                        .generics(vec![AXPBY_B.to_string()])
-                        .async_on(&s.0)
-                        .map_err(fail_k(raw))?;
+        let State { bufs, dense, .. } = st;
+        let o = LayerIo::offsets(d.topk, d.hidden, self.max_pos);
+        for p in 0..m {
+            let b = &mut bufs[p];
+            let y_host = io.dev_addr() + ((o.y + p * d.hidden) * 4) as u64;
+            // SAFETY: H múltiplo de AXPBY_B; a área `y` mapeada da posição `p` tem H palavras.
+            unsafe {
+                match dense {
+                    None => {
+                        add_kernels::add_y((&mut b.h).partition([AXPBY_B]), &b.yg, ptr::<f32>(y_host), d.hidden as i32).generics(vec![AXPBY_B.to_string()]).async_on(&s.0).map_err(fail_k(raw))?;
+                    }
+                    Some(mm) => {
+                        add_kernels::add_y_scaled((&mut b.h).partition([AXPBY_B]), &b.yg, ptr::<f32>(y_host), d.hidden as i32, mm.cfg().residual_multiplier)
+                            .generics(vec![AXPBY_B.to_string()])
+                            .async_on(&s.0)
+                            .map_err(fail_k(raw))?;
+                    }
                 }
             }
         }
@@ -713,6 +834,30 @@ impl HostExperts for CpuServe {
             *d = v.to_bits();
         }
         crate::diag::compute_parts(t0, t1, t2, crate::diag::now());
+        Ok(())
+    }
+
+    /// O passo de `step.m` posições em lote (E4b): cada linha de peso é lida uma vez e usada por todas as posições que pedem o expert
+    /// (`Cpu::experts_step`). Escreve o `y` ativo inteiro. A ordem de soma entre experts é a da união; o critério do E4b fixa a
+    /// tolerância (1e-5 relativo) contra o caminho por posição.
+    fn compute_step(&mut self, layer: usize, step: &CpuStep, x: &[u32], y: &mut [u32]) -> Result<(), String> {
+        if x.len() != step.m * step.width || y.len() != step.m * step.width {
+            return Err("tamanho de x ou y diferente de m·width".into());
+        }
+        let xf: Vec<f32> = x.iter().map(|&b| f32::from_bits(b)).collect();
+        let list: Vec<crate::cpu::StepExpert> = step
+            .groups
+            .iter()
+            .map(|g| {
+                debug_assert_eq!(g.key as usize / self.experts, layer);
+                let (gu, dn) = &self.weights[g.key as usize];
+                crate::cpu::StepExpert { gate_up: gu, down: dn, members: g.positions.iter().zip(&g.weights).map(|(&p, &w)| (p, f32::from_bits(w))).collect() }
+            })
+            .collect();
+        let out = self.cpu.experts_step(&xf, &list, step.m, self.hidden, self.inter);
+        for (d, v) in y.iter_mut().zip(out) {
+            *d = v.to_bits();
+        }
         Ok(())
     }
 }
@@ -1014,6 +1159,49 @@ mod tests {
                 (c.topk.is_power_of_two() && c.experts % 2 == 0 && c.routing.len() <= BASE).then_some((i, c))
             })
             .collect()
+    }
+
+    /// E4b, só CPU: o `compute_step` em lote do `CpuServe` contra o caminho por posição (`compute` com as faltas de cada posição na
+    /// ordem do top-k), tolerância 1e-5 relativo à norma máxima do vetor. Não toca a GPU.
+    #[test]
+    fn cpu_serve_compute_step_em_lote_bate_com_o_caminho_por_posicao() {
+        use crate::motor::{CpuGroup, CpuStep};
+        let (h, i, e, m) = (96usize, 40usize, 6usize, 5usize);
+        let mut s = 11u64;
+        let ex: Vec<(Vec<bf16>, Vec<bf16>)> = (0..e).map(|_| (rnd(2 * i * h, 0.3, &mut s), rnd(h * i, 0.3, &mut s))).collect();
+        let mut srv = CpuServe { cpu: Cpu::new(3), hidden: h, inter: i, experts: e, weights: Arc::new(ex) };
+        let x: Vec<u32> = (0..m * h).map(|k| (((k % 13) as f32 - 6.0) * 0.07).to_bits()).collect();
+        // posição p pede os experts de `pedidos[p]` (camada 0: chave = expert), com pesos distintos por (posição, posto).
+        let pedidos: Vec<Vec<u32>> = vec![vec![0, 2], vec![2, 3, 5], vec![], vec![1, 2], vec![5, 0, 4]];
+        let peso = |p: usize, r: usize| (0.3 + 0.11 * p as f32 + 0.07 * r as f32).to_bits();
+        let keys = pedidos.clone();
+        let weights: Vec<Vec<u32>> = pedidos.iter().enumerate().map(|(p, v)| (0..v.len()).map(|r| peso(p, r)).collect()).collect();
+        let mut groups: Vec<CpuGroup> = Vec::new();
+        for (p, v) in pedidos.iter().enumerate() {
+            for (r, &k) in v.iter().enumerate() {
+                match groups.iter_mut().find(|g| g.key == k) {
+                    Some(g) => {
+                        g.positions.push(p);
+                        g.weights.push(peso(p, r));
+                    }
+                    None => groups.push(CpuGroup { key: k, positions: vec![p], weights: vec![peso(p, r)] }),
+                }
+            }
+        }
+        let step = CpuStep { m, width: h, keys: keys.clone(), weights: weights.clone(), groups };
+        let mut got = vec![7u32; m * h];
+        srv.compute_step(0, &step, &x, &mut got).unwrap();
+        for p in 0..m {
+            let mut want = vec![0u32; h];
+            srv.compute(0, &keys[p], &weights[p], &x[p * h..(p + 1) * h], &mut want).unwrap();
+            let (g, w): (Vec<f32>, Vec<f32>) = (got[p * h..(p + 1) * h].iter().map(|b| f32::from_bits(*b)).collect(), want.iter().map(|b| f32::from_bits(*b)).collect());
+            let norma = w.iter().fold(0f32, |a, v| a.max(v.abs())).max(1e-12);
+            let err = g.iter().zip(&w).fold(0f32, |a, (u, v)| a.max((u - v).abs())) / norma;
+            assert!(err <= 1e-5, "posição {p}: erro relativo {err}");
+        }
+        assert!(got[2 * h..3 * h].iter().all(|b| *b == 0), "posição sem faltas tem de sair em zero");
+        // tamanho errado é recusado, não truncado.
+        assert!(srv.compute_step(0, &step, &x[..h], &mut got).is_err());
     }
 
     fn gpu_ou_pula() -> Option<Arc<CuDevice>> {

@@ -55,6 +55,10 @@ pub struct Dense {
     logits: Tensor<f32>,
     cs: Tensor<f32>,
     lens: Tensor<i32>,
+    /// E4b: o `cos/sin` e o comprimento do cache de cada posição do passo em curso, e a posição da primeira.
+    step_cs: Vec<Tensor<f32>>,
+    step_lens: Vec<Tensor<i32>>,
+    step_base: usize,
 }
 
 fn f32_dev(v: &[f32], s: &Arc<Stream>) -> Result<Tensor<f32>, CudaError> {
@@ -129,6 +133,9 @@ impl Dense {
             logits: zeros(&[vocab_pad], s)?,
             cs: zeros(&[2, half], s)?,
             lens: api::copy_host_vec_to_device(&Arc::new(vec![1i32])).sync_on(s).map_err(kernel_err)?,
+            step_cs: Vec::new(),
+            step_lens: Vec::new(),
+            step_base: 0,
             cfg: c,
         })
     }
@@ -153,7 +160,55 @@ impl Dense {
         self.lens = api::copy_host_vec_to_device(&Arc::new(vec![(self.pos + 1) as i32])).sync_on(s).map_err(kernel_err)?;
         self.cur = self.pos;
         self.pos += 1;
+        self.step_cs.clear();
+        self.step_lens.clear();
         Ok(x)
+    }
+
+    /// Começa um passo de `tokens.len()` posições consecutivas (E4b): devolve o embedding de cada uma e guarda o `cos/sin` e o
+    /// comprimento do cache de cada posição (`pos + p + 1`). A atenção da posição `p` na camada `l` lê o cache até ela (as posições
+    /// anteriores do bloco já gravaram a camada `l` antes, na ordem da stream), então o bloco é causal. Chamar com a stream ociosa.
+    pub fn begin_step(&mut self, tokens: &[usize], s: &Arc<Stream>) -> Result<Vec<Vec<f32>>, CudaError> {
+        use cutile::tensor::Reshape;
+        if tokens.is_empty() || self.pos + tokens.len() > self.max_len {
+            return Err(CudaError::Config("cache KV cheio"));
+        }
+        if tokens.iter().any(|&t| t >= self.cfg.vocab) {
+            return Err(CudaError::Config("token fora do vocabulário"));
+        }
+        let (h, half) = (self.cfg.hidden, self.cfg.head_dim / 2);
+        let mut xs = Vec::with_capacity(tokens.len());
+        let (mut cs, mut lens) = (Vec::new(), Vec::new());
+        for (p, &token) in tokens.iter().enumerate() {
+            xs.push(self.embed[token * h..(token + 1) * h].iter().map(|v| v.to_f32() * self.cfg.embedding_multiplier).collect());
+            cs.push(f32_dev(&self.cfg.rope_cos_sin(self.pos + p), s)?.reshape(&[2, half]).map_err(kernel_err)?);
+            lens.push(api::copy_host_vec_to_device(&Arc::new(vec![(self.pos + p + 1) as i32])).sync_on(s).map_err(kernel_err)?);
+        }
+        self.step_cs = cs;
+        self.step_lens = lens;
+        self.step_base = self.pos;
+        self.pos += tokens.len();
+        Ok(xs)
+    }
+
+    /// A atenção da posição `p` do passo (E4b): põe o `cos/sin`, o comprimento e a posição de escrita dela no lugar dos de `begin_token`
+    /// e roda [`attn_block`](Self::attn_block). Com um passo de uma posição vinda de `begin_token` (sem `begin_step`), `p = 0` é o
+    /// caminho de sempre.
+    pub fn attn_block_at(&mut self, s: &Arc<Stream>, l: usize, p: usize, h: &mut Tensor<f32>, xn: &mut Tensor<f32>) -> Result<(), CudaError> {
+        if self.step_cs.is_empty() {
+            return if p == 0 { self.attn_block(s, l, h, xn) } else { Err(CudaError::Config("posição do passo sem begin_step")) };
+        }
+        if p >= self.step_cs.len() {
+            return Err(CudaError::Config("posição fora do passo"));
+        }
+        std::mem::swap(&mut self.cs, &mut self.step_cs[p]);
+        std::mem::swap(&mut self.lens, &mut self.step_lens[p]);
+        let old_cur = std::mem::replace(&mut self.cur, self.step_base + p);
+        let r = self.attn_block(s, l, h, xn);
+        std::mem::swap(&mut self.cs, &mut self.step_cs[p]);
+        std::mem::swap(&mut self.lens, &mut self.step_lens[p]);
+        self.cur = old_cur;
+        r
     }
 
     /// A posição do próximo token na sequência.

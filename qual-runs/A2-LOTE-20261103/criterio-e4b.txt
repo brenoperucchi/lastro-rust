@@ -1,0 +1,47 @@
+A2-PASSO E4b: critério pré-registrado do passo de várias posições na GPU. RASCUNHO do exec para o Breno aprovar (05/11/2026). Nada foi medido.
+
+Estado: este arquivo é escrito e revisado ANTES de qualquer janela de GPU. Nenhuma janela está autorizada. Depois da aprovação do Breno e da rodada de revisão nível 2,
+o arquivo é commitado e vira imutável (qualquer mudança exige novo arquivo e nova aprovação). Os números marcados [PROPOSTO] são escolhas do exec, para o Breno aceitar ou trocar
+ANTES da janela; os demais vêm da proposta (proposta-passo-multiposicao.md, seção 5) e do contrato (contrato-e4a.md, seção 3).
+
+Origem: o E4a fechou o protocolo do passo de M posições no backend falso (U0 a U4, rodadas 58 a 68, commit a6fec05). O E4b leva o mesmo passo ao backend de CUDA,
+repetindo por posição os kernels de GPU que já existem e pondo em lote só o kernel de CPU. Lição do A1-DIAG10 (etapa 1, 5 repetições): a medida de d oscilou tanto quanto o efeito.
+Por isso aqui as repetições são mais numerosas, pareadas e intercaladas.
+
+1. Pergunta
+   Com o passo de M=8 posições no motor real, o tempo por posição cai pelo menos 15% contra o M=1 do próprio motor, medido na mesma execução, nos dois modelos (1B e 3B)?
+
+2. Condições fixas
+   - Modelos: granite 1B e granite 3B; texto de prompt fixo `texto-a` das pastas REF-granite-1b-texto-a e REF-granite-3b-texto-a (o mesmo do A1).
+   - Prefill de um bloco de prompt, 10% de slots como no A1-DIAG10, mesma afinidade de CPU, mesma GPU (4090, x16), 3080 Ti ausente.
+   - M em {1, 8}. O M=1 usa o MESMO binário e o mesmo caminho do passo (com max_positions = 8 e m = 1), mais o motor atual sem o passo como controle de regressão.
+   - Tamanho do bloco medido: 64 posições por repetição (8 passos de M=8 contra 64 passos de M=1)  [PROPOSTO].
+
+3. Portão de correção (antes de qualquer tempo valer)
+   - Oráculo: logits da última posição de cada bloco (M=8 e blocos parciais) contra o token a token do mesmo motor, e contra a CPU de referência a 1e-4; o KV é conferido por efeito (um bloco seguinte lê o KV do anterior). Tolerância 1e-5 relativo (norma máxima por vetor, como no A2-LOTE).
+   - Se o oráculo falhar em qualquer repetição, a célula (modelo) é INVÁLIDA: o tempo não é lido e a célula conta como NÃO PASSOU por correção, nunca por velocidade.
+   - A ordem de soma entre posições segue a ordem do top-k por posição (contrato, item 6).
+   - Integridade: hash do binário e do critério registrados antes e depois, sem outra carga na GPU (regras de carga do A1-DIAG10).
+
+4. Medida
+   - Unidade: um par = uma repetição de M=1 e uma de M=8 sobre o mesmo bloco, na mesma execução, ordem alternada entre pares (ABBA) para anular deriva térmica.
+   - tp(M) = tempo total do bloco / número de posições. Ganho do par = 1 - tp(8)/tp(1).
+   - Repetições: 15 pares por modelo  [PROPOSTO]. Descarte dos 2 primeiros pares como aquecimento, registrados e não usados  [PROPOSTO].
+   - Estatística fixada de antemão: mediana dos ganhos dos pares usados; intervalo descritivo = mínimo, quartis e máximo. Média não decide.
+   - g_M por carimbo: carimbo de tempo no início e no fim de cada camada (fora da região quente, registrado depois), g_M = tempo da camada menos o tempo de cálculo dos experts; reportado para M em {1, 8}. Descritivo, não decide, mas se o orçamento da instrumentação (o custo dos carimbos medido num par sem carimbo) passar de 1% do tempo por posição, o g_M é declarado NÃO CONFIÁVEL como no A1-DIAG10.
+
+5. Regra de decisão (uma célula = um modelo)
+   - PASSA: portão de correção ok, mediana do ganho >= 15% E pelo menos 10 dos 13 pares usados com ganho > 0  [PROPOSTO].
+   - NAO_PASSA: portão ok e mediana < 15%.
+   - INVALIDA: portão de correção falhou, ou mais de 2 pares perdidos por carga/erro.
+   Resultado do A2:
+   - 1B e 3B PASSAM: o ganho se sustenta no motor; abre-se a proposta de próximo passo ao Breno (não é autorização).
+   - 1B e 3B NAO_PASSAM: fecha o A2 (parada da proposta).
+   - Um passa e o outro não, ou qualquer célula INVALIDA: SEM CONCLUSÃO, volta ao Breno. O exec não escolhe sozinho.
+   - E3 (kernels densos em lote) só se as duas células ficarem NAO_PASSA ou uma delas com g_M dominando a diferença entre o ganho medido e o do passo zero; a decisão é do Breno.
+
+6. O que este critério NÃO diz
+   - Não autoriza janela de GPU. Só o "autorizo" explícito do Breno, depois da aprovação deste arquivo e da revisão do harness, abre a janela. Duração e comando saem no pedido de autorização.
+   - O resultado vale para prefill de bloco em uma sequência. Não prova ganho no decode nem na decodificação especulativa.
+   - O ganho depende do kernel de CPU em lote do motor (hipótese 1 da proposta); se o kernel real escalar pior que o microbench, a célula NAO_PASSA e isso é um resultado válido.
+   - Nenhum limiar do A2-LOTE v1.2 é alterado.
