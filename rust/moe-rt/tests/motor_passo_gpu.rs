@@ -142,8 +142,8 @@ fn passo_de_oito_bate_com_o_token_a_token_na_gpu() {
                     assert!(e2 <= 1e-4, "plana {plana}, slots {slots} {admit:?}, bloco {k} (posição {idx}): passo contra a CPU {e2:e}");
                 }
             }
+        }
     }
-}
 }
 
 /// Um `m` que não bate com os tokens preparados é recusado, sem travar o motor (erro do `begin_step`).

@@ -59,22 +59,26 @@ Por isso aqui as repetições são mais numerosas, pareadas e intercaladas.
      evento de GPU gravado na stream de cálculo no início e no fim de cada camada (lido depois, fora da região quente); g_M = tempo da camada menos o tempo dos
      experts. Descritivo, não decide. Se o custo dos carimbos (par com carimbo contra par sem carimbo) passar de 1% do tempo por posição, o g_M é NÃO CONFIÁVEL.
 
-5. Regra de decisão (uma célula = um modelo). Vale para n pares usados, 11 <= n <= 13, com o portão ok:
+5. Regra de decisão (uma célula = um modelo). Precedência dos rótulos, nesta ordem: (1) INVALIDA; (2) SEM_CONCLUSAO; (3) PASSA; (4) NAO_PASSA.
+   Os rótulos PASSA e NAO_PASSA valem para n pares usados, 11 <= n <= 13, com o portão ok e só se nenhuma condição de SEM_CONCLUSAO se aplica:
    - PASSA: mediana do ganho >= 15% E pelo menos ceil(10*n/13) pares com ganho > 0 (n=13: 10; n=12: 10; n=11: 9).
    - NAO_PASSA: qualquer outro caso com o portão ok (mediana < 15%, ou mediana >= 15% sem a contagem de pares positivos).
    - INVALIDA: portão falhou, ou n < 11.
+   - SEM_CONCLUSAO (vence PASSA e NAO_PASSA): o controle C INCOMPLETO, ou tp(1) do passo mais de X% pior que C (seção 2), e, se o Breno escolher a alternativa, RUIDOSO.
    Tabela de conferência (cada caso tem um rótulo; nenhum fica sem):
      n=13, mediana 20%, 10 positivos -> PASSA          | n=13, mediana 20%, 9 positivos -> NAO_PASSA
      n=13, mediana 20%, 7 positivos  -> NAO_PASSA      | n=13, mediana 15% exato, 10 positivos -> PASSA
      n=13, mediana 14,9%, 13 positivos -> NAO_PASSA    | n=12, mediana 20%, 10 positivos -> PASSA
      n=12, mediana 20%, 9 positivos -> NAO_PASSA       | n=11, mediana 20%, 9 positivos -> PASSA
      n=11, mediana 20%, 8 positivos -> NAO_PASSA       | n=10 (qualquer mediana) -> INVALIDA
+     n=13, mediana 20%, 10 positivos, C com 9 válidas -> SEM_CONCLUSAO | n=13, mediana 5%, tp(1) do passo 8% pior que C (X=5) -> SEM_CONCLUSAO
+     portão falhou e C incompleto -> INVALIDA
    Nota para o Breno [DECISÃO DO BRENO]: mediana >= 15% com poucos pares positivos (ex.: 9 de 13) é um resultado ruidoso e aqui conta como NAO_PASSA; duas NAO_PASSA fecham o A2.
    Alternativa: um rótulo RUIDOSO que conta como SEM CONCLUSÃO. A recomendação do exec é a alternativa (fechar o A2 por ruído é pior que repetir).
    Resultado do A2:
    - 1B e 3B PASSAM: o ganho se sustenta no motor; abre-se a proposta de próximo passo ao Breno (não é autorização).
    - 1B e 3B NAO_PASSAM: fecha o A2 (parada da proposta).
-   - Um passa e o outro não, ou qualquer célula INVALIDA: SEM CONCLUSÃO, volta ao Breno. O exec não escolhe sozinho.
+   - Um passa e o outro não, ou qualquer célula INVALIDA ou SEM_CONCLUSAO (inclusive 1B NAO_PASSA com 3B SEM_CONCLUSAO): SEM CONCLUSÃO do A2, volta ao Breno. O exec não escolhe sozinho.
    - E3 (kernels densos em lote): leitura descritiva do g_M para o Breno decidir; não há limiar automático.
 
 6. O que este critério NÃO diz
