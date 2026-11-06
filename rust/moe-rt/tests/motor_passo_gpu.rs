@@ -110,38 +110,38 @@ const TOKENS: [usize; 14] = [3, 17, 5, 17, 3, 29, 5, 8, 17, 3, 5, 29, 8, 17];
 #[ignore = "GPU: só com o autorizo do Breno (E4B_GPU_AUTORIZADO=1)"]
 fn passo_de_oito_bate_com_o_token_a_token_na_gpu() {
     exige_autorizacao();
-  for plana in [true, false] {
-    let (_s, m) = modelo_com("motor_passo_ref", plana);
-    let cpu_ref = Cpu::new(2);
-    let mut sess = CpuSession::new(&m, &cpu_ref);
-    let ref_logits: Vec<Vec<f32>> = TOKENS.iter().map(|&t| sess.step(t).0).collect();
-    // Blocos: 8, 3, 1, 2 (parcial) = 14 posições.
-    let cortes = CORTES;
-    assert_eq!(cortes.iter().sum::<usize>(), TOKENS.len());
-    for slots in [2usize, 5, 8] {
-        for admit in [AdmitMode::Event, AdmitMode::TokenBarrier] {
-            let mut blocos = Vec::new();
-            let mut ult = Vec::new();
-            let mut i = 0;
-            for &c in &cortes {
-                blocos.push(TOKENS[i..i + c].to_vec());
-                i += c;
-                ult.push(i - 1);
+    for plana in [true, false] {
+        let (_s, m) = modelo_com("motor_passo_ref", plana);
+        let cpu_ref = Cpu::new(2);
+        let mut sess = CpuSession::new(&m, &cpu_ref);
+        let ref_logits: Vec<Vec<f32>> = TOKENS.iter().map(|&t| sess.step(t).0).collect();
+        // Blocos: 8, 3, 1, 2 (parcial) = 14 posições.
+        let cortes = CORTES;
+        assert_eq!(cortes.iter().sum::<usize>(), TOKENS.len());
+        for slots in [2usize, 5, 8] {
+            for admit in [AdmitMode::Event, AdmitMode::TokenBarrier] {
+                let mut blocos = Vec::new();
+                let mut ult = Vec::new();
+                let mut i = 0;
+                for &c in &cortes {
+                    blocos.push(TOKENS[i..i + c].to_vec());
+                    i += c;
+                    ult.push(i - 1);
+                }
+                let (passo, kv_passo) = roda_blocos(&blocos, slots, admit, plana);
+                let uns: Vec<Vec<usize>> = TOKENS.iter().map(|&t| vec![t]).collect();
+                let (tok, kv_tok) = roda_blocos(&uns, slots, admit, plana);
+                for (l, ((kp, vp), (kt, vt))) in kv_passo.iter().zip(&kv_tok).enumerate() {
+                    let (ek, ev) = (erro_rel(kp, kt), erro_rel(vp, vt));
+                    assert!(ek <= 1e-5 && ev <= 1e-5, "plana {plana}, slots {slots} {admit:?}, camada {l}: KV do passo contra token a token K {ek:e} V {ev:e}");
+                }
+                for (k, &idx) in ult.iter().enumerate() {
+                    let e1 = erro_rel(&passo[k], &tok[idx]);
+                    let e2 = erro_rel(&passo[k], &ref_logits[idx]);
+                    assert!(e1 <= 1e-5, "plana {plana}, slots {slots} {admit:?}, bloco {k} (posição {idx}): passo contra token a token {e1:e}");
+                    assert!(e2 <= 1e-4, "plana {plana}, slots {slots} {admit:?}, bloco {k} (posição {idx}): passo contra a CPU {e2:e}");
+                }
             }
-            let (passo, kv_passo) = roda_blocos(&blocos, slots, admit, plana);
-            let uns: Vec<Vec<usize>> = TOKENS.iter().map(|&t| vec![t]).collect();
-            let (tok, kv_tok) = roda_blocos(&uns, slots, admit, plana);
-            for (l, ((kp, vp), (kt, vt))) in kv_passo.iter().zip(&kv_tok).enumerate() {
-                let (ek, ev) = (erro_rel(kp, kt), erro_rel(vp, vt));
-                assert!(ek <= 1e-5 && ev <= 1e-5, "plana {plana}, slots {slots} {admit:?}, camada {l}: KV do passo contra token a token K {ek:e} V {ev:e}");
-            }
-            for (k, &idx) in ult.iter().enumerate() {
-                let e1 = erro_rel(&passo[k], &tok[idx]);
-                let e2 = erro_rel(&passo[k], &ref_logits[idx]);
-                assert!(e1 <= 1e-5, "plana {plana}, slots {slots} {admit:?}, bloco {k} (posição {idx}): passo contra token a token {e1:e}");
-                assert!(e2 <= 1e-4, "plana {plana}, slots {slots} {admit:?}, bloco {k} (posição {idx}): passo contra a CPU {e2:e}");
-            }
-        }
     }
 }
 }

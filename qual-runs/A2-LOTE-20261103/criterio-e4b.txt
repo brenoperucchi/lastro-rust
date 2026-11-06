@@ -18,9 +18,36 @@ Por isso aqui as repetições são mais numerosas, pareadas e intercaladas.
    - Tamanho do bloco medido: 64 posições por repetição (8 passos de M=8 contra 64 passos de M=1)  [PROPOSTO].
    - Controle de regressão: o motor atual sem o passo (max_positions = 1) é um terceiro braço C, instância separada (outro CudaBackend/Engine), criada e liberada ANTES e DEPOIS
      dos pares, na mesma execução do binário mas fora do laço dos pares, porque dois motores com pesos densos e 10% de slots não cabem juntos na VRAM [PROPOSTO]. A comparação com
-     C é por isso entre blocos medidos em sequência, com C medido em 5 repetições antes e 5 depois dos 15 pares [PROPOSTO]. Perda de repetição só do C não remove par do n da regra
-     da seção 5 (C tem regra própria). Se a mediana de tp(1) do caminho do passo for mais de X% pior que a mediana de C (X = 5 [PROPOSTO, DECISÃO DO BRENO]), a célula é
-     SEM CONCLUSÃO e o ganho também é reportado contra C.
+     C é por isso entre blocos medidos em sequência, com C medido em 5 repetições antes e 5 depois dos 15 pares [PROPOSTO]. Validade de C: exigem-se as 10 observações válidas,
+     sem refazer perdas; com menos (uma perda antes, uma depois, um bloco inteiro ou C inteiro perdido) o controle é INCOMPLETO e a célula é SEM CONCLUSÃO, sem alterar
+     os pares M=1/M=8 (que continuam servindo à descrição). Perda de repetição só do C não remove par do n da regra da seção 5. Se a mediana de tp(1) do caminho do passo
+     for mais de X% pior que a mediana de C (X = 5 [PROPOSTO, DECISÃO DO BRENO]), a célula é SEM CONCLUSÃO e o ganho também é reportado contra C.
+     Tabela: 10 válidas -> a mediana de C decide a regra de X; 9 ou menos (qualquer padrão) -> INCOMPLETO -> SEM CONCLUSÃO.
+
+3. Portão de correção (antes de qualquer tempo valer)
+   - Oráculo: logits da última posição de cada bloco (M=8 e blocos parciais) e o KV de todas as camadas e posições, lidos direto do cache (read_kv),
+     passo de M posições contra token a token do mesmo motor. O harness usa uma fixture com atenção quase plana (attention_multiplier 1e-5, pesos 0,3), onde o KV da
+     camada 1 muda de 1e-4 a 2e-4 relativo com o contexto (teste de sensibilidade em CPU, margem de uns 10 vezes sobre 1e-5). Há um mutante de causalidade (lens da última posição) que o oráculo tem de acusar.
+   - Tolerância [DECISÃO DO BRENO, recomendação do exec = opção 1; achado da rodada 70]: com o cache ativo o M=8 e o M=1 não dividem os experts entre GPU e CPU do mesmo
+     jeito (a tabela fica fixa por passo; no Event a admissão depende do tempo) e o lote soma em outra ordem; nos dados do A1-DIAG10 o próprio M=1 contra a
+     passada residente já chega a 1,1e-5 (L2, 1B, 25% de slots), então 1e-5 em toda repetição pode reprovar sem bug.
+       opção 1: igualdade a 1e-5 (norma máxima relativa do vetor) só na passada de portão com a tabela congelada e DIVISÃO MISTA FIXA (o prefill deixa parte dos experts
+                residente e parte na CPU; é o oráculo A do contrato E4a), onde a divisão é a mesma nos dois braços e a igualdade exercita juntos os kernels de acerto da GPU
+                e o kernel de CPU em lote. Contadores da passada registrados: hits > 0 e cpu > 0, e iguais entre M=8 e M=1. Pode-se somar uma passada com tudo residente e outra
+                com slots=0. Nas repetições de tempo a 10% de slots o portão é o do a1-motor: 1e-4 em L2 relativo e argmax igual (referência X: ver o item "portão por repetição").
+       opção 2: 1e-5 é o TETO e a tolerância é tau = max(tau_min, k * erro_max_calibracao), com calibração de P pares de M=1 contra M=1 (cache ativo) feita antes da janela. Antes de
+                escolher a opção 2 o Breno fixa k, tau_min e P e a ação se tau passar de 1e-5 (célula INVALIDA). Calibração sem erro observado dá tau = tau_min.
+       opção 3: trocar a métrica pela L2 do a1-motor e usar 1e-4 em tudo (o limite já aprovado no A1).
+   - Dois portões. (a) Passada de portão, uma por modelo e antes dos pares: logits de todos os fins de bloco e o KV inteiro, M=8 contra token a token, com a tabela congelada, na
+     tolerância escolhida (1e-5 na opção 1). (b) Portão por repetição de tempo: os logits da última posição do bloco, lidos DEPOIS da região cronometrada, contra a referência X com
+     a tolerância das repetições (opção 1: 1e-4 L2 e argmax igual); X = a passada residente do mesmo modelo, calculada uma vez antes da janela [PROPOSTO].
+   - Se qualquer portão falhar, a célula (modelo) é INVALIDA: o tempo não é lido e a célula nunca conta como NAO_PASSA por velocidade.
+   - A referência do oráculo soma na ordem do top-k de cada posição (contrato, item 6). O passo em lote soma na ordem da união dos experts; a diferença tem de ficar dentro da tolerância.
+   - Integridade: hash do binário e do critério registrados antes e depois, sem outra carga na GPU (regras de carga do A1-DIAG10).
+
+4. Medida
+   - Unidade: um par = uma repetição de M=1 e uma de M=8 sobre o mesmo bloco, na mesma execução. A ordem alterna entre pares (ABBA) e o padrão começa no primeiro
+     par usado (par 3).
    - Região cronometrada: do início do primeiro begin_step_tokens ao fim do último finish_token do bloco. Os logits e o KV do oráculo são lidos FORA da região,
      numa passada de portão separada. A cabeça de saída roda em toda posição no M=1 e só na última do passo no M=8; esse ganho é real no prefill e entra na medida
      [DECISÃO DO BRENO: (a) aceitar assim e registrar à parte o tempo da cabeça por posição, só descritivo; ou (b) excluir a cabeça das duas regiões].
