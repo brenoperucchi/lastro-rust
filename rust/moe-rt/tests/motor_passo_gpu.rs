@@ -39,11 +39,16 @@ fn erro_rel(got: &[f32], want: &[f32]) -> f32 {
 /// Os logits da última posição de cada bloco e o KV (K, V) de cada camada, todas as posições.
 type Saida = (Vec<Vec<f32>>, Vec<(Vec<f32>, Vec<f32>)>);
 
-fn roda_blocos(blocos: &[Vec<usize>], slots: usize, admit: AdmitMode) -> Saida {
+fn roda_blocos(blocos: &[Vec<usize>], slots: usize, admit: AdmitMode, plana: bool) -> Saida {
     let _trava = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    roda_blocos_sem_trava(blocos, slots, admit, plana)
+}
+
+/// O corpo de `roda_blocos` para quem já segura `GPU` (o teste do mutante segura a trava nas duas execuções).
+fn roda_blocos_sem_trava(blocos: &[Vec<usize>], slots: usize, admit: AdmitMode, plana: bool) -> Saida {
     let device = cuda_core::Device::new(0).expect("GPU");
     device.bind_to_thread().unwrap();
-    let (_scratch, m) = modelo("motor_passo");
+    let (_scratch, m) = modelo_com("motor_passo", plana);
     let (compute, copy) = (CudaStream(device.new_stream().unwrap()), CudaStream(device.new_stream().unwrap()));
     let max_positions = 8;
     let (b, ex) = CudaBackend::new_model_positions(device.clone(), &m, slots, 64, &compute, max_positions).unwrap();
@@ -82,6 +87,14 @@ fn roda_blocos(blocos: &[Vec<usize>], slots: usize, admit: AdmitMode) -> Saida {
 /// contexto (só do token e da posição), o da camada 1 muda de 1e-4 a 2e-4 relativo nas posições 9 a 13, contra a tolerância de 1e-5
 /// do oráculo (margem de uns 10 vezes, pequena: veja `o_contexto_muda_o_kv_da_camada_1`).
 fn modelo(name: &str) -> (common::Scratch, moe_rt::model::HostModel) {
+    modelo_com(name, true)
+}
+
+/// `plana = false` é a fixture de sempre (atenção pontiaguda), que cobre o caminho do Q e do score q·k que a plana dilui.
+fn modelo_com(name: &str, plana: bool) -> (common::Scratch, moe_rt::model::HostModel) {
+    if !plana {
+        return common::tiny_model(name);
+    }
     let mut c = common::tiny_config(33);
     c["attention_multiplier"] = serde_json::json!(1e-5);
     common::tiny_model_attn(name, c, 0.3)
@@ -97,7 +110,8 @@ const TOKENS: [usize; 14] = [3, 17, 5, 17, 3, 29, 5, 8, 17, 3, 5, 29, 8, 17];
 #[ignore = "GPU: só com o autorizo do Breno (E4B_GPU_AUTORIZADO=1)"]
 fn passo_de_oito_bate_com_o_token_a_token_na_gpu() {
     exige_autorizacao();
-    let (_s, m) = modelo("motor_passo_ref");
+  for plana in [true, false] {
+    let (_s, m) = modelo_com("motor_passo_ref", plana);
     let cpu_ref = Cpu::new(2);
     let mut sess = CpuSession::new(&m, &cpu_ref);
     let ref_logits: Vec<Vec<f32>> = TOKENS.iter().map(|&t| sess.step(t).0).collect();
@@ -114,21 +128,22 @@ fn passo_de_oito_bate_com_o_token_a_token_na_gpu() {
                 i += c;
                 ult.push(i - 1);
             }
-            let (passo, kv_passo) = roda_blocos(&blocos, slots, admit);
+            let (passo, kv_passo) = roda_blocos(&blocos, slots, admit, plana);
             let uns: Vec<Vec<usize>> = TOKENS.iter().map(|&t| vec![t]).collect();
-            let (tok, kv_tok) = roda_blocos(&uns, slots, admit);
+            let (tok, kv_tok) = roda_blocos(&uns, slots, admit, plana);
             for (l, ((kp, vp), (kt, vt))) in kv_passo.iter().zip(&kv_tok).enumerate() {
                 let (ek, ev) = (erro_rel(kp, kt), erro_rel(vp, vt));
-                assert!(ek <= 1e-5 && ev <= 1e-5, "slots {slots} {admit:?}, camada {l}: KV do passo contra token a token K {ek:e} V {ev:e}");
+                assert!(ek <= 1e-5 && ev <= 1e-5, "plana {plana}, slots {slots} {admit:?}, camada {l}: KV do passo contra token a token K {ek:e} V {ev:e}");
             }
             for (k, &idx) in ult.iter().enumerate() {
                 let e1 = erro_rel(&passo[k], &tok[idx]);
                 let e2 = erro_rel(&passo[k], &ref_logits[idx]);
-                assert!(e1 <= 1e-5, "slots {slots} {admit:?}, bloco {k} (posição {idx}): passo contra token a token {e1:e}");
-                assert!(e2 <= 1e-4, "slots {slots} {admit:?}, bloco {k} (posição {idx}): passo contra a CPU {e2:e}");
+                assert!(e1 <= 1e-5, "plana {plana}, slots {slots} {admit:?}, bloco {k} (posição {idx}): passo contra token a token {e1:e}");
+                assert!(e2 <= 1e-4, "plana {plana}, slots {slots} {admit:?}, bloco {k} (posição {idx}): passo contra a CPU {e2:e}");
             }
         }
     }
+}
 }
 
 /// Um `m` que não bate com os tokens preparados é recusado, sem travar o motor (erro do `begin_step`).
@@ -232,12 +247,28 @@ fn o_contexto_muda_o_kv_da_camada_1() {
 #[ignore = "GPU: só com o autorizo do Breno (E4B_GPU_AUTORIZADO=1)"]
 fn mutante_de_lens_e_acusado_pelo_oraculo_do_kv() {
     exige_autorizacao();
+    /// Liga o mutante e o desliga no `Drop`, também em unwind; só existe com a trava `GPU` seguida.
+    struct Mutante;
+    impl Mutante {
+        fn liga() -> Self {
+            CudaBackend::mutante_lens_da_ultima(true);
+            Mutante
+        }
+    }
+    impl Drop for Mutante {
+        fn drop(&mut self) {
+            CudaBackend::mutante_lens_da_ultima(false);
+        }
+    }
+    // A trava vale da referência até o mutante desligar: nenhum outro teste de GPU roda com a flag ligada.
+    let _trava = GPU.lock().unwrap_or_else(|e| e.into_inner());
     let blocos = vec![TOKENS[..8].to_vec(), TOKENS[8..11].to_vec()];
     let uns: Vec<Vec<usize>> = TOKENS[..11].iter().map(|&t| vec![t]).collect();
-    let (_, kv_tok) = roda_blocos(&uns, 5, AdmitMode::TokenBarrier);
-    CudaBackend::mutante_lens_da_ultima(true);
-    let (_, kv_mut) = roda_blocos(&blocos, 5, AdmitMode::TokenBarrier);
-    CudaBackend::mutante_lens_da_ultima(false);
+    let (_, kv_tok) = roda_blocos_sem_trava(&uns, 5, AdmitMode::TokenBarrier, true);
+    let kv_mut = {
+        let _m = Mutante::liga();
+        roda_blocos_sem_trava(&blocos, 5, AdmitMode::TokenBarrier, true).1
+    };
     let (ek, ev) = (erro_rel(&kv_mut[1].0, &kv_tok[1].0), erro_rel(&kv_mut[1].1, &kv_tok[1].1));
     assert!(ek > 1e-5 || ev > 1e-5, "o mutante de lens passou pelo oráculo do KV (K {ek:e}, V {ev:e})");
 }
