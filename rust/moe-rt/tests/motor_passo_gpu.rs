@@ -8,8 +8,9 @@
 //! O que cada teste confere (tolerância de 1e-5 relativo à norma máxima do vetor entre o passo de M posições e o token a token do
 //! MESMO motor; 1e-4 contra a passada de referência da CPU, como nos testes do A1.3c):
 //! - os logits da última posição de cada bloco (M = 8, 3 e 1, blocos parciais);
-//! - o KV, por efeito: um bloco seguinte lê o KV gravado pelo bloco anterior, então logits errados depois do primeiro bloco acusam
-//!   o KV do passo (a leitura direta do cache fica fora do harness para não mexer na parte densa além do passo).
+//! - o KV de todas as camadas e posições, lido direto do cache (`read_kv`), passo contra token a token (1e-5): a fixture é quase
+//!   insensível ao contexto nos logits, então o KV não pode ser conferido por efeito;
+//! - a transição prefill em lote e depois decode de um token por `begin_token` + `run_token` no mesmo motor.
 mod common;
 use moe_rt::cpu::Cpu;
 use moe_rt::cuda_backend::{CpuServe, CudaBackend, CudaStream};
@@ -35,11 +36,14 @@ fn erro_rel(got: &[f32], want: &[f32]) -> f32 {
 }
 
 /// Roda os blocos (cada um é um passo de `bloco.len()` posições) e devolve os logits da última posição de cada bloco.
-fn roda_blocos(blocos: &[Vec<usize>], slots: usize, admit: AdmitMode) -> Vec<Vec<f32>> {
+/// Os logits da última posição de cada bloco e o KV (K, V) de cada camada, todas as posições.
+type Saida = (Vec<Vec<f32>>, Vec<(Vec<f32>, Vec<f32>)>);
+
+fn roda_blocos(blocos: &[Vec<usize>], slots: usize, admit: AdmitMode) -> Saida {
     let _trava = GPU.lock().unwrap_or_else(|e| e.into_inner());
     let device = cuda_core::Device::new(0).expect("GPU");
     device.bind_to_thread().unwrap();
-    let (_scratch, m) = common::tiny_model("motor_passo");
+    let (_scratch, m) = modelo("motor_passo");
     let (compute, copy) = (CudaStream(device.new_stream().unwrap()), CudaStream(device.new_stream().unwrap()));
     let max_positions = 8;
     let (b, ex) = CudaBackend::new_model_positions(device.clone(), &m, slots, 64, &compute, max_positions).unwrap();
@@ -66,9 +70,20 @@ fn roda_blocos(blocos: &[Vec<usize>], slots: usize, admit: AdmitMode) -> Vec<Vec
         eng.finish_token().unwrap();
         out.push(b.read_logits(&compute).unwrap());
     }
+    let total: usize = blocos.iter().map(|b| b.len()).sum();
+    let kv = (0..m.cfg.layers).map(|l| b.read_kv(&compute, l, total).unwrap()).collect();
     eng.close().unwrap();
-    out
+    (out, kv)
 }
+
+/// O modelo do harness: a fixture do A1.3c. Ela é quase insensível ao contexto nos logits (sondei escalas de atenção e multiplicadores:
+/// os logits ficam iguais bit a bit com outro contexto), então o KV NÃO é conferido pelos logits: é lido do cache e comparado direto
+/// (`read_kv`), passo contra token a token.
+fn modelo(name: &str) -> (common::Scratch, moe_rt::model::HostModel) {
+    common::tiny_model(name)
+}
+
+const CORTES: [usize; 4] = [8, 3, 1, 2];
 
 const TOKENS: [usize; 14] = [3, 17, 5, 17, 3, 29, 5, 8, 17, 3, 5, 29, 8, 17];
 
@@ -78,12 +93,12 @@ const TOKENS: [usize; 14] = [3, 17, 5, 17, 3, 29, 5, 8, 17, 3, 5, 29, 8, 17];
 #[ignore = "GPU: só com o autorizo do Breno (E4B_GPU_AUTORIZADO=1)"]
 fn passo_de_oito_bate_com_o_token_a_token_na_gpu() {
     exige_autorizacao();
-    let (_s, m) = common::tiny_model("motor_passo_ref");
+    let (_s, m) = modelo("motor_passo_ref");
     let cpu_ref = Cpu::new(2);
     let mut sess = CpuSession::new(&m, &cpu_ref);
     let ref_logits: Vec<Vec<f32>> = TOKENS.iter().map(|&t| sess.step(t).0).collect();
     // Blocos: 8, 3, 1, 2 (parcial) = 14 posições.
-    let cortes = [8usize, 3, 1, 2];
+    let cortes = CORTES;
     assert_eq!(cortes.iter().sum::<usize>(), TOKENS.len());
     for slots in [2usize, 5, 8] {
         for admit in [AdmitMode::Event, AdmitMode::TokenBarrier] {
@@ -95,9 +110,13 @@ fn passo_de_oito_bate_com_o_token_a_token_na_gpu() {
                 i += c;
                 ult.push(i - 1);
             }
-            let passo = roda_blocos(&blocos, slots, admit);
+            let (passo, kv_passo) = roda_blocos(&blocos, slots, admit);
             let uns: Vec<Vec<usize>> = TOKENS.iter().map(|&t| vec![t]).collect();
-            let tok = roda_blocos(&uns, slots, admit);
+            let (tok, kv_tok) = roda_blocos(&uns, slots, admit);
+            for (l, ((kp, vp), (kt, vt))) in kv_passo.iter().zip(&kv_tok).enumerate() {
+                let (ek, ev) = (erro_rel(kp, kt), erro_rel(vp, vt));
+                assert!(ek <= 1e-5 && ev <= 1e-5, "slots {slots} {admit:?}, camada {l}: KV do passo contra token a token K {ek:e} V {ev:e}");
+            }
             for (k, &idx) in ult.iter().enumerate() {
                 let e1 = erro_rel(&passo[k], &tok[idx]);
                 let e2 = erro_rel(&passo[k], &ref_logits[idx]);
@@ -116,7 +135,7 @@ fn m_diferente_dos_tokens_preparados_e_recusado() {
     let _trava = GPU.lock().unwrap_or_else(|e| e.into_inner());
     let device = cuda_core::Device::new(0).expect("GPU");
     device.bind_to_thread().unwrap();
-    let (_scratch, m) = common::tiny_model("motor_passo_m");
+    let (_scratch, m) = modelo("motor_passo_m");
     let (compute, copy) = (CudaStream(device.new_stream().unwrap()), CudaStream(device.new_stream().unwrap()));
     let (b, ex) = CudaBackend::new_model_positions(device.clone(), &m, 5, 64, &compute, 8).unwrap();
     let cfg = Config { layers: m.cfg.layers, experts: m.cfg.experts, topk: m.cfg.k, width: m.cfg.hidden, slots: 5, backlog: 4, admit: AdmitMode::TokenBarrier, first_token: 1, prefill: vec![], max_positions: 8 };
@@ -138,4 +157,39 @@ fn sem_autorizacao_o_portao_recusa_antes_de_tocar_a_gpu() {
     }
     let r = std::panic::catch_unwind(exige_autorizacao);
     assert!(r.is_err(), "o portão tinha de recusar sem a autorização");
+}
+
+/// Prefill em lote (8 tokens por `begin_step_tokens`) e depois decode de dois tokens por `begin_token` + `run_token` no mesmo motor
+/// com teto de 8 posições: o `begin_token` tem de registrar o token preparado, senão o `begin_step` recusa (regressão da rodada 70).
+#[test]
+#[ignore = "GPU: só com o autorizo do Breno (E4B_GPU_AUTORIZADO=1)"]
+fn prefill_em_lote_e_depois_decode_por_begin_token() {
+    exige_autorizacao();
+    let _trava = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    let device = cuda_core::Device::new(0).expect("GPU");
+    device.bind_to_thread().unwrap();
+    let (_scratch, m) = modelo("motor_passo_dec");
+    let cpu_ref = Cpu::new(2);
+    let mut sess = CpuSession::new(&m, &cpu_ref);
+    let want: Vec<Vec<f32>> = TOKENS[..10].iter().map(|&t| sess.step(t).0).collect();
+    let (compute, copy) = (CudaStream(device.new_stream().unwrap()), CudaStream(device.new_stream().unwrap()));
+    let (b, ex) = CudaBackend::new_model_positions(device.clone(), &m, 5, 64, &compute, 8).unwrap();
+    let cfg = Config { layers: m.cfg.layers, experts: m.cfg.experts, topk: m.cfg.k, width: m.cfg.hidden, slots: 5, backlog: 4, admit: AdmitMode::TokenBarrier, first_token: 1, prefill: vec![], max_positions: 8 };
+    let parts = b.parts(compute.clone(), copy, b.weights(&ex).unwrap(), cfg.first_token).unwrap();
+    let cpu = CpuServe { cpu: Cpu::new(2), hidden: m.cfg.hidden, inter: m.cfg.inter, experts: m.cfg.experts, weights: ex.clone() };
+    let mut eng = Engine::new(b.clone(), parts, cfg, cpu).unwrap();
+    b.begin_step_tokens(&compute, &TOKENS[..8]).unwrap();
+    let p = eng.next_published().unwrap();
+    eng.enqueue_step(p, 8).unwrap();
+    eng.finish_token().unwrap();
+    let got = b.read_logits(&compute).unwrap();
+    assert!(erro_rel(&got, &want[7]) <= 1e-4, "prefill em lote contra a CPU");
+    for i in 8..10 {
+        b.begin_token(&compute, TOKENS[i]).unwrap();
+        let p = eng.next_published().unwrap();
+        eng.run_token(p).unwrap();
+        let got = b.read_logits(&compute).unwrap();
+        assert!(erro_rel(&got, &want[i]) <= 1e-4, "decode {i} depois do prefill em lote");
+    }
+    eng.close().unwrap();
 }

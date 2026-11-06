@@ -18,30 +18,57 @@ Por isso aqui as repetições são mais numerosas, pareadas e intercaladas.
    - Tamanho do bloco medido: 64 posições por repetição (8 passos de M=8 contra 64 passos de M=1)  [PROPOSTO].
 
 3. Portão de correção (antes de qualquer tempo valer)
-   - Oráculo: logits da última posição de cada bloco (M=8 e blocos parciais) contra o token a token do mesmo motor, e contra a CPU de referência a 1e-4; o KV é conferido por efeito (um bloco seguinte lê o KV do anterior). Tolerância 1e-5 relativo (norma máxima por vetor, como no A2-LOTE).
-   - Se o oráculo falhar em qualquer repetição, a célula (modelo) é INVÁLIDA: o tempo não é lido e a célula conta como NÃO PASSOU por correção, nunca por velocidade.
-   - A ordem de soma entre posições segue a ordem do top-k por posição (contrato, item 6).
+   - Oráculo: logits da última posição de cada bloco (M=8 e blocos parciais) e o KV de todas as camadas e posições, lidos direto do cache (read_kv),
+     passo de M posições contra token a token do mesmo motor. A fixture pequena do harness é quase insensível ao contexto nos logits (sondada na rodada 70),
+     por isso o KV é lido do cache e não conferido por efeito.
+   - Tolerância [DECISÃO DO BRENO, recomendação do exec = opção 1; achado da rodada 70]: com o cache ativo o M=8 e o M=1 não dividem os experts entre GPU e CPU do mesmo
+     jeito (a tabela fica fixa por passo; no Event a admissão depende do tempo) e o lote soma em outra ordem; nos dados do A1-DIAG10 o próprio M=1 contra a
+     passada residente já chega a 1,1e-5 (L2, 1B, 25% de slots), então 1e-5 em toda repetição pode reprovar sem bug.
+       opção 1: igualdade a 1e-5 (norma máxima relativa do vetor) só na sub-rodada de portão com a tabela congelada (todos os experts residentes ou slots=0), onde a
+                divisão é a mesma nos dois braços; nas repetições de tempo a 10% de slots o portão é o do a1-motor: 1e-4 em L2 relativo contra a referência e argmax igual.
+       opção 2: manter 1e-5 em toda repetição, mas calibrado antes: medir M=1 contra M=1 em duas execuções com cache ativo e fixar a tolerância em um múltiplo
+                registrado do pior valor.
+       opção 3: trocar a métrica pela L2 do a1-motor e usar 1e-4 em tudo (o limite já aprovado no A1).
+   - Se o portão falhar em qualquer repetição, a célula (modelo) é INVALIDA: o tempo não é lido e a célula nunca conta como NAO_PASSA por velocidade.
+   - A referência do oráculo soma na ordem do top-k de cada posição (contrato, item 6). O passo em lote soma na ordem da união dos experts; a diferença tem de ficar dentro da tolerância.
    - Integridade: hash do binário e do critério registrados antes e depois, sem outra carga na GPU (regras de carga do A1-DIAG10).
 
 4. Medida
-   - Unidade: um par = uma repetição de M=1 e uma de M=8 sobre o mesmo bloco, na mesma execução, ordem alternada entre pares (ABBA) para anular deriva térmica.
-   - tp(M) = tempo total do bloco / número de posições. Ganho do par = 1 - tp(8)/tp(1).
-   - Repetições: 15 pares por modelo  [PROPOSTO]. Descarte dos 2 primeiros pares como aquecimento, registrados e não usados  [PROPOSTO].
-   - Estatística fixada de antemão: mediana dos ganhos dos pares usados; intervalo descritivo = mínimo, quartis e máximo. Média não decide.
-   - g_M por carimbo: carimbo de tempo no início e no fim de cada camada (fora da região quente, registrado depois), g_M = tempo da camada menos o tempo de cálculo dos experts; reportado para M em {1, 8}. Descritivo, não decide, mas se o orçamento da instrumentação (o custo dos carimbos medido num par sem carimbo) passar de 1% do tempo por posição, o g_M é declarado NÃO CONFIÁVEL como no A1-DIAG10.
+   - Unidade: um par = uma repetição de M=1 e uma de M=8 sobre o mesmo bloco, na mesma execução. A ordem alterna entre pares (ABBA) e o padrão começa no primeiro
+     par usado (par 3).
+   - Região cronometrada: do início do primeiro begin_step_tokens ao fim do último finish_token do bloco. Os logits e o KV do oráculo são lidos FORA da região,
+     numa passada de portão separada. A cabeça de saída roda em toda posição no M=1 e só na última do passo no M=8; esse ganho é real no prefill e entra na medida
+     [DECISÃO DO BRENO: (a) aceitar assim e registrar à parte o tempo da cabeça por posição, só descritivo; ou (b) excluir a cabeça das duas regiões].
+   - tp(M) = tempo da região / número de posições do bloco (64 posições por repetição [PROPOSTO]). Ganho do par = 1 - tp(8)/tp(1).
+   - Repetições: 15 pares por modelo [PROPOSTO]; os 2 primeiros são aquecimento, registrados e não usados; n = 13 pares usados.
+   - Par perdido (carga, erro do driver) NÃO é refeito. Com 11 <= n <= 13 a regra vale sobre os n pares usados; com n < 11 a célula é INVALIDA.
+   - Estatística fixada de antemão: mediana dos ganhos dos n pares; intervalo descritivo = mínimo, quartis e máximo. Média não decide.
+   - g_M por carimbo: os pares que decidem rodam SEM carimbo. O g_M sai de 5 pares extras COM carimbo [PROPOSTO], registrados à parte, depois dos 15. O carimbo é um
+     evento de GPU gravado na stream de cálculo no início e no fim de cada camada (lido depois, fora da região quente); g_M = tempo da camada menos o tempo dos
+     experts. Descritivo, não decide. Se o custo dos carimbos (par com carimbo contra par sem carimbo) passar de 1% do tempo por posição, o g_M é NÃO CONFIÁVEL.
 
-5. Regra de decisão (uma célula = um modelo)
-   - PASSA: portão de correção ok, mediana do ganho >= 15% E pelo menos 10 dos 13 pares usados com ganho > 0  [PROPOSTO].
-   - NAO_PASSA: portão ok e mediana < 15%.
-   - INVALIDA: portão de correção falhou, ou mais de 2 pares perdidos por carga/erro.
+5. Regra de decisão (uma célula = um modelo). Vale para n pares usados, 11 <= n <= 13, com o portão ok:
+   - PASSA: mediana do ganho >= 15% E pelo menos ceil(10*n/13) pares com ganho > 0 (n=13: 10; n=12: 10; n=11: 9).
+   - NAO_PASSA: qualquer outro caso com o portão ok (mediana < 15%, ou mediana >= 15% sem a contagem de pares positivos).
+   - INVALIDA: portão falhou, ou n < 11.
+   Tabela de conferência (cada caso tem um rótulo; nenhum fica sem):
+     n=13, mediana 20%, 10 positivos -> PASSA          | n=13, mediana 20%, 9 positivos -> NAO_PASSA
+     n=13, mediana 20%, 7 positivos  -> NAO_PASSA      | n=13, mediana 15% exato, 10 positivos -> PASSA
+     n=13, mediana 14,9%, 13 positivos -> NAO_PASSA    | n=12, mediana 20%, 10 positivos -> PASSA
+     n=12, mediana 20%, 9 positivos -> NAO_PASSA       | n=11, mediana 20%, 9 positivos -> PASSA
+     n=11, mediana 20%, 8 positivos -> NAO_PASSA       | n=10 (qualquer mediana) -> INVALIDA
    Resultado do A2:
    - 1B e 3B PASSAM: o ganho se sustenta no motor; abre-se a proposta de próximo passo ao Breno (não é autorização).
    - 1B e 3B NAO_PASSAM: fecha o A2 (parada da proposta).
    - Um passa e o outro não, ou qualquer célula INVALIDA: SEM CONCLUSÃO, volta ao Breno. O exec não escolhe sozinho.
-   - E3 (kernels densos em lote) só se as duas células ficarem NAO_PASSA ou uma delas com g_M dominando a diferença entre o ganho medido e o do passo zero; a decisão é do Breno.
+   - E3 (kernels densos em lote): leitura descritiva do g_M para o Breno decidir; não há limiar automático.
 
 6. O que este critério NÃO diz
    - Não autoriza janela de GPU. Só o "autorizo" explícito do Breno, depois da aprovação deste arquivo e da revisão do harness, abre a janela. Duração e comando saem no pedido de autorização.
+   - Até o "autorizo", rodar a suíte inteira (cargo test sem filtro) numa máquina com GPU EXECUTA na GPU os testes antigos, que agora passam pelo CudaBackend refatorado.
+     Até lá a suíte roda com CUDA_VISIBLE_DEVICES vazio (o device falha e os testes pulam), ou com filtro (lib motor::, lib cpu::, o teste do portão). [DECISÃO DO BRENO: se uma GPU curta
+     de teste unitário do código novo também precisa do "autorizo" do E4b; a recomendação do exec é que precise.]
    - O resultado vale para prefill de bloco em uma sequência. Não prova ganho no decode nem na decodificação especulativa.
    - O ganho depende do kernel de CPU em lote do motor (hipótese 1 da proposta); se o kernel real escalar pior que o microbench, a célula NAO_PASSA e isso é um resultado válido.
+   - O código CUDA novo (laço por posição, palavra m, atenção por posição) e o M=1 do CudaBackend refatorado nunca rodaram na GPU; a primeira execução é o portão de correção.
    - Nenhum limiar do A2-LOTE v1.2 é alterado.

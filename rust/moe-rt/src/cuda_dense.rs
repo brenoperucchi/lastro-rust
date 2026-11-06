@@ -276,6 +276,28 @@ impl Dense {
         Ok(())
     }
 
+    /// O cache K e V da camada `l` até `len` posições, copiado para o host (E4b, oráculo do KV). Com a stream ociosa (quem chama
+    /// sincronizou). Devolve `len·kv_dim` valores de cada um.
+    pub fn read_kv(&mut self, s: &Arc<Stream>, l: usize, len: usize) -> Result<(Vec<f32>, Vec<f32>), CudaError> {
+        let kvd = self.cfg.kv_heads * self.cfg.head_dim;
+        if len > self.max_len {
+            return Err(CudaError::Config("len maior que o cache KV"));
+        }
+        let mut lado = |k: bool| -> Result<Vec<f32>, CudaError> {
+            let lay = &mut self.layers[l];
+            let slot = if k { &mut lay.k_cache } else { &mut lay.v_cache };
+            let t = std::mem::replace(slot, zeros(&[self.max_len, kvd], s)?);
+            let t = Arc::new(t);
+            let mut v = api::copy_device_to_host_vec(&t).sync_on(s).map_err(kernel_err)?;
+            *slot = Arc::try_unwrap(t).map_err(|_| CudaError::Config("cache KV ainda referenciado"))?;
+            v.truncate(len * kvd);
+            Ok(v)
+        };
+        let kk = lado(true)?;
+        let vv = lado(false)?;
+        Ok((kk, vv))
+    }
+
     /// Os logits do último token, depois de a stream terminar (quem chama sincronizou).
     pub fn read_logits(&mut self, s: &Arc<Stream>) -> Result<Vec<f32>, CudaError> {
         let falha = FALHA_NA_COPIA_DOS_LOGITS.load(std::sync::atomic::Ordering::SeqCst);

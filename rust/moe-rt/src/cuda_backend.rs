@@ -530,7 +530,10 @@ impl CudaBackend {
             let mut st = self.st.lock().unwrap_or_else(|e| e.into_inner());
             st.dense.as_mut().ok_or(CudaError::Config("sem modelo"))?.begin_token(token, &s.0)?
         };
-        self.set_input(s, &x)
+        self.set_input(s, &x)?;
+        // Um token preparado por aqui é um passo de uma posição para `begin_step` (decode M = 1 depois de um prefill em lote).
+        self.prepared.store(1, Ordering::Release);
+        Ok(())
     }
 
     /// A posição do próximo token na sequência corrente (0 depois de `reset_sequence`).
@@ -548,6 +551,13 @@ impl CudaBackend {
     #[doc(hidden)]
     pub fn injeta_falha_na_copia_dos_logits(on: bool) {
         crate::cuda_dense::FALHA_NA_COPIA_DOS_LOGITS.store(on, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// O KV da camada `l` até `len` posições (E4b, oráculo): sincroniza a stream de cálculo e copia o cache para o host.
+    pub fn read_kv(&self, s: &CudaStream, layer: usize, len: usize) -> Result<(Vec<f32>, Vec<f32>), CudaError> {
+        ck!(sys::cuStreamSynchronize(s.raw()));
+        let mut st = self.st.lock().unwrap_or_else(|e| e.into_inner());
+        st.dense.as_mut().ok_or(CudaError::Config("sem modelo"))?.read_kv(&s.0, layer, len)
     }
 
     /// Os logits do token, depois de `run_token` (que já sincronizou a stream de cálculo).
@@ -844,6 +854,12 @@ impl HostExperts for CpuServe {
         if x.len() != step.m * step.width || y.len() != step.m * step.width {
             return Err("tamanho de x ou y diferente de m·width".into());
         }
+        // M = 1 é o caminho de sempre, com a injeção `Site::Cpu` e os carimbos do diagnóstico (A1-DIAG10): o motor por token e o braço
+        // M = 1 do critério do E4b não passam pelo kernel em lote.
+        if step.m == 1 {
+            return self.compute(layer, &step.keys[0], &step.weights[0], x, y);
+        }
+        let t0 = crate::diag::now();
         let xf: Vec<f32> = x.iter().map(|&b| f32::from_bits(b)).collect();
         let list: Vec<crate::cpu::StepExpert> = step
             .groups
@@ -854,10 +870,16 @@ impl HostExperts for CpuServe {
                 crate::cpu::StepExpert { gate_up: gu, down: dn, members: g.positions.iter().zip(&g.weights).map(|(&p, &w)| (p, f32::from_bits(w))).collect() }
             })
             .collect();
+        let t1 = crate::diag::now();
+        if !list.is_empty() {
+            crate::diag::inject(crate::diag::Site::Cpu);
+        }
         let out = self.cpu.experts_step(&xf, &list, step.m, self.hidden, self.inter);
+        let t2 = crate::diag::now();
         for (d, v) in y.iter_mut().zip(out) {
             *d = v.to_bits();
         }
+        crate::diag::compute_parts(t0, t1, t2, crate::diag::now());
         Ok(())
     }
 }
@@ -1202,6 +1224,43 @@ mod tests {
         assert!(got[2 * h..3 * h].iter().all(|b| *b == 0), "posição sem faltas tem de sair em zero");
         // tamanho errado é recusado, não truncado.
         assert!(srv.compute_step(0, &step, &x[..h], &mut got).is_err());
+    }
+
+    /// Com M = 1 o `compute_step` é o `compute` de sempre: mesmo `y` bit a bit, e (com a feature `diag`) a injeção `Site::Cpu` age nele
+    /// e no lote. Tirar o ramo `m == 1` derruba o teste de igualdade bit a bit, porque o lote soma em outra ordem.
+    #[test]
+    fn compute_step_com_uma_posicao_e_o_compute_de_sempre() {
+        use crate::motor::{CpuGroup, CpuStep};
+        let (h, i, e) = (96usize, 40usize, 6usize);
+        let mut s = 21u64;
+        let ex: Vec<(Vec<bf16>, Vec<bf16>)> = (0..e).map(|_| (rnd(2 * i * h, 0.3, &mut s), rnd(h * i, 0.3, &mut s))).collect();
+        let mut srv = CpuServe { cpu: Cpu::new(3), hidden: h, inter: i, experts: e, weights: Arc::new(ex) };
+        let x: Vec<u32> = (0..h).map(|k| (((k % 11) as f32 - 5.0) * 0.09).to_bits()).collect();
+        let keys = vec![vec![4u32, 1, 3, 0]];
+        let weights = vec![vec![0.4f32.to_bits(), 0.3f32.to_bits(), 0.2f32.to_bits(), 0.1f32.to_bits()]];
+        let groups = keys[0].iter().zip(&weights[0]).map(|(&k, &w)| CpuGroup { key: k, positions: vec![0], weights: vec![w] }).collect();
+        let step = CpuStep { m: 1, width: h, keys: keys.clone(), weights: weights.clone(), groups };
+        let (mut a, mut b) = (vec![0u32; h], vec![0u32; h]);
+        srv.compute_step(0, &step, &x, &mut a).unwrap();
+        srv.compute(0, &keys[0], &weights[0], &x, &mut b).unwrap();
+        assert_eq!(a, b, "com m = 1 o resultado tem de ser o do compute, bit a bit");
+        #[cfg(feature = "diag")]
+        {
+            use crate::diag::{set_injection, Site};
+            let t = std::time::Instant::now();
+            set_injection(Some((Site::Cpu, 20_000)), false);
+            srv.compute_step(0, &step, &x, &mut a).unwrap();
+            let m1 = t.elapsed();
+            let step2 = CpuStep { m: 2, width: h, keys: vec![keys[0].clone(), keys[0].clone()], weights: vec![weights[0].clone(), weights[0].clone()], groups: step.groups.iter().map(|g| CpuGroup { key: g.key, positions: vec![0, 1], weights: vec![g.weights[0], g.weights[0]] }).collect() };
+            let x2: Vec<u32> = x.iter().chain(&x).copied().collect();
+            let mut y2 = vec![0u32; 2 * h];
+            let t = std::time::Instant::now();
+            srv.compute_step(0, &step2, &x2, &mut y2).unwrap();
+            let m2 = t.elapsed();
+            set_injection(None, false);
+            assert!(m1 >= std::time::Duration::from_micros(20_000), "a injeção Site::Cpu não agiu com m = 1: {m1:?}");
+            assert!(m2 >= std::time::Duration::from_micros(20_000), "a injeção Site::Cpu não agiu no lote: {m2:?}");
+        }
     }
 
     fn gpu_ou_pula() -> Option<Arc<CuDevice>> {
