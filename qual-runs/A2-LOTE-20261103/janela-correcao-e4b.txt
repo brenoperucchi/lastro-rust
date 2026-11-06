@@ -1,0 +1,27 @@
+A2-PASSO E4b: registro da janela curta de correção (06/11/2026, terminou às 09:06 -03).
+Autorização: "1 + 2 + 3" do Breno, em resposta à pergunta que nomeava esta janela e trazia o comando. Foi a única janela de GPU aberta; não houve janela de medida.
+Comando (uma vez): cd /home/brenoperucchi/Devs/lastro-rust/rust/moe-rt && E4B_GPU_AUTORIZADO=1 cargo test --offline --test motor_passo_gpu -- --ignored --test-threads=1
+Commit do repositório na execução: a648f7204ab7eafe318bcd6d87e3ade89ff29f26 (o código de rust/moe-rt é o mesmo do commit 10890d7).
+SHA-256 do binário de teste (rust/moe-rt/target/debug/deps/motor_passo_gpu-84e0c4bb47e2e29c): b948cf3a5f408e6ce581528fbab5307ea267cc283a4f5db0cf0d803664678c85
+GPU antes: RTX 4090 única, 3842 MiB usados, 14% de uso; processos só de desktop (voxtype, chrome, nautilus, t3code), nenhum de computação.
+Resultado: 5 passed, 0 failed, em 18,36 s (modelo pequeno de teste, não os modelos reais).
+  leitura_do_kv_que_falha_preserva_o_cache ok
+  m_diferente_dos_tokens_preparados_e_recusado ok
+  mutante_de_lens_e_acusado_pelo_oraculo_do_kv ok
+  passo_de_oito_bate_com_o_token_a_token_na_gpu ok
+  prefill_em_lote_e_depois_decode_por_begin_token ok
+Saída bruta: /tmp/claude-1000/-home-brenoperucchi-Devs-lastro-rust/46cdbe1b-904f-422b-9a0c-ab7628b69d27/scratchpad/e4b-janela1.log (cópia abaixo).
+Não mede velocidade e não substitui o portão de correção da seção 3 do critério (passada com tabela congelada e divisão mista nos modelos reais).
+--- saída (últimas linhas) ---
+     Running tests/motor_passo_gpu.rs (target/debug/deps/motor_passo_gpu-84e0c4bb47e2e29c)
+
+running 5 tests
+test leitura_do_kv_que_falha_preserva_o_cache ... ok
+test m_diferente_dos_tokens_preparados_e_recusado ... ok
+test mutante_de_lens_e_acusado_pelo_oraculo_do_kv ... ok
+test passo_de_oito_bate_com_o_token_a_token_na_gpu ... ok
+test prefill_em_lote_e_depois_decode_por_begin_token ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 18.36s
+
+exit=0

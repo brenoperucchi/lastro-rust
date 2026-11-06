@@ -1,6 +1,6 @@
-A2-PASSO E4b: critério pré-registrado do passo de várias posições na GPU. Escolhas do Breno registradas em 06/11/2026 ("aceito tudo", ou seja, todas as recomendações do exec). Nada foi medido.
+A2-PASSO E4b: critério pré-registrado do passo de várias posições na GPU. Escolhas do Breno registradas em 06/11/2026 ("aceito tudo", ou seja, todas as recomendações do exec). Nenhuma medida de desempenho foi feita.
 
-Estado: este arquivo é escrito e revisado ANTES de qualquer janela de GPU. Nenhuma janela de medida está autorizada. Depois da rodada de revisão nível 2 da versão com as escolhas,
+Estado: este arquivo é escrito e revisado ANTES de qualquer janela de GPU de medida. Uma janela curta de correção já rodou (registro em janela-correcao-e4b.txt). Nenhuma janela de medida está autorizada. Depois da rodada de revisão nível 2 da versão com as escolhas,
 o arquivo é commitado e vira imutável (qualquer mudança exige novo arquivo e nova aprovação). Os números marcados [PROPOSTO] foram aceitos pelo Breno em 06/11/2026
 sem troca; os demais vêm da proposta (proposta-passo-multiposicao.md, seção 5) e do contrato (contrato-e4a.md, seção 3).
 
@@ -86,5 +86,6 @@ Por isso aqui as repetições são mais numerosas, pareadas e intercaladas.
    - O resultado vale para prefill de bloco em uma sequência. Não prova ganho no decode nem na decodificação especulativa.
    - O ganho depende do kernel de CPU em lote do motor (hipótese 1 da proposta); se o kernel real escalar pior que o microbench, a célula NAO_PASSA e isso é um resultado válido.
    - O harness atual ainda NÃO materializa a passada mista congelada da opção 1 (o teste sintético usa admissão ativa em 3 tamanhos de cache); isso tem de ser feito e revisado antes da janela de medida.
-   - O código CUDA novo (laço por posição, palavra m, atenção por posição) e o M=1 do CudaBackend refatorado nunca rodaram na GPU; a primeira execução é o portão de correção.
+   - Janela curta de correção (5 testes de motor_passo_gpu.rs, modelo pequeno) rodou em 06/11/2026 com o autorizo do Breno: 5 ok, registro em janela-correcao-e4b.txt. Ela não mede
+     velocidade e não substitui o portão de correção da seção 3 (passada com tabela congelada e divisão mista nos modelos reais), que é a primeira execução da janela de medida.
    - Nenhum limiar do A2-LOTE v1.2 é alterado.
