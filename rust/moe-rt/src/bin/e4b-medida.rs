@@ -13,20 +13,30 @@
 //!  4. 15 pares (2 de aquecimento), ABBA a partir do primeiro par usado: uma repetição de M = 1 e uma de M = 8 sobre o mesmo bloco,
 //!     as duas pelo caminho do passo (`begin_step_tokens`, `enqueue_step`, `finish_token`; M = 1 com `m = 1`). Região cronometrada:
 //!     do início do primeiro `begin_step_tokens` ao fim do último `finish_token`; os logits são lidos depois dela.
-//!  5. Controle C depois: nova instância, 5 repetições.
-//!  6. Portão (b) em toda repetição: logits da última posição contra X, L2 relativa 1e-4 e argmax igual. Falhou: INVALIDA.
-//!  7. Rótulo pela regra de `moe_rt::e4b_regra` (a mesma testada em CPU); no fim o resultado do A2 se as duas células rodaram.
+//!  5. Controle C depois: nova instância, 5 repetições. Roda também quando os pares pararam por erro (o motor dos pares é solto antes).
+//!  6. Portão (b) em toda repetição: logits da última posição contra X, L2 relativa 1e-4 e argmax igual. Falhou: INVALIDA, e o relatório
+//!     diz "tempo NÃO LIDO" (o CSV sai com `-NAO-LER` no nome).
+//!  7. Carga alheia (critério, seção 3, "sem outra carga na GPU"): antes e depois de cada repetição consulta-se `nvidia-smi` pelos PIDs com
+//!     contexto na GPU; diferente do conjunto-base da célula (sem o próprio PID), a repetição é perdida e o par não é refeito (seção 4).
+//!     Falha na consulta falha fechada. Não vê carga de processo que já existia e passou a trabalhar, nem o que começou e terminou
+//!     dentro de uma repetição: limite registrado no relatório.
+//!  8. Rótulo pela regra de `moe_rt::e4b_regra` (a mesma testada em CPU); no fim o resultado do A2 se as células 1b e 3b rodaram.
+//!     Os relatórios são escritos DEPOIS da checagem de integridade, com o rótulo final.
 //!
-//! Não implementado de propósito: os carimbos de g_M (5 pares extras com evento de GPU no início e no fim de cada camada). Os eventos
-//! do backend são criados sem cronometragem e instrumentar as camadas é mudança de backend. g_M é só descritivo e não entra em regra
-//! de decisão; o relatório diz "g_M: não medido".
+//! Descritivo (não decide): o tempo da cabeça de saída (`CudaBackend::cronometra_cabeca`, depois dos pares), com o por posição de M = 1
+//! (uma cabeça por posição) e de M = 8 (uma por passo).
+//!
+//! Não implementado: os carimbos de g_M (5 pares extras com evento de GPU no início e no fim de cada camada). Os eventos do backend são
+//! criados sem cronometragem e instrumentar as camadas é mudança de backend. O critério aprovado prevê esse item; sair sem ele é uma
+//! decisão do Breno, pedida no texto da autorização. O relatório diz "g_M: não medido".
 //!
 //! Pontos que o critério não fixa e que este programa decide (registrados no relatório e na revisão):
 //!  - cada instância do controle C faz um bloco de partida SEM cronômetro antes das 5 repetições (a instância nasce fria e o critério
 //!    pede as 10 observações válidas, sem aquecimento próprio);
-//!  - um erro do motor numa repetição encerra a célula daquele ponto em diante (o motor não continua depois de um erro): os pares
-//!    seguintes ficam perdidos, e a regra decide com o n que sobrou;
-//!  - a integridade (hash do binário e do critério antes e depois) falhando torna todas as células INVALIDA.
+//!  - um erro do motor numa repetição encerra os pares dali em diante (o motor não continua depois de um erro): os pares seguintes ficam
+//!    perdidos e a regra decide com o n que sobrou;
+//!  - a integridade (hash do binário e do critério antes e depois) falhando, ou não calculável, torna todas as células INVALIDA;
+//!  - a afinidade `a1m` fixa só a thread principal DEPOIS de o motor subir (as threads novas herdariam a máscara), e a solta antes do próximo.
 //!
 //!   e4b-medida --celula <nome>:<dir do modelo>:<dir da referência texto-a> [--celula ...] --saida <dir> [--criterio <arquivo>]
 //!              [--threads N] [--afin a0|a1w|a1m] [--ensaio]
@@ -39,6 +49,7 @@ use moe_rt::model::{Config as ModelConfig, HostModel};
 use moe_rt::motor::{AdmitMode, Config, Engine, Stats};
 use moe_rt::npy::Npy;
 use moe_rt::weights::Checkpoint;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -48,6 +59,9 @@ const VARIAVEL: &str = "E4B_MEDIDA_AUTORIZADA";
 const FRACAO_SLOTS: f64 = 0.10;
 const POSICOES_MAX: usize = 8;
 const BACKLOG: usize = 4;
+/// Chamadas da cabeça no relatório descritivo: aquecimento e medidas.
+const CABECA_AQUECIMENTO: usize = 10;
+const CABECA_N: usize = 200;
 
 struct Args {
     celulas: Vec<(String, PathBuf, PathBuf)>,
@@ -56,6 +70,15 @@ struct Args {
     threads: usize,
     afin: moe_rt::affinity::Afin,
     ensaio: bool,
+}
+
+/// O nome da célula vira parte do nome de arquivo: só letras, números, `-` e `_`.
+fn nome_valido(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn canonico(p: &Path) -> PathBuf {
+    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
 fn parse_args(v: Vec<String>) -> Result<Args, String> {
@@ -77,6 +100,9 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
                 if p.len() != 3 || p.iter().any(|s| s.is_empty()) {
                     return Err(format!("--celula nome:modelo:referencia, não {x}"));
                 }
+                if !nome_valido(p[0]) {
+                    return Err(format!("nome de célula inválido: {} (só letras, números, - e _)", p[0]));
+                }
                 r.celulas.push((p[0].to_string(), PathBuf::from(p[1]), PathBuf::from(p[2])));
             }
             "--saida" => r.saida = PathBuf::from(val()?),
@@ -91,7 +117,15 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
         return Err("pelo menos uma --celula".into());
     }
     if r.celulas.len() > 2 {
-        return Err("no máximo duas células (1B e 3B)".into());
+        return Err("no máximo duas células (1b e 3b)".into());
+    }
+    let nomes: BTreeSet<&String> = r.celulas.iter().map(|c| &c.0).collect();
+    if nomes.len() != r.celulas.len() {
+        return Err("nomes de célula repetidos".into());
+    }
+    let dirs: BTreeSet<PathBuf> = r.celulas.iter().map(|c| canonico(&c.1)).collect();
+    if dirs.len() != r.celulas.len() {
+        return Err("o mesmo diretório de modelo em duas células".into());
     }
     if r.saida.as_os_str().is_empty() {
         return Err("--saida é obrigatória".into());
@@ -112,6 +146,12 @@ fn chaves_congeladas(slots_all: usize, slots: usize) -> Vec<u32> {
     (0..slots).map(|i| (i * slots_all / slots) as u32).collect()
 }
 
+/// O resultado conjunto do A2 só existe para as células `1b` e `3b` (o critério decide sobre os dois modelos).
+fn a2_conjunto(rotulos: &[(String, Rotulo)]) -> Option<ResultadoA2> {
+    let get = |n: &str| rotulos.iter().find(|r| r.0 == n).map(|r| r.1);
+    Some(resultado_a2(get("1b")?, get("3b")?))
+}
+
 trait D<T> {
     fn d(self) -> Result<T, String>;
 }
@@ -120,6 +160,50 @@ impl<T, E: std::fmt::Debug> D<T> for Result<T, E> {
     fn d(self) -> Result<T, String> {
         self.map_err(|e| format!("{e:?}"))
     }
+}
+
+/// Fixa a thread principal no E-core da afinidade `a1m` e devolve a máscara antiga ao soltar (também em erro). As threads de um motor
+/// novo herdariam a máscara: por isso só se fixa DEPOIS de o motor subir e se solta antes do próximo.
+struct Fixa(Option<Vec<usize>>);
+
+impl Fixa {
+    fn nova(afin: moe_rt::affinity::Afin) -> Result<Self, String> {
+        match afin.main_cpu() {
+            Some(c) => {
+                let antes = moe_rt::affinity::get_current().d()?;
+                moe_rt::affinity::set_current(&[c]).d()?;
+                Ok(Fixa(Some(antes)))
+            }
+            None => Ok(Fixa(None)),
+        }
+    }
+}
+
+impl Drop for Fixa {
+    fn drop(&mut self) {
+        if let Some(a) = self.0.take() {
+            let _ = moe_rt::affinity::set_current(&a);
+        }
+    }
+}
+
+fn nvidia_smi(args: &[&str]) -> Option<String> {
+    let o = std::process::Command::new("nvidia-smi").args(args).output().ok()?;
+    o.status.success().then(|| String::from_utf8_lossy(&o.stdout).into_owned())
+}
+
+/// Os PIDs alheios com contexto na GPU (sem o próprio). `None` se a consulta falhou: quem chama falha fechado.
+fn pids_alheios() -> Option<BTreeSet<u32>> {
+    let mut s = pids_de_computacao(&nvidia_smi(&["--query-compute-apps=pid", "--format=csv,noheader"])?)?;
+    s.remove(&std::process::id());
+    Some(s)
+}
+
+/// O estado da GPU, em texto, para o relatório (link PCIe, memória, uso e processos de computação).
+fn estado_gpu() -> String {
+    let g = nvidia_smi(&["--query-gpu=pci.link.gen.current,pci.link.width.current,memory.used,utilization.gpu", "--format=csv,noheader"]).unwrap_or_else(|| "nvidia-smi falhou".into());
+    let p = nvidia_smi(&["--query-compute-apps=pid,process_name,used_memory", "--format=csv,noheader"]).unwrap_or_else(|| "nvidia-smi falhou".into());
+    format!("GPU [{}]; processos [{}]", g.trim(), p.trim().replace('\n', " | "))
 }
 
 struct Motor {
@@ -194,6 +278,18 @@ impl Motor {
         let logits = self.b.read_logits(&self.compute).d()?;
         Ok((secs, logits))
     }
+
+    /// A repetição com a checagem de carga alheia antes e depois. `Err` é erro do motor (ele não segue); `Ok(None)` é a repetição perdida
+    /// por carga (ou por consulta que falhou), com o motor vivo.
+    fn repeticao_monitorada(&mut self, tokens: &[usize], m: usize, base: &BTreeSet<u32>) -> Result<Option<(f64, Vec<f32>)>, String> {
+        let antes = pids_alheios();
+        let r = self.repeticao(tokens, m)?;
+        let depois = pids_alheios();
+        match (antes, depois) {
+            (Some(a), Some(d)) if !contaminada(base, &a, &d) => Ok(Some(r)),
+            _ => Ok(None),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -232,7 +328,6 @@ fn passada_portao(c: &Cenario, tokens: &[usize], m: usize) -> Result<(Vec<Vec<f3
 }
 
 fn portao_a(c: &Cenario, tokens: &[usize]) -> PortaoA {
-    let mut r = PortaoA::default();
     let go = || -> Result<PortaoA, String> {
         let (l8, kv8, s8) = passada_portao(c, tokens, POSICOES_MAX)?;
         let (l1, kv1, s1) = passada_portao(c, tokens, 1)?;
@@ -250,11 +345,7 @@ fn portao_a(c: &Cenario, tokens: &[usize]) -> PortaoA {
         }
         Ok(r)
     };
-    match go() {
-        Ok(x) => r = x,
-        Err(e) => r.motivo = format!("erro: {e}"),
-    }
-    r
+    go().unwrap_or_else(|e| PortaoA { motivo: format!("erro: {e}"), ..Default::default() })
 }
 
 #[derive(Clone, Debug)]
@@ -268,21 +359,25 @@ struct LinhaPar {
     erro8: f64,
 }
 
-/// As repetições do controle C: 5 num motor por token novo, depois de um bloco de partida sem cronômetro.
-fn controle(c: &Cenario, tokens: &[usize], x: &[f32], portoes_ok: &mut bool) -> Vec<Option<f64>> {
+/// As repetições do controle C: 5 num motor por token novo, depois de um bloco de partida sem cronômetro. `None` é a observação perdida.
+fn controle(c: &Cenario, tokens: &[usize], x: &[f32], base: &BTreeSet<u32>, portoes_ok: &mut bool, afin: moe_rt::affinity::Afin) -> Vec<Option<f64>> {
     let slots = c.slots_10();
     let mut out: Vec<Option<f64>> = vec![None; C_REPETICOES_LADO];
     let mut go = || -> Result<(), String> {
         let mut mt = c.sobe(slots, BACKLOG, vec![], 1)?;
+        let fixa = Fixa::nova(afin)?;
         mt.repeticao(tokens, 0)?; // partida, sem cronômetro e sem contar
         for slot in out.iter_mut() {
-            let (secs, lg) = mt.repeticao(tokens, 0)?;
-            if !portao_repeticao(&lg, x) {
-                *portoes_ok = false;
+            if let Some((secs, lg)) = mt.repeticao_monitorada(tokens, 0, base)? {
+                if !portao_repeticao(&lg, x) {
+                    *portoes_ok = false;
+                }
+                *slot = Some(secs / tokens.len() as f64);
             }
-            *slot = Some(secs / tokens.len() as f64);
         }
-        mt.eng.close().d()
+        let r = mt.eng.close().d();
+        drop(fixa);
+        r
     };
     if let Err(e) = go() {
         eprintln!("controle C: {e}");
@@ -291,8 +386,14 @@ fn controle(c: &Cenario, tokens: &[usize], x: &[f32], portoes_ok: &mut bool) -> 
 }
 
 struct SaidaCelula {
+    nome: String,
     rotulo: Rotulo,
-    relatorio: String,
+    /// O relatório sem a linha do rótulo: ela é escrita depois da checagem de integridade.
+    corpo: String,
+}
+
+fn invalida(nome: &str, corpo: String) -> SaidaCelula {
+    SaidaCelula { nome: nome.to_string(), rotulo: Rotulo::Invalida, corpo }
 }
 
 fn celula(c: &Cenario, nome: &str, ref_dir: &Path, saida: &Path, afin: moe_rt::affinity::Afin) -> Result<SaidaCelula, Box<dyn std::error::Error>> {
@@ -302,6 +403,11 @@ fn celula(c: &Cenario, nome: &str, ref_dir: &Path, saida: &Path, afin: moe_rt::a
     }
     let tokens: Vec<usize> = ref_tokens[..BLOCO].iter().map(|&t| t as usize).collect();
     let mut rel = format!("== célula {nome}: {} camadas, {} experts, {} slots ({}%)\n", c.cfg.layers, c.cfg.experts, c.slots_10(), FRACAO_SLOTS * 100.0);
+    rel += &format!("estado da GPU antes: {}\n", estado_gpu());
+    let Some(base) = pids_alheios() else {
+        return Ok(invalida(nome, rel + "nvidia-smi não respondeu: sem como vigiar a carga alheia, a célula é INVALIDA (falha fechada)\n"));
+    };
+    rel += &format!("processos alheios na GPU (base da célula): {base:?}\n");
 
     // 1. A referência X: a passada residente.
     let x = {
@@ -329,38 +435,31 @@ fn celula(c: &Cenario, nome: &str, ref_dir: &Path, saida: &Path, afin: moe_rt::a
         pa.motivo
     );
     if !pa.ok {
-        rel += "rótulo: INVALIDA (portão de correção; o tempo não é lido)\n";
-        std::fs::write(saida.join(format!("{nome}-relatorio.txt")), &rel)?;
-        return Ok(SaidaCelula { rotulo: Rotulo::Invalida, relatorio: rel });
-    }
-
-    // A1m: só a thread principal vai para o E-core; vale para as três fases cronometradas.
-    let mascara_antes = moe_rt::affinity::get_current()?;
-    if let Some(cpu) = afin.main_cpu() {
-        moe_rt::affinity::set_current(&[cpu])?;
+        return Ok(invalida(nome, rel + "tempo NÃO LIDO: o portão de correção (a) falhou (critério, seção 3)\n"));
     }
     let mut portoes_ok = true;
 
     // 3. Controle C antes.
-    let c_antes = controle(c, &tokens, &x, &mut portoes_ok);
+    let c_antes = controle(c, &tokens, &x, &base, &mut portoes_ok, afin);
 
     // 4. Os pares.
     let slots = c.slots_10();
     let mut linhas: Vec<LinhaPar> = Vec::new();
     let mut parado = false;
+    let mut cabeca: Option<f64> = None;
     match c.sobe(slots, BACKLOG, vec![], POSICOES_MAX) {
         Err(e) => {
             rel += &format!("motor dos pares não subiu: {e}\n");
-            parado = true;
         }
         Ok(mut mt) => {
+            let fixa = Fixa::nova(afin)?;
             for par in 0..PARES {
                 let aquecimento = par < AQUECIMENTO;
-                let m1_primeiro = aquecimento || m1_primeiro(par - AQUECIMENTO);
+                let primeiro_m1 = aquecimento || m1_primeiro(par - AQUECIMENTO);
                 let (mut tp1, mut tp8, mut e1, mut e8) = (None, None, 0.0, 0.0);
-                for &com_m1 in if m1_primeiro { &[true, false] } else { &[false, true] } {
-                    match mt.repeticao(&tokens, if com_m1 { 1 } else { POSICOES_MAX }) {
-                        Ok((secs, lg)) => {
+                for &com_m1 in if primeiro_m1 { &[true, false] } else { &[false, true] } {
+                    match mt.repeticao_monitorada(&tokens, if com_m1 { 1 } else { POSICOES_MAX }, &base) {
+                        Ok(Some((secs, lg))) => {
                             let tp = secs / BLOCO as f64;
                             let erro = erro_l2_rel(&lg, &x);
                             if !portao_repeticao(&lg, &x) {
@@ -372,36 +471,40 @@ fn celula(c: &Cenario, nome: &str, ref_dir: &Path, saida: &Path, afin: moe_rt::a
                                 (tp8, e8) = (Some(tp), erro);
                             }
                         }
+                        Ok(None) => rel += &format!("par {} ({}): repetição perdida por carga alheia na GPU (ou consulta ao nvidia-smi falhou); o par não é refeito\n", par + 1, if com_m1 { "M=1" } else { "M=8" }),
                         Err(e) => {
-                            rel += &format!("par {par}: erro do motor ({e}); os pares seguintes ficam perdidos\n");
+                            rel += &format!("par {}: erro do motor ({e}); os pares seguintes ficam perdidos\n", par + 1);
                             parado = true;
                             break;
                         }
                     }
                 }
-                linhas.push(LinhaPar { par, aquecimento, m1_primeiro, tp1, tp8, erro1: e1, erro8: e8 });
+                linhas.push(LinhaPar { par, aquecimento, m1_primeiro: primeiro_m1, tp1, tp8, erro1: e1, erro8: e8 });
                 if parado {
                     break;
                 }
             }
             if !parado {
+                // Relatório descritivo, depois de todas as repetições e de ler os logits: a cabeça de saída, fora da região dos pares.
+                cabeca = mt.b.cronometra_cabeca(&mt.compute, CABECA_AQUECIMENTO, CABECA_N).ok();
                 if let Err(e) = mt.eng.close().d() {
                     rel += &format!("fechamento do motor dos pares: {e}\n");
                 }
             }
+            drop(fixa);
+            // `mt` sai de escopo aqui: o motor dos pares é solto (também depois de um erro) antes do C de depois.
         }
     }
 
-    // 5. Controle C depois (o motor dos pares já foi liberado: dois motores com pesos densos não cabem juntos).
-    let c_depois = if parado { vec![None; C_REPETICOES_LADO] } else { controle(c, &tokens, &x, &mut portoes_ok) };
-    moe_rt::affinity::set_current(&mascara_antes)?;
+    // 5. Controle C depois (dois motores com pesos densos e 10% de slots não cabem juntos na VRAM).
+    let c_depois = if linhas.is_empty() { vec![None; C_REPETICOES_LADO] } else { controle(c, &tokens, &x, &base, &mut portoes_ok, afin) };
+    rel += &format!("estado da GPU depois: {}\n", estado_gpu());
 
-    // 7. A regra.
-    let usados: Vec<&LinhaPar> = linhas.iter().filter(|l| !l.aquecimento).collect();
-    let ganhos: Vec<f64> = usados.iter().filter_map(|l| ganho_do_par(l.tp1?, l.tp8?)).collect();
-    let tp1s: Vec<f64> = usados.iter().filter_map(|l| l.tp1.filter(|_| l.tp8.is_some())).collect();
-    let cel = Celula { portoes_ok, ganhos: ganhos.clone(), tp1_passo_mediana: mediana(&tp1s), c: ControleC { antes: c_antes.clone(), depois: c_depois.clone() } };
+    // 7. A regra, sobre os pares medidos.
+    let pares: Vec<ParMedido> = linhas.iter().map(|l| ParMedido { aquecimento: l.aquecimento, tp1: l.tp1, tp8: l.tp8 }).collect();
+    let cel = celula_dos_pares(&pares, ControleC { antes: c_antes.clone(), depois: c_depois.clone() }, portoes_ok);
     let rotulo = decide(&cel);
+    let ganhos = cel.ganhos.clone();
 
     let mut csv = String::from("par,aquecimento,m1_primeiro,tp1_ms,tp8_ms,ganho,erro_l2_m1,erro_l2_m8\n");
     for l in &linhas {
@@ -409,26 +512,35 @@ fn celula(c: &Cenario, nome: &str, ref_dir: &Path, saida: &Path, afin: moe_rt::a
         let f = |v: Option<f64>| v.map(|x| format!("{:.6}", x * 1e3)).unwrap_or_else(|| "perdido".into());
         csv += &format!("{},{},{},{},{},{},{:.3e},{:.3e}\n", l.par + 1, l.aquecimento, l.m1_primeiro, f(l.tp1), f(l.tp8), g.map(|v| format!("{v:.4}")).unwrap_or_else(|| "perdido".into()), l.erro1, l.erro8);
     }
-    std::fs::write(saida.join(format!("{nome}-pares.csv")), csv)?;
+    // Com o portão (b) falho o tempo não é lido: o CSV sai marcado e o relatório não imprime ganhos nem tempos.
+    let csv_nome = if portoes_ok { format!("{nome}-pares.csv") } else { format!("{nome}-pares-NAO-LER.csv") };
+    std::fs::write(saida.join(csv_nome), csv)?;
     let linha_c = |v: &[Option<f64>]| v.iter().map(|x| x.map(|t| format!("{:.6}", t * 1e3)).unwrap_or_else(|| "perdido".into())).collect::<Vec<_>>().join(" ");
-    rel += &format!("controle C (ms por posição): antes [{}] depois [{}]; mediana {}\n", linha_c(&c_antes), linha_c(&c_depois), cel.c.mediana().map(|m| format!("{:.6}", m * 1e3)).unwrap_or_else(|| "incompleto".into()));
-    let r = resumo(&ganhos);
-    rel += &format!(
-        "pares usados n = {} (de {PARES_USADOS}); ganhos: mín {:.3} q1 {:.3} mediana {:.3} q3 {:.3} máx {:.3}; positivos {} (mínimo para PASSA {}); portões das repetições {}\n",
-        ganhos.len(),
-        r[0],
-        r[1],
-        r[2],
-        r[3],
-        r[4],
-        ganhos.iter().filter(|&&g| g > 0.0).count(),
-        if ganhos.len() >= N_MINIMO { minimo_positivos(ganhos.len()).to_string() } else { "n/a".into() },
-        if portoes_ok { "OK" } else { "FALHOU" }
-    );
-    rel += &format!("tp(1) do passo (mediana) {:.6} ms; g_M: não medido (carimbos não implementados)\n", cel.tp1_passo_mediana * 1e3);
-    rel += &format!("rótulo: {}\n", rotulo.nome());
-    std::fs::write(saida.join(format!("{nome}-relatorio.txt")), &rel)?;
-    Ok(SaidaCelula { rotulo, relatorio: rel })
+    if portoes_ok {
+        rel += &format!("controle C (ms por posição): antes [{}] depois [{}]; mediana {}\n", linha_c(&c_antes), linha_c(&c_depois), cel.c.mediana().map(|m| format!("{:.6}", m * 1e3)).unwrap_or_else(|| "incompleto".into()));
+        let r = resumo(&ganhos);
+        rel += &format!(
+            "pares usados n = {} (de {PARES_USADOS}); ganhos: mín {:.3} q1 {:.3} mediana {:.3} q3 {:.3} máx {:.3}; positivos {} (mínimo para PASSA {})\n",
+            ganhos.len(),
+            r[0],
+            r[1],
+            r[2],
+            r[3],
+            r[4],
+            ganhos.iter().filter(|&&g| g > 0.0).count(),
+            if ganhos.len() >= N_MINIMO { minimo_positivos(ganhos.len()).to_string() } else { "n/a".into() }
+        );
+        rel += &format!("tp(1) do passo (mediana) {:.6} ms\n", cel.tp1_passo_mediana * 1e3);
+    } else {
+        rel += "tempo NÃO LIDO: o portão por repetição (b) falhou (critério, seção 3); o CSV tem -NAO-LER no nome\n";
+    }
+    match cabeca {
+        Some(t) => rel += &format!("cabeça de saída (descritivo): {:.6} ms por chamada; por posição: M=1 {:.6} ms (uma por posição), M=8 {:.6} ms (uma por passo, dividida por 8)\n", t * 1e3, t * 1e3, t * 1e3 / POSICOES_MAX as f64),
+        None => rel += "cabeça de saída: não medida (motor parou antes ou a cronometragem falhou)\n",
+    }
+    rel += "g_M: não medido (carimbos não implementados; ver a doc do programa)\n";
+    rel += "limite do monitor de carga: só vê processos que apareceram ou saíram entre as consultas antes e depois de cada repetição\n";
+    Ok(SaidaCelula { nome: nome.to_string(), rotulo, corpo: rel })
 }
 
 fn sha256(p: &Path) -> Result<String, String> {
@@ -437,6 +549,13 @@ fn sha256(p: &Path) -> Result<String, String> {
         return Err(format!("sha256sum falhou em {}", p.display()));
     }
     Ok(String::from_utf8_lossy(&o.stdout).split_whitespace().next().unwrap_or("").to_string())
+}
+
+fn roda(device: &Arc<Device>, args: &Args, nome: &str, mdir: &Path, rdir: &Path) -> Result<SaidaCelula, Box<dyn std::error::Error>> {
+    let cfg = ModelConfig::from_json(&serde_json::from_slice(&std::fs::read(mdir.join("config.json"))?)?)?;
+    let host = HostModel::load(&Checkpoint::open(mdir)?, cfg.clone())?;
+    let c = Cenario { device, host: &host, cfg: &cfg, max_len: (BLOCO + 1).next_multiple_of(ATTN_BN), threads: args.threads };
+    celula(&c, nome, rdir, &args.saida, args.afin)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -453,40 +572,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("integridade antes: binário {h_bin0}; critério {h_crit0}");
     moe_rt::affinity::set_compute_plan(args.afin.compute_plan(args.threads));
     let device = Device::new(0)?;
-    let mut rotulos: Vec<(String, Rotulo)> = Vec::new();
-    let mut relatorios = String::new();
+    let mut saidas: Vec<SaidaCelula> = Vec::new();
     for (nome, mdir, rdir) in &args.celulas {
-        let cfg = ModelConfig::from_json(&serde_json::from_slice(&std::fs::read(mdir.join("config.json"))?)?)?;
-        let host = HostModel::load(&Checkpoint::open(mdir)?, cfg.clone())?;
-        let c = Cenario { device: &device, host: &host, cfg: &cfg, max_len: (BLOCO + 1).next_multiple_of(ATTN_BN), threads: args.threads };
-        let s = celula(&c, nome, rdir, &args.saida, args.afin)?;
-        println!("{}", s.relatorio);
-        relatorios += &s.relatorio;
-        rotulos.push((nome.clone(), s.rotulo));
+        // Um erro da célula (referência, memória, leitura) vira INVALIDA com o motivo; a outra célula ainda roda.
+        let s = roda(&device, &args, nome, mdir, rdir).unwrap_or_else(|e| invalida(nome, format!("== célula {nome}: erro: {e}\n")));
+        println!("{}", s.corpo);
+        saidas.push(s);
     }
-    let (h_bin1, h_crit1) = (sha256(&exe)?, sha256(&args.criterio)?);
-    let integro = h_bin0 == h_bin1 && h_crit0 == h_crit1;
-    println!("integridade depois: binário {h_bin1}; critério {h_crit1}: {}", if integro { "IGUAIS" } else { "DIFERENTES: todas as células são INVALIDA" });
+    let h_bin1 = sha256(&exe);
+    let h_crit1 = sha256(&args.criterio);
+    let integro = h_bin1.as_deref().ok() == Some(h_bin0.as_str()) && h_crit1.as_deref().ok() == Some(h_crit0.as_str());
+    let nota = format!("integridade: binário {h_bin0} -> {}; critério {h_crit0} -> {}: {}", h_bin1.as_deref().unwrap_or("ERRO"), h_crit1.as_deref().unwrap_or("ERRO"), if integro { "IGUAIS" } else { "DIFERENTES OU NÃO CALCULÁVEIS: todas as células são INVALIDA" });
+    println!("{nota}");
     if !integro {
-        for r in rotulos.iter_mut() {
-            r.1 = Rotulo::Invalida;
+        for s in saidas.iter_mut() {
+            s.rotulo = Rotulo::Invalida;
         }
     }
+    // Os relatórios e a decisão só são escritos agora, com o rótulo final de cada célula.
     let mut dec = String::from("decisão do E4b (rótulos pela regra do critério):\n");
-    for (n, r) in &rotulos {
-        dec += &format!("  {n}: {}\n", r.nome());
+    let rotulos: Vec<(String, Rotulo)> = saidas.iter().map(|s| (s.nome.clone(), s.rotulo)).collect();
+    for s in &saidas {
+        std::fs::write(args.saida.join(format!("{}-relatorio.txt", s.nome)), format!("{}rótulo: {}\n{nota}\n", s.corpo, s.rotulo.nome()))?;
+        dec += &format!("  {}: {}\n", s.nome, s.rotulo.nome());
     }
-    if rotulos.len() == 2 {
-        let a2 = match resultado_a2(rotulos[0].1, rotulos[1].1) {
-            ResultadoA2::AbreProposta => "1B e 3B PASSAM: abre-se a proposta de próximo passo ao Breno (não é autorização)",
-            ResultadoA2::FechaA2 => "1B e 3B NAO_PASSAM: fecha o A2 (parada da proposta)",
-            ResultadoA2::SemConclusao => "SEM CONCLUSÃO do A2: volta ao Breno; o exec não escolhe sozinho",
-        };
-        dec += &format!("resultado do A2: {a2}\n");
+    match a2_conjunto(&rotulos) {
+        Some(ResultadoA2::AbreProposta) => dec += "resultado do A2: 1B e 3B PASSAM: abre-se a proposta de próximo passo ao Breno (não é autorização)\n",
+        Some(ResultadoA2::FechaA2) => dec += "resultado do A2: 1B e 3B NAO_PASSAM: fecha o A2 (parada da proposta)\n",
+        Some(ResultadoA2::SemConclusao) => dec += "resultado do A2: SEM CONCLUSÃO do A2: volta ao Breno; o exec não escolhe sozinho\n",
+        None => dec += "resultado do A2: não decidido (o resultado conjunto pede as células 1b e 3b)\n",
     }
-    dec += &format!("integridade: binário {h_bin0} -> {h_bin1}; critério {h_crit0} -> {h_crit1}\n");
+    dec += &format!("{nota}\n");
     println!("{dec}");
-    std::fs::write(args.saida.join("decisao.txt"), dec + &relatorios)?;
+    std::fs::write(args.saida.join("decisao.txt"), dec)?;
     Ok(())
 }
 
@@ -515,8 +633,30 @@ mod tests {
         assert!(parse_args(v(&["--saida", "/o"])).is_err(), "sem célula");
         assert!(parse_args(v(&["--celula", "1b:/m:/r"])).is_err(), "sem saída");
         assert!(parse_args(v(&["--celula", "1b:/m", "--saida", "/o"])).is_err(), "célula sem referência");
-        assert!(parse_args(v(&["--celula", "a:/m:/r", "--celula", "b:/m:/r", "--celula", "c:/m:/r", "--saida", "/o"])).is_err(), "mais de duas");
+        assert!(parse_args(v(&["--celula", "a:/m:/r", "--celula", "b:/m2:/r", "--celula", "c:/m3:/r", "--saida", "/o"])).is_err(), "mais de duas");
         assert!(parse_args(v(&["--celula", "1b:/m:/r", "--saida", "/o", "--pares", "3"])).is_err(), "os parâmetros do critério não se trocam por opção");
+    }
+
+    #[test]
+    fn celulas_repetidas_ou_com_nome_perigoso_sao_recusadas() {
+        assert!(parse_args(v(&["--celula", "1b:/m:/r", "--celula", "1b:/m2:/r", "--saida", "/o"])).is_err(), "nome repetido");
+        assert!(parse_args(v(&["--celula", "1b:/m:/r", "--celula", "3b:/m:/r", "--saida", "/o"])).is_err(), "mesmo modelo em duas células");
+        // O alias de caminho: /tmp e /tmp/../tmp/ são o mesmo diretório.
+        assert!(parse_args(v(&["--celula", "1b:/tmp:/r", "--celula", "3b:/tmp/../tmp:/r", "--saida", "/o"])).is_err(), "alias de caminho");
+        assert!(parse_args(v(&["--celula", "../x:/m:/r", "--saida", "/o"])).is_err(), "nome com ..");
+        assert!(parse_args(v(&["--celula", "a/b:/m:/r", "--saida", "/o"])).is_err(), "nome com barra");
+        assert!(parse_args(v(&["--celula", "1b:/m:/r", "--celula", "3b:/m2:/r", "--saida", "/o"])).is_ok());
+    }
+
+    #[test]
+    fn resultado_conjunto_so_com_1b_e_3b() {
+        use Rotulo::*;
+        let r = |a: &str, x, b: &str, y| vec![(a.to_string(), x), (b.to_string(), y)];
+        assert_eq!(a2_conjunto(&r("1b", Passa, "3b", Passa)), Some(ResultadoA2::AbreProposta));
+        assert_eq!(a2_conjunto(&r("3b", NaoPassa, "1b", NaoPassa)), Some(ResultadoA2::FechaA2));
+        assert_eq!(a2_conjunto(&r("a", Passa, "b", Passa)), None, "dois nomes quaisquer não decidem o A2");
+        assert_eq!(a2_conjunto(&[("1b".to_string(), Passa)]), None, "uma célula só não decide o A2");
+        assert_eq!(a2_conjunto(&r("1b", Invalida, "3b", Passa)), Some(ResultadoA2::SemConclusao));
     }
 
     #[test]
@@ -531,5 +671,15 @@ mod tests {
             assert!(k.iter().all(|&x| (x as usize) < todas));
             assert!(k.windows(2).all(|w| w[0] < w[1]));
         }
+    }
+
+    #[test]
+    fn a_fixa_da_afinidade_a0_nao_mexe_na_mascara() {
+        let antes = moe_rt::affinity::get_current().unwrap();
+        {
+            let f = Fixa::nova(moe_rt::affinity::Afin::A0).unwrap();
+            assert!(f.0.is_none());
+        }
+        assert_eq!(moe_rt::affinity::get_current().unwrap(), antes);
     }
 }

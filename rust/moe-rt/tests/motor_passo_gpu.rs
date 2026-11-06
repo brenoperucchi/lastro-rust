@@ -301,3 +301,43 @@ fn leitura_do_kv_que_falha_preserva_o_cache() {
     assert_eq!(b.read_kv(&compute, 1, 4).unwrap(), antes, "o cache mudou depois de uma leitura que falhou");
     eng.close().unwrap();
 }
+
+/// A cronometragem da cabeça de saída (relatório descritivo do `e4b-medida`) devolve um tempo positivo e finito, recusa `n = 0` e não
+/// quebra a leitura do KV nem um passo seguinte (ela só mexe no `xn` da posição 0 e nos logits).
+#[test]
+#[ignore = "GPU: só com o autorizo do Breno (E4B_GPU_AUTORIZADO=1)"]
+fn cabeca_cronometrada_devolve_tempo_valido_e_o_motor_segue() {
+    exige_autorizacao();
+    let _trava = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    let device = cuda_core::Device::new(0).expect("GPU");
+    device.bind_to_thread().unwrap();
+    let (_scratch, m) = modelo("motor_passo_cab");
+    let cpu_ref = Cpu::new(2);
+    let mut sess = CpuSession::new(&m, &cpu_ref);
+    let want: Vec<Vec<f32>> = TOKENS[..6].iter().map(|&t| sess.step(t).0).collect();
+    let (compute, copy) = (CudaStream(device.new_stream().unwrap()), CudaStream(device.new_stream().unwrap()));
+    let (b, ex) = CudaBackend::new_model_positions(device.clone(), &m, 5, 64, &compute, 8).unwrap();
+    let cfg = Config { layers: m.cfg.layers, experts: m.cfg.experts, topk: m.cfg.k, width: m.cfg.hidden, slots: 5, backlog: 4, admit: AdmitMode::TokenBarrier, first_token: 1, prefill: vec![], max_positions: 8 };
+    let parts = b.parts(compute.clone(), copy, b.weights(&ex).unwrap(), cfg.first_token).unwrap();
+    let cpu = CpuServe { cpu: Cpu::new(2), hidden: m.cfg.hidden, inter: m.cfg.inter, experts: m.cfg.experts, weights: ex.clone() };
+    let mut eng = Engine::new(b.clone(), parts, cfg, cpu).unwrap();
+    b.begin_step_tokens(&compute, &TOKENS[..4]).unwrap();
+    let p = eng.next_published().unwrap();
+    eng.enqueue_step(p, 4).unwrap();
+    eng.finish_token().unwrap();
+    let kv_antes = b.read_kv(&compute, 1, 4).unwrap();
+    let got = b.read_logits(&compute).unwrap();
+    assert!(erro_rel(&got, &want[3]) <= 1e-4);
+    assert!(b.cronometra_cabeca(&compute, 2, 0).is_err(), "n = 0 tem de ser recusado");
+    let t = b.cronometra_cabeca(&compute, 2, 5).unwrap();
+    assert!(t.is_finite() && t > 0.0, "tempo da cabeça {t}");
+    assert_eq!(b.read_kv(&compute, 1, 4).unwrap(), kv_antes, "a cronometragem da cabeça mexeu no KV");
+    // O motor segue: o passo seguinte dá os logits certos da CPU.
+    b.begin_step_tokens(&compute, &TOKENS[4..6]).unwrap();
+    let p = eng.next_published().unwrap();
+    eng.enqueue_step(p, 2).unwrap();
+    eng.finish_token().unwrap();
+    let got = b.read_logits(&compute).unwrap();
+    assert!(erro_rel(&got, &want[5]) <= 1e-4, "passo depois da cronometragem da cabeça");
+    eng.close().unwrap();
+}

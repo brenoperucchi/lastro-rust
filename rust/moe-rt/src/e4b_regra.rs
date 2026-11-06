@@ -193,6 +193,40 @@ pub fn portao_repeticao(got: &[f32], x: &[f32]) -> bool {
     erro_l2_rel(got, x) <= TOL_REPETICAO_L2 && argmax(got) == argmax(x)
 }
 
+/// Um par medido: `None` é a repetição perdida (erro do motor ou carga alheia na GPU); o par perdido não é refeito.
+#[derive(Clone, Copy, Debug)]
+pub struct ParMedido {
+    pub aquecimento: bool,
+    pub tp1: Option<f64>,
+    pub tp8: Option<f64>,
+}
+
+/// A célula a partir dos pares medidos (todos, com os de aquecimento), do controle C e do estado dos portões. Pares de aquecimento e pares
+/// com uma das repetições perdida não entram em n. A decisão com `n` pares usados não depende de o motor ter parado depois deles.
+pub fn celula_dos_pares(pares: &[ParMedido], c: ControleC, portoes_ok: bool) -> Celula {
+    let usados: Vec<(f64, f64)> = pares.iter().filter(|p| !p.aquecimento).filter_map(|p| Some((p.tp1?, p.tp8?))).collect();
+    let ganhos: Vec<f64> = usados.iter().filter_map(|&(a, b)| ganho_do_par(a, b)).collect();
+    let tp1s: Vec<f64> = usados.iter().map(|u| u.0).collect();
+    Celula { portoes_ok, ganhos, tp1_passo_mediana: mediana(&tp1s), c }
+}
+
+/// Os PIDs com contexto de computação na GPU, a partir da saída de `nvidia-smi --query-compute-apps=pid --format=csv,noheader`.
+/// Saída vazia é um conjunto vazio; qualquer linha que não seja um número dá `None` (a consulta falha fechada).
+pub fn pids_de_computacao(saida: &str) -> Option<std::collections::BTreeSet<u32>> {
+    let mut r = std::collections::BTreeSet::new();
+    for l in saida.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        r.insert(l.parse::<u32>().ok()?);
+    }
+    Some(r)
+}
+
+/// Uma repetição está contaminada se, antes ou depois dela, o conjunto de processos alheios com contexto na GPU difere do conjunto-base
+/// da célula (processo que apareceu ou saiu). Não vê carga de um processo que já existia e passou a trabalhar, nem um que começou e
+/// terminou dentro da repetição: limite registrado no relatório.
+pub fn contaminada(base: &std::collections::BTreeSet<u32>, antes: &std::collections::BTreeSet<u32>, depois: &std::collections::BTreeSet<u32>) -> bool {
+    antes != base || depois != base
+}
+
 /// A ordem dos pares usados: ABBA a partir do primeiro par usado. `true` = o M=1 vai primeiro.
 pub fn m1_primeiro(par_usado: usize) -> bool {
     matches!(par_usado % 4, 0 | 3)
@@ -390,5 +424,53 @@ mod testes {
         assert!(erro_max_rel(&[1.0, 5.0 + 1e-6, 2.0], &x) <= TOL_PORTAO_MAX);
         assert!(erro_max_rel(&[], &x).is_infinite());
         assert!(erro_l2_rel(&[0.0, 0.0], &[0.0, 0.0]).is_infinite(), "referência toda zero reprova");
+    }
+
+    #[test]
+    fn erro_no_ultimo_par_nao_derruba_a_decisao_com_n_de_doze() {
+        // 15 pares, o último perdido por erro do motor: n = 12 usados, C completo, mediana 20% e todos positivos: PASSA.
+        let mut pares: Vec<ParMedido> = (0..15).map(|i| ParMedido { aquecimento: i < 2, tp1: Some(1.0), tp8: Some(0.8) }).collect();
+        pares[14] = ParMedido { aquecimento: false, tp1: None, tp8: None };
+        let c = celula_dos_pares(&pares, c_ok(1.0), true);
+        assert_eq!(c.ganhos.len(), 12);
+        assert_eq!(decide(&c), Rotulo::Passa);
+        // Uma repetição só (a de M=8) perdida também tira o par inteiro do n.
+        pares[13].tp8 = None;
+        let c = celula_dos_pares(&pares, c_ok(1.0), true);
+        assert_eq!(c.ganhos.len(), 11);
+        assert_eq!(decide(&c), Rotulo::Passa);
+        // Três pares usados perdidos: n = 10 e a célula é INVALIDA.
+        pares[12].tp1 = None;
+        let c = celula_dos_pares(&pares, c_ok(1.0), true);
+        assert_eq!(c.ganhos.len(), 10);
+        assert_eq!(decide(&c), Rotulo::Invalida);
+        // Pares perdidos só no aquecimento não tiram nada de n.
+        let mut pares: Vec<ParMedido> = (0..15).map(|i| ParMedido { aquecimento: i < 2, tp1: Some(1.0), tp8: Some(0.8) }).collect();
+        pares[0].tp1 = None;
+        assert_eq!(celula_dos_pares(&pares, c_ok(1.0), true).ganhos.len(), 13);
+    }
+
+    #[test]
+    fn controle_c_perdido_impede_conclusao_de_velocidade() {
+        let pares: Vec<ParMedido> = (0..15).map(|i| ParMedido { aquecimento: i < 2, tp1: Some(1.0), tp8: Some(0.5) }).collect();
+        let mut c = c_ok(1.0);
+        c.depois = vec![None; 5];
+        assert_eq!(decide(&celula_dos_pares(&pares, c, true)), Rotulo::SemConclusao);
+    }
+
+    #[test]
+    fn consulta_de_carga_e_contaminacao() {
+        use std::collections::BTreeSet;
+        let b = |v: &[u32]| v.iter().copied().collect::<BTreeSet<u32>>();
+        assert_eq!(pids_de_computacao(""), Some(b(&[])));
+        assert_eq!(pids_de_computacao("6276\n20782\n"), Some(b(&[6276, 20782])));
+        assert_eq!(pids_de_computacao(" 12 \n\n 7"), Some(b(&[12, 7])));
+        assert_eq!(pids_de_computacao("[N/A]\n"), None, "linha ilegível falha fechada");
+        assert_eq!(pids_de_computacao("No running processes found"), None);
+        let base = b(&[6276, 20782]);
+        assert!(!contaminada(&base, &base, &base));
+        assert!(contaminada(&base, &b(&[6276, 20782, 999]), &base), "processo novo antes");
+        assert!(contaminada(&base, &base, &b(&[6276, 20782, 999])), "processo novo durante");
+        assert!(contaminada(&base, &base, &b(&[6276])), "processo que saiu");
     }
 }

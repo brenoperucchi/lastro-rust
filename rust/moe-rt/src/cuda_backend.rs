@@ -572,6 +572,31 @@ impl CudaBackend {
         st.dense.as_mut().ok_or(CudaError::Config("sem modelo"))?.read_kv(&s.0, layer, len)
     }
 
+    /// E4b, relatório descritivo: o tempo médio de uma chamada da cabeça de saída (norma final e `lm_head`), em segundos, com `n` chamadas
+    /// seguidas depois de `aquecimento` chamadas sem contar e uma sincronização no fim de cada grupo. Roda sobre o `h` da posição 0 do último
+    /// passo. Só para chamar FORA das repetições de tempo e DEPOIS de ler os logits: ela sobrescreve o `xn` da posição 0 e o tensor de logits.
+    pub fn cronometra_cabeca(&self, s: &CudaStream, aquecimento: usize, n: usize) -> Result<f64, CudaError> {
+        if n == 0 {
+            return Err(CudaError::Config("cronometra_cabeca com n = 0"));
+        }
+        ck!(sys::cuStreamSynchronize(s.raw()));
+        let mut guard = self.st.lock().unwrap_or_else(|e| e.into_inner());
+        let st = &mut *guard;
+        let State { bufs, dense, .. } = st;
+        let m = dense.as_mut().ok_or(CudaError::Config("sem modelo"))?;
+        let b = &mut bufs[0];
+        for _ in 0..aquecimento {
+            m.head(&s.0, &b.h, &mut b.xn)?;
+        }
+        ck!(sys::cuStreamSynchronize(s.raw()));
+        let t0 = std::time::Instant::now();
+        for _ in 0..n {
+            m.head(&s.0, &b.h, &mut b.xn)?;
+        }
+        ck!(sys::cuStreamSynchronize(s.raw()));
+        Ok(t0.elapsed().as_secs_f64() / n as f64)
+    }
+
     /// Os logits do token, depois de `run_token` (que já sincronizou a stream de cálculo).
     pub fn read_logits(&self, s: &CudaStream) -> Result<Vec<f32>, CudaError> {
         ck!(sys::cuStreamSynchronize(s.raw()));
