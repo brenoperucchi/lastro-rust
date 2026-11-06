@@ -33,12 +33,21 @@ strata-opencode e mudou para cá em 31/10/2026 (seção "Mudança para o lastro-
 - A2-MULTIPOS-SIM (3/11): simulador do passo multiposição; critério v1.1 e script aprovados nível 2 (rodadas 48 a 50); calibração em M=1 passou; decisão **VALE MEDIR NA GPU ANTES** (a 10%: otimista 63 a 66% em M=8, pessimista ~0%; o que decide são as hipóteses de custo de lote do cálculo dos experts e do g, não medidas). Resultado: `qual-runs/A2-MULTIPOS-SIM-20261103/resultado.txt`; estado: `rust/moe-rt/src/motor/ESTADO-A2-MULTIPOS.md`; reprodução: `taskset -c 16-27 tools/.venv-ref/bin/python -I -B qual-runs/A2-MULTIPOS-SIM-20261103/multipos.py`. Próximo (feito em parte, ver A2-LOTE): microbench de GEMM em lote como primeiro diagnóstico (g_M e custos de passo seguem pendentes; precisa de GPU e do aval do Breno).
 - A2-LOTE (3/11): microbench de um expert em lote (GPU 4090 e CPU 8 threads), critério v1.1 e scripts aprovados antes da GPU (rodadas 53 a 55), uma janela feita; **portão reprovado** (GPU 3B n=1 +47% contra o motor, limite 40%), sem decisão; w(8) informativo ≈ 1,7 (GPU) e 1,2 (CPU). Resultado: `qual-runs/A2-LOTE-20261103/resultado.txt`; estado: `rust/moe-rt/src/motor/ESTADO-A2-LOTE.md`. v1.2 (split-K, variante 2, rodadas 56 e 57): portão reprovou de novo no 3B (+42%, limite 40%), sem decisão; w(8) da GPU 1,36 (1B) e 1,42 (3B), CPU 1,2. Sem terceira tentativa sem aval do Breno; opções: medir o cutile do motor em lote ou seguir para o g_M.
 
-## Máquina (depois do reboot de 31/10)
+## Máquina
 
-- 4090 no PCIE2 e 3080 Ti no PCIE1, as duas Gen4 x8. Fixe sempre a 4090 pelo UUID:
-  `CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd` (o índice 0 do nvidia-smi é a 3080 Ti).
-- 3080 Ti limitada a 300 W no boot (`/etc/systemd/system/gpu-power-limit.service`, com o nvidia-persistenced).
-- Banda H2D pinned em x8: ~12,4 GB/s; efetiva com a CPU calculando: 12,2 GB/s (era 14,1 em x16; o simulador ainda usa 14,1).
+**Agora (desde 04/11, conferido em 06/11):** a 3080 Ti saiu temporariamente (vai voltar). A 4090 está sozinha em
+`07:00.0`, Gen4 **x16**, índice 0 do nvidia-smi, e também roda o desktop (Chrome, voxtype ~800 MiB, t3code). Os testes
+seguem só na 4090 (decisão do Breno, 06/11). Continue fixando a 4090 pelo UUID:
+`CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd`. Medidas feitas em x8 (A1-DIAG10, A2-LOTE, A1.4) não
+comparam direto com as de agora; registre o link e os processos na GPU em cada medida nova.
+
+**Quando a 3080 Ti voltar:** o `gpu-power-limit.service` (limite de 300 W, segurança da fonte HX1500i) está
+**desabilitado** desde 04/11; reabilitar (`systemctl enable gpu-power-limit.service`) e conferir o limite antes de
+qualquer carga nas duas GPUs. O layout volta a x8/x8 e o índice 0 do nvidia-smi pode mudar.
+
+Com as duas GPUs (31/10 a 04/11): 4090 no PCIE2 e 3080 Ti no PCIE1, as duas Gen4 x8; banda H2D pinned ~12,4 GB/s,
+efetiva com a CPU calculando 12,2 GB/s (em x16 era 14,1; o simulador usa 14,1).
+
 - A CPU bate 100 °C com o m2a-cache em 8 threads.
 
 ## Regras de trabalho
