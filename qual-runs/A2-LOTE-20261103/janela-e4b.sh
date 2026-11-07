@@ -23,7 +23,11 @@
 # nem com KILL continua existindo: o roteiro avisa (saída 5) e restaura os timers mesmo assim.
 #
 # Saídas: o código do comando; 124 limite de tempo; 2 recusa antes de mexer; 3 serviço de timer não terminou; 4 restauração incompleta
-# (prevalece sobre os outros); 5 processo do comando não morreu; 6 `stop` falhou; 125 o comando não deixou código de saída.
+# (prevalece sobre os outros); 5 o comando não morreu (ou o grupo não foi reconhecido como o do comando, e então nenhum sinal foi enviado);
+# 6 `stop` falhou ou timer continuou ativo; 7 consulta ao systemd inconclusiva depois do preflight; 125 o comando não deixou código de saída.
+# Se o comando terminar no mesmo segundo do limite, o vigia confere o grupo antes de marcar o limite: grupo já morto não vira 124.
+# Identidade: filho.id guarda boot_id e starttime do líder do grupo; nenhum sinal é enviado a um grupo cujo líder tenha outra identidade
+# (número de PID reaproveitado). Um comando só começa depois do aval do supervisor (arquivo vai): sinal na largada cancela sem rodar nada.
 set -u
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
 SYSTEMCTL=${SYSTEMCTL:-systemctl}
@@ -66,38 +70,64 @@ ESTADO=$(cd "$ESTADO" && pwd -P)
 
 ativo() { $SYSTEMCTL --user is-active "$1" 2>/dev/null || true; }
 estado_conhecido() { case "$1" in active|inactive|failed|activating|deactivating|reloading|maintenance) return 0;; *) return 1;; esac; }
+# Leitura VALIDADA: saída vazia ou desconhecida (consulta que falhou) nunca vira "inactive".
+le() { local v; v=$(ativo "$1"); estado_conhecido "$v" || return 1; printf '%s\n' "$v"; }
+ident_pid() { # "boot_id starttime" do processo $1; falha se ele não existe
+  local b st
+  [ -r "/proc/$1/stat" ] || return 1
+  b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null) || return 1
+  st=$(sed 's/^.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f20)
+  [ -n "$st" ] || return 1
+  echo "$b $st"
+}
+abandona() { rm -f "$PENDENTE" "$PENDENTE.$$.tmp"; recusa "$*"; }
 
-# 1b. Falha fechada sobre o que o systemd devolve: unidade existe e o estado é um dos conhecidos.
+# 1b. Falha fechada sobre o que o systemd devolve: a unidade existe.
+for t in "${TIMERS[@]}"; do
+  $SYSTEMCTL --user cat "$t" >/dev/null 2>&1 || recusa "o systemd não conhece a unidade $t (escopo --user, XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR)"
+done
+
+# 1c. Reserva ATÔMICA da janela (ln falha se o ponteiro já existe): duas janelas simultâneas nunca passam juntas.
+printf '%s\n' "$ESTADO" > "$PENDENTE.$$.tmp" && sync "$PENDENTE.$$.tmp" && ln "$PENDENTE.$$.tmp" "$PENDENTE" 2>/dev/null; rc=$?
+rm -f "$PENDENTE.$$.tmp"
+[ "$rc" = 0 ] || recusa "não consegui reservar a janela: há outra janela em curso ou não recuperada ($(cat "$PENDENTE" 2>/dev/null)). Rode recupera-timers-e4b.sh antes de começar outra."
+
+# 2. Captura VALIDADA e estado inicial em arquivo (antes de qualquer stop). Falha de leitura = recusa, sem pausar nada.
+PAI=$$
+PAI_ID=$(ident_pid "$PAI") || abandona "não consegui identificar este processo em /proc"
+echo "$PAI $PAI_ID" > "$ESTADO/supervisor.id"
+{ echo "início: $(date -Is) pid=$$ XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"; } > "$ESTADO/estado.txt"
+: > "$ESTADO/ativos.tmp"
 for t in "${TIMERS[@]}"; do
   s=${t%.timer}.service
-  $SYSTEMCTL --user cat "$t" >/dev/null 2>&1 || recusa "o systemd não conhece a unidade $t (escopo --user, XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR)"
-  for u in "$t" "$s"; do
-    estado_conhecido "$(ativo "$u")" || recusa "estado de $u não reconhecido ('$(ativo "$u")'): o systemd de usuário respondeu?"
-  done
+  vt=$(le "$t") || abandona "estado de $t não reconhecido: o systemd de usuário respondeu?"
+  vs=$(le "$s") || abandona "estado de $s não reconhecido: o systemd de usuário respondeu?"
+  echo "$t is-active=$vt is-enabled=$($SYSTEMCTL --user is-enabled "$t" 2>/dev/null || true)" >> "$ESTADO/estado.txt"
+  echo "$s is-active=$vs is-enabled=$($SYSTEMCTL --user is-enabled "$s" 2>/dev/null || true)" >> "$ESTADO/estado.txt"
+  [ "$vt" = active ] && echo "$t" >> "$ESTADO/ativos.tmp"
 done
+sync "$ESTADO/estado.txt" "$ESTADO/ativos.tmp" "$ESTADO/supervisor.id" && mv "$ESTADO/ativos.tmp" "$ESTADO/ativos.txt" || abandona "não consegui gravar o estado inicial"
 
-# 2. Captura e estado inicial em arquivo (antes de qualquer stop).
-{
-  echo "início: $(date -Is) pid=$$ XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
-  for t in "${TIMERS[@]}"; do
-    s=${t%.timer}.service
-    echo "$t is-active=$(ativo "$t") is-enabled=$($SYSTEMCTL --user is-enabled "$t" 2>/dev/null || true)"
-    echo "$s is-active=$(ativo "$s") is-enabled=$($SYSTEMCTL --user is-enabled "$s" 2>/dev/null || true)"
-  done
-} > "$ESTADO/estado.txt"
-: > "$ESTADO/ativos.txt"
-for t in "${TIMERS[@]}"; do
-  [ "$(ativo "$t")" = active ] && echo "$t" >> "$ESTADO/ativos.txt"
-done
-printf '%s\n' "$ESTADO" > "$PENDENTE.tmp" && sync "$ESTADO/estado.txt" "$ESTADO/ativos.txt" "$PENDENTE.tmp" && mv "$PENDENTE.tmp" "$PENDENTE" || recusa "não consegui gravar o estado inicial e o ponteiro"
-
-RESTAURADO=0; RESTAURA_RC=0; PGID=; SPID=; VIGIA=; NAOMORREU=0; LIMITE_ATINGIDO=0
+RESTAURADO=0; RESTAURA_RC=0; PGID=; SPID=; VIGIA=; NAOMORREU=0; LIMITE_ATINGIDO=0; INT_PEND=
 # O comando roda numa sessão própria (setsid): a sessão tem o id do líder. Zumbi (Z) não conta como vivo: o líder só é colhido pelo `wait`.
 grupo_vivo() { [ -n "$PGID" ] && ps -o stat= -s "$PGID" 2>/dev/null | grep -qv '^Z'; }
-mata_grupo() { # TERM, espera $KILL_APOS, KILL, espera 5 s; devolve 0 se o grupo morreu
-  grupo_vivo || return 0
+# 0 = grupo vivo e é o do comando; 1 = não existe mais; 2 = existe, mas o líder tem outra identidade (número reaproveitado): NÃO sinalizar.
+grupo_confere() {
+  grupo_vivo || return 1
+  if [ -r "/proc/$PGID/stat" ] && [ -s "$ESTADO/filho.id" ]; then
+    [ "$(ident_pid "$PGID")" = "$(cat "$ESTADO/filho.id")" ] || return 2
+  fi
+  return 0
+}
+mata_grupo() { # TERM, espera $KILL_APOS, KILL, espera 5 s; 0 = o grupo morreu, 1 = não morreu, 2 = identidade divergente (nada enviado)
+  grupo_confere; local c=$?
+  [ "$c" = 1 ] && return 0
+  [ "$c" = 2 ] && return 2
   kill -TERM -- "-$PGID" 2>/dev/null
   for _ in $(seq 1 "$KILL_APOS"); do grupo_vivo || return 0; sleep 1; done
+  grupo_confere; c=$?
+  [ "$c" = 1 ] && return 0
+  [ "$c" = 2 ] && return 2
   kill -KILL -- "-$PGID" 2>/dev/null
   for _ in 1 2 3 4 5; do grupo_vivo || return 0; sleep 1; done
   return 1
@@ -107,30 +137,34 @@ restaura() {
   RESTAURADO=1
   touch "$ESTADO/fim.flag"
   [ -n "$VIGIA" ] && kill "$VIGIA" 2>/dev/null
-  # Um sinal pode chegar entre o início do comando e a leitura do PGID: recupera pelo arquivo e, no limite, pelo PID do setsid.
+  # Um sinal pode chegar antes da leitura do PGID: recupera pelo arquivo e, no limite, pelo PID do setsid (filho nosso, ainda não colhido).
   [ -n "$PGID" ] || PGID=$(cat "$ESTADO/filho.pgid" 2>/dev/null || true)
-  [ -n "$PGID" ] || { [ -n "$SPID" ] && { PGID=$SPID; kill -TERM "$SPID" 2>/dev/null; }; }
+  [ -n "$PGID" ] || { [ -n "$SPID" ] && { PGID=$SPID; touch "$ESTADO/vai.cancela"; kill -TERM "$SPID" 2>/dev/null; }; }
+  touch "$ESTADO/vai.cancela"
   if grupo_vivo; then
-    mata_grupo || NAOMORREU=1
+    mata_grupo; r=$?
+    [ "$r" = 0 ] || NAOMORREU=1
   fi
-  falhou=0
+  falha_r=0
   : > "$ESTADO/restauracao.txt"
   while IFS= read -r t; do
     [ -n "$t" ] || continue
     if [ "$(ativo "$t")" != active ]; then
-      $SYSTEMCTL --user start "$t" 2>>"$ESTADO/restauracao.txt" || { echo "FALHA ao iniciar $t" | tee -a "$ESTADO/restauracao.txt" >&2; falhou=1; }
+      $SYSTEMCTL --user start "$t" 2>>"$ESTADO/restauracao.txt" || { echo "FALHA ao iniciar $t" | tee -a "$ESTADO/restauracao.txt" >&2; falha_r=1; }
     fi
   done < "$ESTADO/ativos.txt"
   for t in "${TIMERS[@]}"; do
+    v=$(le "$t") || { echo "$t: estado inconclusivo na conferência final" | tee -a "$ESTADO/restauracao.txt" >&2; falha_r=1; continue; }
     if grep -qx "$t" "$ESTADO/ativos.txt"; then
-      [ "$(ativo "$t")" = active ] && echo "$t is-active=active (era active): ok" >> "$ESTADO/restauracao.txt" || { echo "$t NÃO voltou a active" | tee -a "$ESTADO/restauracao.txt" >&2; falhou=1; }
+      if [ "$v" = active ]; then echo "$t is-active=active (era active): ok" >> "$ESTADO/restauracao.txt"; else echo "$t NÃO voltou a active ($v)" | tee -a "$ESTADO/restauracao.txt" >&2; falha_r=1; fi
     else
-      [ "$(ativo "$t")" = active ] && { echo "$t estava parado e está active: NÃO devia" | tee -a "$ESTADO/restauracao.txt" >&2; falhou=1; } || echo "$t is-active=$(ativo "$t") (não estava ativo; não foi ativado): ok" >> "$ESTADO/restauracao.txt"
+      if [ "$v" = active ]; then echo "$t estava parado e está active: NÃO devia" | tee -a "$ESTADO/restauracao.txt" >&2; falha_r=1; else echo "$t is-active=$v (não estava ativo; não foi ativado): ok" >> "$ESTADO/restauracao.txt"; fi
     fi
   done
-  if [ "$falhou" = 0 ]; then
+  if [ "$falha_r" = 0 ]; then
     echo "RESTAURAÇÃO OK" >> "$ESTADO/restauracao.txt"
-    rm -f "$PENDENTE"
+    # só apaga o ponteiro se ele ainda aponta para ESTA janela
+    [ "$(cat "$PENDENTE" 2>/dev/null)" = "$ESTADO" ] && rm -f "$PENDENTE"
   else
     echo "RESTAURAÇÃO INCOMPLETA: rode recupera-timers-e4b.sh $ESTADO" | tee -a "$ESTADO/restauracao.txt" >&2
     RESTAURA_RC=1
@@ -139,9 +173,14 @@ restaura() {
 }
 finaliza() {
   rc=$?
+  trap '' INT TERM HUP   # um segundo sinal não pode interromper a restauração
   restaura
+  [ -e "$ESTADO/limite.flag" ] && LIMITE_ATINGIDO=1
+  [ -e "$ESTADO/nao-morreu.flag" ] && NAOMORREU=1
+  if [ "$RESTAURA_RC" != 0 ]; then rc=4
+  elif [ "$NAOMORREU" = 1 ]; then rc=5
+  elif [ "$LIMITE_ATINGIDO" = 1 ]; then rc=124; fi
   { echo "fim: $(date -Is)"; echo "saída do roteiro: $rc"; echo "limite atingido: $LIMITE_ATINGIDO"; echo "processo não morreu: $NAOMORREU"; echo "restauração com falha: $RESTAURA_RC"; } > "$ESTADO/resultado.txt"
-  [ "$RESTAURA_RC" = 0 ] || exit 4
   exit "$rc"
 }
 trap finaliza EXIT
@@ -153,7 +192,8 @@ trap 'exit 129' HUP
 while IFS= read -r t; do
   [ -n "$t" ] || continue
   $SYSTEMCTL --user stop "$t" || { echo "janela-e4b: falha ao parar $t" >&2; exit 6; }
-  [ "$(ativo "$t")" != active ] || { echo "janela-e4b: $t continua active depois do stop" >&2; exit 6; }
+  v=$(le "$t") || { echo "janela-e4b: não consegui confirmar o stop de $t" >&2; exit 7; }
+  [ "$v" != active ] || { echo "janela-e4b: $t continua active depois do stop" >&2; exit 6; }
 done < "$ESTADO/ativos.txt"
 
 # 4. Espera serviços dos timers em execução; nunca os mata.
@@ -161,35 +201,56 @@ fim_espera=$(( $(date +%s) + ESPERA ))
 while :; do
   ocupado=0
   for t in "${TIMERS[@]}"; do
-    case "$(ativo "${t%.timer}.service")" in active|activating|deactivating|reloading) ocupado=1;; esac
+    sv=$(le "${t%.timer}.service") || { echo "janela-e4b: consulta inconclusiva sobre ${t%.timer}.service; o comando não rodou" >&2; exit 7; }
+    case "$sv" in active|activating|deactivating|reloading) ocupado=1;; esac
   done
   [ $ocupado = 0 ] && break
   [ "$(date +%s)" -lt "$fim_espera" ] || { echo "janela-e4b: serviço de timer ainda em execução depois de ${ESPERA}s; nada foi morto, o comando não rodou" >&2; exit 3; }
   sleep "$PASSO"
 done
 
-# 5. O comando, numa sessão própria, com vigia de tempo.
-echo "comando: $*" > "$ESTADO/comando.txt"; date -Is > "$ESTADO/comando-inicio.txt"
-RCF="$ESTADO/rc-comando.txt" setsid bash -c 'echo $$ > "$1"; shift; "$@"; echo $? > "$RCF"' _ "$ESTADO/filho.pgid" "$@" &
+# 5. O comando, numa sessão própria, com vigia de tempo. O lançamento é uma fase PROTEGIDA: sinais só são anotados (INT_PEND) até o
+#    comando estar registrado e com vigia; e o comando só começa depois do aval (arquivo vai), então um sinal na largada cancela sem rodar nada.
+echo "comando: $*" > "$ESTADO/comando.txt"
+trap 'INT_PEND=130' INT; trap 'INT_PEND=143' TERM; trap 'INT_PEND=129' HUP
+EMB='echo $$ > "$1"; V=$2; shift 2
+n=0; while [ ! -e "$V" ]; do [ -e "$V.cancela" ] && exit 125; n=$((n+1)); [ "$n" -le 600 ] || exit 125; sleep 0.05; done # GATE
+"$@"; echo $? > "$RCF"'
+RCF="$ESTADO/rc-comando.txt" setsid bash -c "$EMB" _ "$ESTADO/filho.pgid" "$ESTADO/vai" "$@" &
+[ -z "${JANELA_ATRASO_LANCAMENTO:-}" ] || sleep "$JANELA_ATRASO_LANCAMENTO"   # gancho de teste: alarga a fronteira do lançamento
 SPID=$!
 for _ in $(seq 1 50); do [ -s "$ESTADO/filho.pgid" ] && break; sleep 0.1; done
 PGID=$(cat "$ESTADO/filho.pgid" 2>/dev/null || true)
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 [ -n "$PGID" ] || { echo "janela-e4b: o comando não chegou a iniciar" >&2; exit 125; }
-PAI=$$
+ident_pid "$PGID" > "$ESTADO/filho.id" 2>/dev/null || true
 (
-  for _ in $(seq 1 "$LIMITE"); do [ -e "$ESTADO/fim.flag" ] && exit 0; sleep 1; done
+  echo "$BASHPID" > "$ESTADO/vigia.pid"
+  for _ in $(seq 1 "$LIMITE"); do
+    [ -e "$ESTADO/fim.flag" ] && exit 0
+    grupo_vivo || exit 0      # comando já acabou (ou o supervisor morreu e o comando também): este vigia não deve sobrar
+    sleep 1
+  done
   [ -e "$ESTADO/fim.flag" ] && exit 0
+  grupo_vivo || exit 0
   echo 1 > "$ESTADO/limite.flag"
-  if ! mata_grupo; then echo 1 > "$ESTADO/nao-morreu.flag"; kill -TERM "$PAI" 2>/dev/null; fi
+  mata_grupo; r=$?
+  if [ "$r" != 0 ]; then
+    echo "$r" > "$ESTADO/nao-morreu.flag"
+    # só sinaliza o supervisor se ele ainda é o mesmo processo (PID não reaproveitado)
+    [ "$(ident_pid "$PAI" 2>/dev/null)" = "$PAI_ID" ] && kill -TERM "$PAI" 2>/dev/null
+  fi
 ) &
 VIGIA=$!
+[ -z "$INT_PEND" ] || { echo "janela-e4b: interrompido na largada; o comando não rodou" >&2; exit "$INT_PEND"; }
+date -Is > "$ESTADO/comando-inicio.txt"
+touch "$ESTADO/vai"
 wait "$SPID"
 # setsid pode ter feito fork: espera o grupo inteiro acabar (o vigia o derruba no limite).
 while grupo_vivo; do sleep 1 & wait $!; done
 touch "$ESTADO/fim.flag"
 wait "$VIGIA" 2>/dev/null
 date -Is > "$ESTADO/comando-fim.txt"
-[ -e "$ESTADO/nao-morreu.flag" ] && NAOMORREU=1
-if [ -e "$ESTADO/limite.flag" ]; then LIMITE_ATINGIDO=1; exit 124; fi
+[ -e "$ESTADO/limite.flag" ] && exit 124
 [ -s "$ESTADO/rc-comando.txt" ] || exit 125
 exit "$(cat "$ESTADO/rc-comando.txt")"

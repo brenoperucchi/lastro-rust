@@ -21,6 +21,9 @@ a=$1; u=${2:-}
 echo "$a $u XDG=${XDG_RUNTIME_DIR:-vazio}" >> "$FAKE_DIR/log"
 case $a in
   is-active) if [ -n "${FAKE_SEM_BARRAMENTO:-}" ]; then exit 1; fi
+             if [ -n "${FAKE_FALHA:-}" ] && [ "${FAKE_FALHA%%:*}" = "$u" ]; then # FAKE_FALHA=unidade:N -> a consulta N+1 em diante falha, sem saída
+               c=$(( $(cat "$FAKE_DIR/cnt-$u" 2>/dev/null || echo 0) + 1 )); echo $c > "$FAKE_DIR/cnt-$u"; [ "$c" -gt "${FAKE_FALHA##*:}" ] && exit 1
+             fi
              [ -e "$FAKE_DIR/$u" ] && cat "$FAKE_DIR/$u" || echo inactive; [ "$(cat "$FAKE_DIR/$u" 2>/dev/null)" = active ];;
   is-enabled) echo enabled;;
   cat) [ -e "$FAKE_DIR/$u" ];;
@@ -53,6 +56,8 @@ confere() { # nome ativo_a ativo_b
   if [ "$3" = inactive ] && grep -q "^start b.timer" "$FAKE_DIR/log"; then falha "$1: iniciou b.timer que estava parado"; fi
 }
 grupo_vivo() { ps -o stat= -s "$1" 2>/dev/null | grep -qv '^Z'; }
+proc_vivo() { [ -r "/proc/$1/status" ] && ! grep -q '^State:[[:space:]]*Z' "/proc/$1/status"; } # o PROCESSO $1 existe e não é zumbi
+espera_arq() { for _ in $(seq 1 150); do [ -e "$1" ] && return 0; sleep 0.1; done; return 1; }
 espera_pgid() { for _ in $(seq 1 100); do [ -s "$1/filho.pgid" ] && return 0; sleep 0.1; done; return 1; }
 
 # 1. normal, ativo/ativo
@@ -114,40 +119,156 @@ prepara term active active
 roda_exec --estado "$D/e-term" -- bash -c 'sleep 60' & pid=$!
 espera_pgid "$D/e-term" || falha "term: o comando não iniciou"
 [ "$(cat "$FAKE_DIR/a.timer")" = inactive ] && passou "term: o timer estava parado durante o comando" || falha "term: o timer não foi parado"
+espera_arq "$D/e-term/vai" || falha "term: o comando não foi liberado"
+saida=$(SYSTEMCTL="$D/fake-systemctl" PENDENTE="$PEND" "$R" 2>&1); rc=$?
+[ $rc = 2 ] && grep -q "ainda está viva" <<<"$saida" && ! grep -q "^start " "$FAKE_DIR/log" && [ "$(cat "$FAKE_DIR/a.timer")" = inactive ] && passou "term: a recuperação recusa com a janela viva e não religa nada" || falha "term: a recuperação não recusou com a janela viva (rc=$rc)"
 kill -TERM $pid; wait $pid; rc=$?
 [ $rc = 143 ] && passou "term: saída 143" || falha "term: saída $rc"
 grupo_vivo "$(cat "$D/e-term/filho.pgid")" && falha "term: o comando sobreviveu ao TERM" || passou "term: o comando morreu junto"
 confere term active active
 
-# 8b. TERM em cinco instantes logo depois do stop (inclusive antes de o PGID ser lido): nenhum comando pode ficar órfão
+# 8b. TERM em cinco instantes logo depois do stop: nenhum comando pode ficar órfão (observa o PROCESSO marcador, não a sessão)
 for atraso in 0 0.05 0.1 0.2 0.35; do
   prepara term8b active active
   rm -f "$D/marcador-8b"
-  roda_exec --estado "$D/e-term8b-$atraso" -- bash -c "echo \$\$ > '$D/marcador-8b'; sleep 60" & pid=$!
+  roda_exec --estado "$D/e-term8b-$atraso" -- bash -c "echo \$\$ > '$D/marcador-8b'; exec sleep 60" & pid=$!
   for _ in $(seq 1 100); do grep -q "^stop a.timer" "$FAKE_DIR/log" && break; sleep 0.02; done
   sleep "$atraso"; kill -TERM $pid; wait $pid; rc=$?
   sleep 0.3
   if [ -e "$D/marcador-8b" ]; then
     mp=$(cat "$D/marcador-8b")
-    if grupo_vivo "$mp"; then falha "term8b (atraso $atraso): o comando (PID $mp) ficou órfão"; kill -KILL -- "-$mp" 2>/dev/null; else passou "term8b (atraso $atraso): comando morto"; fi
+    if proc_vivo "$mp"; then falha "term8b (atraso $atraso): o comando (PID $mp) ficou órfão"; kill -KILL "$mp" 2>/dev/null; else passou "term8b (atraso $atraso): comando morto"; fi
   else passou "term8b (atraso $atraso): o comando nem chegou a rodar"; fi
   confere "term8b-$atraso" active active
 done
 
-# 9. SIGKILL no roteiro: nada restaura; o ponteiro e ativos.txt ficam; nova janela é recusada; a recuperação manual restaura
+mutante() { # nome padrão_sed
+  sed "$2" "$J" > "$D/mut-$1.sh"; chmod +x "$D/mut-$1.sh"
+  if diff -q "$J" "$D/mut-$1.sh" > /dev/null; then falha "mutante $1: o sed não alterou o roteiro"; return 1; fi
+}
+# 8c. Sinal na fronteira do lançamento (gancho alarga a janela entre o setsid e o registro do filho): o comando NÃO pode nem começar
+largada() { # nome roteiro
+  prepara "$1" active active; rm -f "$D/marcador-largada"
+  JANELA="$2" JANELA_ATRASO_LANCAMENTO=1 roda_exec_j "$2" --estado "$D/e-$1" -- bash -c "touch '$D/marcador-largada'; exec sleep 60" & pid=$!
+  espera_pgid "$D/e-$1" || falha "$1: o filho não iniciou"
+  sleep 0.2; kill -TERM $pid; wait $pid; rc=$?; sleep 0.4
+}
+roda_exec_j() { j=$1; shift; SYSTEMCTL="$D/fake-systemctl" PENDENTE="$PEND" JANELA_PASSO_ESPERA=0.1 XDG_RUNTIME_DIR=/run/user/fake exec "$j" --timers "$D/timers.txt" "$@"; }
+largada largada "$J"
+[ $rc = 143 ] && passou "largada: saída 143" || falha "largada: saída $rc"
+[ ! -e "$D/marcador-largada" ] && passou "largada: o comando não chegou a rodar" || falha "largada: o comando rodou"
+grupo_vivo "$(cat "$D/e-largada/filho.pgid")" && falha "largada: o grupo sobreviveu" || passou "largada: o grupo do filho morreu"
+confere largada active active
+if mutante sem-gate '/# GATE$/d'; then
+  largada largada-mut "$D/mut-sem-gate.sh"
+  if [ -e "$D/marcador-largada" ]; then passou "mutante sem aval de largada: pego (o comando rodou antes do supervisor)"; else falha "mutante sem aval de largada NÃO foi pego"; fi
+  pg=$(cat "$D/e-largada-mut/filho.pgid" 2>/dev/null); [ -n "$pg" ] && kill -KILL -- "-$pg" 2>/dev/null
+fi
+
+# 8d. Flags do vigia: saída 5 (não morreu) e limite registrado; restauração incompleta prevalece (4); só limite = 124
+sinaliza_flags() { # nome flags... ; env extra por fora
+  n=$1; shift
+  prepara "$n" active active
+  roda_exec --estado "$D/e-$n" -- bash -c 'exec sleep 60' & pid=$!
+  espera_arq "$D/e-$n/vai" || falha "$n: o comando não foi liberado"
+  for f in "$@"; do touch "$D/e-$n/$f"; done
+  kill -TERM $pid; wait $pid; rc=$?
+}
+sinaliza_flags flags nao-morreu.flag limite.flag
+[ $rc = 5 ] && passou "flags: saída 5 (o comando não morreu)" || falha "flags: saída $rc"
+grep -q "limite atingido: 1" "$D/e-flags/resultado.txt" && grep -q "processo não morreu: 1" "$D/e-flags/resultado.txt" && passou "flags: resultado.txt registra limite e processo persistente" || falha "flags: resultado.txt"
+confere flags active active
+FAKE_START_FALHA=a.timer sinaliza_flags flags4 nao-morreu.flag limite.flag
+[ $rc = 4 ] && passou "flags+falha: restauração incompleta prevalece (4)" || falha "flags+falha: saída $rc"
+SYSTEMCTL="$D/fake-systemctl" PENDENTE="$PEND" "$R" > /dev/null 2>&1
+sinaliza_flags flags124 limite.flag
+[ $rc = 124 ] && passou "flags: só o limite dá 124" || falha "flags124: saída $rc"
+
+# 8e. Dois TERM seguidos: o segundo não pode interromper a restauração
+prepara dois active active
+roda_exec --estado "$D/e-dois" --kill-apos 2 -- bash -c 'trap "" TERM; sleep 60' & pid=$!
+espera_arq "$D/e-dois/vai" || falha "dois: o comando não foi liberado"
+dois_sinais() { kill -TERM $pid; sleep 0.5; kill -TERM $pid 2>/dev/null; wait $pid; rc=$?; sleep 0.3; }
+dois_sinais
+grep -q "RESTAURAÇÃO OK" "$D/e-dois/restauracao.txt" && [ -s "$D/e-dois/resultado.txt" ] && passou "dois TERM: restauração completa e resultado gravado" || falha "dois TERM: restauração interrompida"
+confere dois active active
+if mutante sem-protecao "/trap '' INT TERM HUP/d"; then
+  prepara dois2 active active
+  JANELA="$D/mut-sem-protecao.sh" roda_exec_j "$D/mut-sem-protecao.sh" --estado "$D/e-dois2" --kill-apos 2 -- bash -c 'trap "" TERM; sleep 60' & pid=$!
+  espera_arq "$D/e-dois2/vai" || falha "dois2: o comando não foi liberado"
+  dois_sinais
+  if [ "$(cat "$FAKE_DIR/a.timer")" = inactive ]; then passou "mutante sem proteção contra segundo sinal: pego (restauração cortada)"; else falha "mutante sem proteção NÃO foi pego"; fi
+  pg=$(cat "$D/e-dois2/filho.pgid" 2>/dev/null); [ -n "$pg" ] && kill -KILL -- "-$pg" 2>/dev/null
+fi
+
+# 8f. Identidade divergente do grupo (PID reaproveitado): nenhum sinal é enviado; saída 5
+prepara ident active active
+roda --estado "$D/e-ident" --limite 2 --kill-apos 1 -- bash -c 'sleep 60' & pid=$!
+espera_arq "$D/e-ident/filho.id" || falha "ident: sem filho.id"
+echo "$(cut -d' ' -f1 "$D/e-ident/filho.id") 1" > "$D/e-ident/filho.id"
+wait $pid; rc=$?
+[ $rc = 5 ] && passou "ident: saída 5 (grupo não reconhecido)" || falha "ident: saída $rc"
+pgi=$(cat "$D/e-ident/filho.pgid")
+grupo_vivo "$pgi" && passou "ident: nenhum sinal foi enviado ao grupo de identidade divergente" || falha "ident: o grupo foi sinalizado"
+kill -KILL -- "-$pgi" 2>/dev/null; sleep 0.2
+confere ident active active
+
+# 8g. Depois de SIGKILL no supervisor e do fim do comando, não sobra vigia
+prepara vigia active active
+roda_exec --estado "$D/e-vigia" --limite 600 -- bash -c 'sleep 3' & pid=$!
+espera_arq "$D/e-vigia/vai" || falha "vigia: o comando não foi liberado"
+kill -KILL $pid; wait $pid 2>/dev/null; sleep 6
+vp=$(cat "$D/e-vigia/vigia.pid" 2>/dev/null)
+if [ -n "$vp" ] && ! proc_vivo "$vp"; then passou "vigia: nenhum vigia sobrou depois do fim do comando"; else falha "vigia: o vigia (PID ${vp:-?}) sobrou"; kill -KILL "$vp" 2>/dev/null; fi
+SYSTEMCTL="$D/fake-systemctl" PENDENTE="$PEND" "$R" > /dev/null 2>&1
+confere vigia active active
+
+# 8h. Duas janelas ao mesmo tempo: exatamente uma executa
+for rep in 1 2 3; do
+  prepara conc$rep active active
+  ( roda --estado "$D/e-conc$rep-1" -- bash -c 'sleep 1' > /dev/null 2>&1; echo $? > "$D/rc-conc$rep-1" ) &
+  ( roda --estado "$D/e-conc$rep-2" -- bash -c 'sleep 1' > /dev/null 2>&1; echo $? > "$D/rc-conc$rep-2" ) &
+  wait
+  r=$(sort "$D/rc-conc$rep-1" "$D/rc-conc$rep-2" | tr '\n' ' ')
+  [ "$r" = "0 2 " ] && passou "concorrência $rep: uma janela executou e a outra recusou" || falha "concorrência $rep: saídas '$r'"
+  confere conc$rep active active
+done
+
+# 9. SIGKILL no roteiro: nada restaura; ponteiro e ativos.txt ficam; nova janela é recusada; a recuperação restaura os timers MAS mantém
+#    o ponteiro enquanto o comando órfão viver (nova janela segue recusada); só depois do fim do comando o ponteiro sai
 prepara sigkill active active
 roda_exec --estado "$D/e-sigkill" -- bash -c 'sleep 60' & pid=$!
-espera_pgid "$D/e-sigkill" || falha "sigkill: o comando não iniciou"
+espera_arq "$D/e-sigkill/vai" || falha "sigkill: o comando não foi liberado"
+sleep 0.3
 kill -KILL $pid; wait $pid 2>/dev/null
 [ "$(cat "$FAKE_DIR/a.timer")" = inactive ] && [ -s "$PEND" ] && passou "sigkill: o timer ficou parado e o ponteiro ficou (como esperado: o trap não cobre SIGKILL)" || falha "sigkill: estado depois do SIGKILL"
 roda --estado "$D/e-sigkill2" -- bash -c 'exit 0' > "$D/saida-sigkill2.txt" 2>&1; rc=$?
-[ $rc = 2 ] && grep -q "não recuperada" "$D/saida-sigkill2.txt" && passou "sigkill: nova janela recusada enquanto houver janela pendente" || falha "sigkill: nova janela não foi recusada (rc=$rc)"
+[ $rc = 2 ] && grep -q "reservar a janela\|não recuperada" "$D/saida-sigkill2.txt" && passou "sigkill: nova janela recusada enquanto houver janela pendente" || falha "sigkill: nova janela não foi recusada (rc=$rc)"
 saida=$(SYSTEMCTL="$D/fake-systemctl" PENDENTE="$PEND" "$R" 2>&1); rc=$?
-[ $rc = 0 ] && passou "sigkill: recuperação manual saiu 0" || falha "sigkill: recuperação saiu $rc"
+[ $rc = 3 ] && passou "sigkill: recuperação restaurou os timers e saiu 3 (comando órfão vivo)" || falha "sigkill: recuperação saiu $rc"
 echo "$saida" | grep -q "ATENÇÃO" && passou "sigkill: a recuperação avisou do processo órfão sem matá-lo" || falha "sigkill: não avisou do órfão"
 confere sigkill active active
-[ ! -e "$PEND" ] && passou "sigkill: ponteiro apagado depois da recuperação" || falha "sigkill: ponteiro ficou"
-pg=$(cat "$D/e-sigkill/filho.pgid"); kill -TERM -- "-$pg" 2>/dev/null; sleep 0.3
+[ -s "$PEND" ] && passou "sigkill: ponteiro mantido com o comando órfão vivo" || falha "sigkill: ponteiro foi apagado com o órfão vivo"
+roda --estado "$D/e-sigkill3" -- bash -c 'exit 0' > /dev/null 2>&1; rc=$?
+[ $rc = 2 ] && passou "sigkill: nova janela segue recusada com o órfão vivo" || falha "sigkill: nova janela liberada com o órfão vivo (rc=$rc)"
+pg=$(cat "$D/e-sigkill/filho.pgid"); kill -TERM -- "-$pg" 2>/dev/null; sleep 0.5
+saida=$(SYSTEMCTL="$D/fake-systemctl" PENDENTE="$PEND" "$R" 2>&1); rc=$?
+[ $rc = 0 ] && [ ! -e "$PEND" ] && passou "sigkill: depois do fim do comando a recuperação sai 0 e apaga o ponteiro" || falha "sigkill: recuperação final saiu $rc"
+roda --estado "$D/e-sigkill4" -- bash -c 'exit 0' > /dev/null 2>&1; rc=$?
+[ $rc = 0 ] && passou "sigkill: nova janela liberada depois da recuperação" || falha "sigkill: nova janela recusada depois da recuperação (rc=$rc)"
+
+# 9b. Recuperação com identidade divergente (reboot ou PID reaproveitado): não acusa nem sugere matar processo alheio
+prepara ident2 inactive inactive
+mkdir -p "$D/e-ident2"; : > "$D/e-ident2/ativos.txt"
+sleep 30 & alheio=$!
+echo "$alheio" > "$D/e-ident2/filho.pgid"; echo "00000000-0000-0000-0000-000000000000 1" > "$D/e-ident2/filho.id"
+echo "$D/e-ident2" > "$PEND"
+setsid sleep 30 & alheio_sessao=$!
+sleep 0.2
+echo "$alheio_sessao" > "$D/e-ident2/filho.pgid"
+saida=$(SYSTEMCTL="$D/fake-systemctl" PENDENTE="$PEND" "$R" 2>&1); rc=$?
+if [ $rc = 0 ] && ! grep -q "ATENÇÃO" <<<"$saida" && grep -q "outro boot" <<<"$saida"; then passou "ident2: recuperação não tratou o processo alheio como o comando"; else falha "ident2: rc=$rc saída: $saida"; fi
+kill "$alheio" "$alheio_sessao" 2>/dev/null
 
 # 10. restauração que falha: saída 4, ponteiro fica, recuperação depois funciona
 prepara rfalha active active
@@ -189,10 +310,6 @@ XDG_RUNTIME_DIR_TESTE= prepara xdg active active
 grep -q "XDG=/run/user/$(id -u)" "$FAKE_DIR/log" && passou "sem XDG_RUNTIME_DIR no ambiente: o roteiro usa /run/user/<uid>" || falha "XDG_RUNTIME_DIR padrão"
 
 # 15. mutantes que o teste TEM de pegar
-mutante() { # nome padrão_sed
-  sed "$2" "$J" > "$D/mut-$1.sh"; chmod +x "$D/mut-$1.sh"
-  if diff -q "$J" "$D/mut-$1.sh" > /dev/null; then falha "mutante $1: o sed não alterou o roteiro"; return 1; fi
-}
 # (a) sem a restauração armada: o caso normal tem de deixar o timer parado
 if mutante sem-trap 's/^trap finaliza EXIT$/:/'; then
   prepara mut1 active active
@@ -219,6 +336,35 @@ if mutante sem-espera 's/^  \[ \$ocupado = 0 \] && break$/  break/'; then
   rm -f "$D/marcador-mut4"
   JANELA="$D/mut-sem-espera.sh" roda --estado "$D/e-mut4" --espera 2 -- bash -c "touch '$D/marcador-mut4'" > /dev/null 2>&1
   [ -e "$D/marcador-mut4" ] && passou "mutante sem espera: pego (o comando rodou com serviço em curso)" || falha "mutante sem espera NÃO foi pego"
+fi
+
+# 16. Consulta ao systemd que falha DEPOIS do preflight (snapshot, stop, espera, conferência final): nunca vira estado seguro
+for u in a.timer a.service b.timer; do
+  for n in 0 1 2 3 4 5 6 7 8; do
+    nome="pf-${u//./_}-$n"; prepara "$nome" active active; rm -f "$D/marcador-$nome"
+    FAKE_FALHA="$u:$n" roda --estado "$D/e-$nome" --espera 2 -- bash -c "cat '$FAKE_DIR/a.timer' '$FAKE_DIR/b.timer' > '$D/marcador-$nome'" > /dev/null 2>&1; rc=$?
+    fa=$(cat "$FAKE_DIR/a.timer"); fb=$(cat "$FAKE_DIR/b.timer")
+    if [ -e "$PEND" ]; then [ $rc = 4 ] || falha "falha $u:$n: ponteiro mantido com saída $rc (esperava 4)"
+    else { [ "$fa" = active ] && [ "$fb" = active ]; } || falha "falha $u:$n: estado final $fa/$fb sem ponteiro (rc=$rc)"; fi
+    if [ -e "$D/marcador-$nome" ]; then
+      [ "$(tr '\n' ' ' < "$D/marcador-$nome")" = "inactive inactive " ] || falha "falha $u:$n: o comando rodou sem a pausa confirmada ($(tr '\n' ' ' < "$D/marcador-$nome"))"
+    fi
+    if [ -e "$PEND" ]; then
+      SYSTEMCTL="$D/fake-systemctl" PENDENTE="$PEND" "$R" > /dev/null 2>&1 || falha "falha $u:$n: a recuperação manual não fechou"
+      confere "falha-$u-$n" active active
+    fi
+  done
+done
+passou "falhas seletivas de consulta: invariantes mantidos (27 casos)"
+# serviço ocupado + consulta que falha na espera: o comando NÃO roda (exit 7)
+prepara ocfalha active active active; rm -f "$D/marcador-ocfalha"
+FAKE_FALHA="a.service:1" roda --estado "$D/e-ocfalha" --espera 2 -- bash -c "touch '$D/marcador-ocfalha'" > /dev/null 2>&1; rc=$?
+[ $rc = 7 ] && [ ! -e "$D/marcador-ocfalha" ] && passou "consulta inconclusiva na espera: saída 7 e o comando não rodou" || falha "ocfalha: rc=$rc"
+confere ocfalha active active
+if mutante sem-validacao 's/estado_conhecido "\$v" || return 1;/:;/'; then
+  prepara ocfalha2 active active active; rm -f "$D/marcador-ocfalha"
+  FAKE_FALHA="a.service:1" JANELA="$D/mut-sem-validacao.sh" roda --estado "$D/e-ocfalha2" --espera 2 -- bash -c "touch '$D/marcador-ocfalha'" > /dev/null 2>&1
+  [ -e "$D/marcador-ocfalha" ] && passou "mutante sem validação: pego (o comando rodou com serviço em curso)" || falha "mutante sem validação NÃO foi pego"
 fi
 
 [ $ok = 1 ] && { echo "TODOS OS CASOS PASSAM"; exit 0; } || { echo "HÁ FALHA"; exit 1; }
