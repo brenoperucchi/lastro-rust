@@ -1,0 +1,8 @@
+== célula 3b C quente (500 ids por pedido)
+meta: 10000.0 ms (10.00 s)
+mediana do indicador de produto COM T_sequencia (DECIDE contra a meta): 14782.9 ms (14.78 s)
+só descrição, não decide: mediana SEM T_sequencia (o que seria com reset no Engine) 9071.1 ms (9.07 s); T_sequencia mediano 5703.6 ms (5.70 s); pior repetição 15222.1 ms (15.22 s); desvio 223.7 ms (0.22 s)
+só descrição, não decide: repetições com primeiro token não visível: 0 de 5
+motivo(s) (nível 2): meta
+rótulo da célula: NÃO ATINGE
+integridade do conjunto: íntegra

@@ -1,0 +1,5 @@
+Nota datada, ao lado do criterio-5b-primeira-palavra.txt (sha256 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b, NAO editado).
+Registrada em 07/11 19:56, antes de abrir a J2 (pedido do revisor lastro-rust-rev-2, parecer r97).
+Decisao do Breno, via coordenador, 07/11 19:56: se o quente por pedido (J2) der NAO ATINGE, a J3 (fria, processos novos) roda mesmo assim.
+O NAO ATINGE quente vai ao Breno como achado, junto com o pedido de decisao sobre reset de sequencia no Engine (hoje cada pedido recria motor e backend; T_sequencia entra no quente).
+Isto nao muda rotulos nem tempos do criterio. REPROVA ou SEM PROVA continuam parando tudo sem repeticao.

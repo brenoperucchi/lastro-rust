@@ -1,0 +1,101 @@
+integridade antes: binário c04af9514895d9c5e06d6361184309cf39e38edb2f9ac2cc1a680c4a4cfa1eff; critério 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b; 4 arquivos de entrada
+To
+1b C aquecimento descartado, produto 9829.7 ms (entrada 0.01, token 0.15, sequência 2808.7, leitura 7020.7, logits 0.1, escolha 0.022, detok 0.001, entrega 0.037); token 705 "To"; contadores Contadores { needed: 95808, hits: 9434, cpu: 86374 }
+To
+1b C repetição 1/5 produto 6271.9 ms (entrada 0.09, token 0.20, sequência 1863.2, leitura 4408.2, logits 0.3, escolha 0.022, detok 0.002, entrega 0.036); token 705 "To"; contadores Contadores { needed: 95808, hits: 9434, cpu: 86374 }
+To
+1b C repetição 2/5 produto 6253.4 ms (entrada 0.09, token 0.28, sequência 1841.0, leitura 4412.0, logits 0.1, escolha 0.021, detok 0.002, entrega 0.024); token 705 "To"; contadores Contadores { needed: 95808, hits: 9434, cpu: 86374 }
+To
+1b C repetição 3/5 produto 6190.1 ms (entrada 0.05, token 0.19, sequência 1765.9, leitura 4423.7, logits 0.2, escolha 0.048, detok 0.002, entrega 0.043); token 705 "To"; contadores Contadores { needed: 95808, hits: 9434, cpu: 86374 }
+To
+1b C repetição 4/5 produto 6151.5 ms (entrada 0.03, token 0.19, sequência 1750.9, leitura 4399.9, logits 0.5, escolha 0.021, detok 0.001, entrega 0.027); token 705 "To"; contadores Contadores { needed: 95808, hits: 9434, cpu: 86374 }
+To
+1b C repetição 5/5 produto 6370.4 ms (entrada 0.04, token 0.20, sequência 1772.3, leitura 4597.6, logits 0.2, escolha 0.042, detok 0.001, entrega 0.030); token 705 "To"; contadores Contadores { needed: 95808, hits: 9434, cpu: 86374 }
+== célula 1b C quente (500 ids por pedido)
+meta: 5000.0 ms (5.00 s)
+mediana do indicador de produto COM T_sequencia (DECIDE contra a meta): 6253.4 ms (6.25 s)
+só descrição, não decide: mediana SEM T_sequencia (o que seria com reset no Engine) 4412.4 ms (4.41 s); T_sequencia mediano 1772.3 ms (1.77 s); pior repetição 6370.4 ms (6.37 s); desvio 84.0 ms (0.08 s)
+só descrição, não decide: repetições com primeiro token não visível: 0 de 5
+motivo(s) (nível 2): meta
+rótulo da célula: NÃO ATINGE
+integridade conferida no fim da célula: íntegra
+
+copied
+1b A aquecimento descartado, produto 19452.4 ms (entrada 0.01, token 0.68, sequência 1820.2, leitura 17631.3, logits 0.2, escolha 0.023, detok 0.002, entrega 0.026); token 40281 "copied"; contadores Contadores { needed: 384576, hits: 37865, cpu: 346711 }
+copied
+1b A repetição 1/5 produto 19913.7 ms (entrada 0.03, token 0.64, sequência 1776.6, leitura 18136.2, logits 0.2, escolha 0.022, detok 0.002, entrega 0.023); token 40281 "copied"; contadores Contadores { needed: 384576, hits: 37865, cpu: 346711 }
+copied
+1b A repetição 2/5 produto 23436.9 ms (entrada 0.03, token 0.65, sequência 1902.3, leitura 21533.3, logits 0.4, escolha 0.023, detok 0.002, entrega 0.106); token 40281 "copied"; contadores Contadores { needed: 384576, hits: 37865, cpu: 346711 }
+copied
+1b A repetição 3/5 produto 21103.6 ms (entrada 0.06, token 0.80, sequência 2098.0, leitura 19004.5, logits 0.2, escolha 0.022, detok 0.002, entrega 0.026); token 40281 "copied"; contadores Contadores { needed: 384576, hits: 37865, cpu: 346711 }
+copied
+1b A repetição 4/5 produto 20575.8 ms (entrada 0.03, token 0.65, sequência 1921.8, leitura 18653.1, logits 0.1, escolha 0.022, detok 0.001, entrega 0.030); token 40281 "copied"; contadores Contadores { needed: 384576, hits: 37865, cpu: 346711 }
+copied
+1b A repetição 5/5 produto 21479.2 ms (entrada 0.03, token 0.64, sequência 1937.8, leitura 19540.6, logits 0.2, escolha 0.022, detok 0.002, entrega 0.016); token 40281 "copied"; contadores Contadores { needed: 384576, hits: 37865, cpu: 346711 }
+== célula 1b A quente (2003 ids por pedido)
+meta: 15000.0 ms (15.00 s)
+mediana do indicador de produto COM T_sequencia (DECIDE contra a meta): 21103.6 ms (21.10 s)
+só descrição, não decide: mediana SEM T_sequencia (o que seria com reset no Engine) 19005.6 ms (19.01 s); T_sequencia mediano 1921.8 ms (1.92 s); pior repetição 23436.9 ms (23.44 s); desvio 1330.7 ms (1.33 s)
+só descrição, não decide: repetições com primeiro token não visível: 0 de 5
+motivo(s) (nível 2): meta
+rótulo da célula: NÃO ATINGE
+integridade conferida no fim da célula: íntegra
+
+A
+3b C aquecimento descartado, produto 17370.5 ms (entrada 0.01, token 0.16, sequência 5553.2, leitura 11817.0, logits 0.2, escolha 0.041, detok 0.002, entrega 0.020); token 51 "A"; contadores Contadores { needed: 127744, hits: 12308, cpu: 115436 }
+A
+3b C repetição 1/5 produto 14782.9 ms (entrada 0.09, token 0.21, sequência 5754.9, leitura 9027.6, logits 0.1, escolha 0.022, detok 0.002, entrega 0.017); token 51 "A"; contadores Contadores { needed: 127744, hits: 12308, cpu: 115436 }
+A
+3b C repetição 2/5 produto 15222.1 ms (entrada 0.07, token 0.22, sequência 5621.8, leitura 9599.9, logits 0.2, escolha 0.022, detok 0.002, entrega 0.023); token 51 "A"; contadores Contadores { needed: 127744, hits: 12308, cpu: 115436 }
+A
+3b C repetição 3/5 produto 15043.6 ms (entrada 0.04, token 0.21, sequência 5744.5, leitura 9298.6, logits 0.2, escolha 0.022, detok 0.002, entrega 0.018); token 51 "A"; contadores Contadores { needed: 127744, hits: 12308, cpu: 115436 }
+A
+3b C repetição 4/5 produto 14694.9 ms (entrada 0.04, token 0.22, sequência 5703.6, leitura 8990.9, logits 0.2, escolha 0.022, detok 0.001, entrega 0.019); token 51 "A"; contadores Contadores { needed: 127744, hits: 12308, cpu: 115436 }
+A
+3b C repetição 5/5 produto 14758.5 ms (entrada 0.04, token 0.21, sequência 5687.5, leitura 9070.6, logits 0.2, escolha 0.022, detok 0.001, entrega 0.034); token 51 "A"; contadores Contadores { needed: 127744, hits: 12308, cpu: 115436 }
+== célula 3b C quente (500 ids por pedido)
+meta: 10000.0 ms (10.00 s)
+mediana do indicador de produto COM T_sequencia (DECIDE contra a meta): 14782.9 ms (14.78 s)
+só descrição, não decide: mediana SEM T_sequencia (o que seria com reset no Engine) 9071.1 ms (9.07 s); T_sequencia mediano 5703.6 ms (5.70 s); pior repetição 15222.1 ms (15.22 s); desvio 223.7 ms (0.22 s)
+só descrição, não decide: repetições com primeiro token não visível: 0 de 5
+motivo(s) (nível 2): meta
+rótulo da célula: NÃO ATINGE
+integridade conferida no fim da célula: íntegra
+
+ac
+3b A aquecimento descartado, produto 41668.4 ms (entrada 0.01, token 0.64, sequência 5582.5, leitura 36085.0, logits 0.2, escolha 0.022, detok 0.001, entrega 0.036); token 329 "ac"; contadores Contadores { needed: 512768, hits: 50409, cpu: 462359 }
+ac
+3b A repetição 1/5 produto 42179.5 ms (entrada 0.03, token 0.65, sequência 5653.7, leitura 36524.9, logits 0.1, escolha 0.022, detok 0.001, entrega 0.021); token 329 "ac"; contadores Contadores { needed: 512768, hits: 50409, cpu: 462359 }
+ac
+3b A repetição 2/5 produto 42692.1 ms (entrada 0.04, token 0.67, sequência 5689.0, leitura 37002.1, logits 0.2, escolha 0.022, detok 0.002, entrega 0.021); token 329 "ac"; contadores Contadores { needed: 512768, hits: 50409, cpu: 462359 }
+ac
+3b A repetição 3/5 produto 43642.4 ms (entrada 0.04, token 0.68, sequência 5739.2, leitura 37902.2, logits 0.2, escolha 0.022, detok 0.002, entrega 0.031); token 329 "ac"; contadores Contadores { needed: 512768, hits: 50409, cpu: 462359 }
+ac
+3b A repetição 4/5 produto 42785.0 ms (entrada 0.04, token 0.68, sequência 5782.0, leitura 37002.1, logits 0.2, escolha 0.022, detok 0.002, entrega 0.019); token 329 "ac"; contadores Contadores { needed: 512768, hits: 50409, cpu: 462359 }
+ac
+3b A repetição 5/5 produto 42267.2 ms (entrada 0.04, token 0.67, sequência 5662.1, leitura 36604.3, logits 0.1, escolha 0.022, detok 0.001, entrega 0.028); token 329 "ac"; contadores Contadores { needed: 512768, hits: 50409, cpu: 462359 }
+== célula 3b A quente (2003 ids por pedido)
+meta: 30000.0 ms (30.00 s)
+mediana do indicador de produto COM T_sequencia (DECIDE contra a meta): 42692.1 ms (42.69 s)
+só descrição, não decide: mediana SEM T_sequencia (o que seria com reset no Engine) 37003.0 ms (37.00 s); T_sequencia mediano 5689.0 ms (5.69 s); pior repetição 43642.4 ms (43.64 s); desvio 581.5 ms (0.58 s)
+só descrição, não decide: repetições com primeiro token não visível: 0 de 5
+motivo(s) (nível 2): meta
+rótulo da célula: NÃO ATINGE
+integridade conferida no fim da célula: íntegra
+
+decisão da primeira palavra a partir de texto cru, velocidade, estado quente (ATINGE, NÃO ATINGE, SEM PROVA; resultado DESCRITIVO, vai ao Breno):
+  1b C quente: NÃO ATINGE: mediana com T_sequencia 6.25 s (meta 5.00 s); sem T_sequencia 4.41 s [meta]
+  1b A quente: NÃO ATINGE: mediana com T_sequencia 21.10 s (meta 15.00 s); sem T_sequencia 19.01 s [meta]
+  3b C quente: NÃO ATINGE: mediana com T_sequencia 14.78 s (meta 10.00 s); sem T_sequencia 9.07 s [meta]
+  3b A quente: NÃO ATINGE: mediana com T_sequencia 42.69 s (meta 30.00 s); sem T_sequencia 37.00 s [meta]
+conjunto: NÃO ATINGE
+integridade: binário, critério e arquivos de entrada IGUAIS aos gravados e aos congelados
+o quente por pedido INCLUI T_sequencia (o Engine não tem reset); a mediana sem T_sequencia está nos relatórios, só como descrição
+carga externa (nvidia-smi, loadavg, timers): registrada à parte, antes e depois da janela, pelo script da janela, fora deste programa; não decide rótulo
+
+Running as unit: lastro-limite-629983-1794092215102673124.service
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 8min 56.648s
+             CPU time consumed: 1h 4min 2.361s
+                   Memory peak: 17.8G (swap: 0B)

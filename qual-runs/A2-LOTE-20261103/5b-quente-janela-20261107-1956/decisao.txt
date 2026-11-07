@@ -1,0 +1,9 @@
+decisão da primeira palavra a partir de texto cru, velocidade, estado quente (ATINGE, NÃO ATINGE, SEM PROVA; resultado DESCRITIVO, vai ao Breno):
+  1b C quente: NÃO ATINGE: mediana com T_sequencia 6.25 s (meta 5.00 s); sem T_sequencia 4.41 s [meta]
+  1b A quente: NÃO ATINGE: mediana com T_sequencia 21.10 s (meta 15.00 s); sem T_sequencia 19.01 s [meta]
+  3b C quente: NÃO ATINGE: mediana com T_sequencia 14.78 s (meta 10.00 s); sem T_sequencia 9.07 s [meta]
+  3b A quente: NÃO ATINGE: mediana com T_sequencia 42.69 s (meta 30.00 s); sem T_sequencia 37.00 s [meta]
+conjunto: NÃO ATINGE
+integridade: binário, critério e arquivos de entrada IGUAIS aos gravados e aos congelados
+o quente por pedido INCLUI T_sequencia (o Engine não tem reset); a mediana sem T_sequencia está nos relatórios, só como descrição
+carga externa (nvidia-smi, loadavg, timers): registrada à parte, antes e depois da janela, pelo script da janela, fora deste programa; não decide rótulo

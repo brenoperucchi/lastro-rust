@@ -1,0 +1,136 @@
+{
+  "aquecimento": [
+    "aquecimento descartado, produto 19452.4 ms (entrada 0.01, token 0.68, sequência 1820.2, leitura 17631.3, logits 0.2, escolha 0.023, detok 0.002, entrega 0.026); token 40281 \"copied\"; contadores Contadores { needed: 384576, hits: 37865, cpu: 346711 }"
+  ],
+  "cenario": "A",
+  "extras": {
+    "arq:/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5b-textos/pedido-A.txt": "4ab72d751f8f7e67c6c93513f235ad239f0cb54c21e391dc664bc71d62a54d44",
+    "arq:/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5b-textos/pedido-C.txt": "e80bce7b40f94aa2c86cb5f2e8345f7230982711e7ec0441654df8c273157b25",
+    "arq:/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct/tokenizer.json": "ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654",
+    "arq:/home/brenoperucchi/models/granite-3.1-3b-a800m-instruct/tokenizer.json": "ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654",
+    "hash_bin": "c04af9514895d9c5e06d6361184309cf39e38edb2f9ac2cc1a680c4a4cfa1eff",
+    "hash_criterio": "4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b"
+  },
+  "falha": null,
+  "ids_n": 2003,
+  "integro": true,
+  "modelo": "1b",
+  "reps": [
+    {
+      "cpu": 346711,
+      "crono": {
+        "T_detok": 0.0017230000000000001,
+        "T_entrada": 0.033183,
+        "T_entrega": 0.022974,
+        "T_escolha": 0.022002,
+        "T_leitura": 18136.241887,
+        "T_logits": 0.168651,
+        "T_sequencia": 1776.599967,
+        "T_token": 0.644217
+      },
+      "gap": 0.8426780700683594,
+      "hits": 37865,
+      "ids_fnv": "13e217b73c1681af",
+      "ids_n": 2003,
+      "logits_ok": true,
+      "needed": 384576,
+      "palavra": "copied",
+      "produto_ms": 19913.701902,
+      "token": 40281,
+      "visivel": true
+    },
+    {
+      "cpu": 346711,
+      "crono": {
+        "T_detok": 0.002395,
+        "T_entrada": 0.032742,
+        "T_entrega": 0.106052,
+        "T_escolha": 0.022623,
+        "T_leitura": 21533.291984000003,
+        "T_logits": 0.443776,
+        "T_sequencia": 1902.343316,
+        "T_token": 0.648876
+      },
+      "gap": 0.8426780700683594,
+      "hits": 37865,
+      "ids_fnv": "13e217b73c1681af",
+      "ids_n": 2003,
+      "logits_ok": true,
+      "needed": 384576,
+      "palavra": "copied",
+      "produto_ms": 23436.859822,
+      "token": 40281,
+      "visivel": true
+    },
+    {
+      "cpu": 346711,
+      "crono": {
+        "T_detok": 0.001593,
+        "T_entrada": 0.056297,
+        "T_entrega": 0.0263,
+        "T_escolha": 0.021832,
+        "T_leitura": 19004.530415,
+        "T_logits": 0.166918,
+        "T_sequencia": 2098.019754,
+        "T_token": 0.803261
+      },
+      "gap": 0.8426780700683594,
+      "hits": 37865,
+      "ids_fnv": "13e217b73c1681af",
+      "ids_n": 2003,
+      "logits_ok": true,
+      "needed": 384576,
+      "palavra": "copied",
+      "produto_ms": 21103.570484,
+      "token": 40281,
+      "visivel": true
+    },
+    {
+      "cpu": 346711,
+      "crono": {
+        "T_detok": 0.001333,
+        "T_entrada": 0.034325,
+        "T_entrega": 0.029947,
+        "T_escolha": 0.021741,
+        "T_leitura": 18653.123248,
+        "T_logits": 0.144906,
+        "T_sequencia": 1921.824652,
+        "T_token": 0.6511009999999999
+      },
+      "gap": 0.8426780700683594,
+      "hits": 37865,
+      "ids_fnv": "13e217b73c1681af",
+      "ids_n": 2003,
+      "logits_ok": true,
+      "needed": 384576,
+      "palavra": "copied",
+      "produto_ms": 20575.797408,
+      "token": 40281,
+      "visivel": true
+    },
+    {
+      "cpu": 346711,
+      "crono": {
+        "T_detok": 0.0022340000000000003,
+        "T_entrada": 0.03145,
+        "T_entrega": 0.016041,
+        "T_escolha": 0.022062,
+        "T_leitura": 19540.583646000003,
+        "T_logits": 0.180915,
+        "T_sequencia": 1937.7597529999998,
+        "T_token": 0.644128
+      },
+      "gap": 0.8426780700683594,
+      "hits": 37865,
+      "ids_fnv": "13e217b73c1681af",
+      "ids_n": 2003,
+      "logits_ok": true,
+      "needed": 384576,
+      "palavra": "copied",
+      "produto_ms": 21479.20914,
+      "token": 40281,
+      "visivel": true
+    }
+  ],
+  "tipo": "quente"
+}

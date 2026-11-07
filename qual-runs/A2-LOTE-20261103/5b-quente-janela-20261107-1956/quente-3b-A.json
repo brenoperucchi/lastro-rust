@@ -1,0 +1,136 @@
+{
+  "aquecimento": [
+    "aquecimento descartado, produto 41668.4 ms (entrada 0.01, token 0.64, sequência 5582.5, leitura 36085.0, logits 0.2, escolha 0.022, detok 0.001, entrega 0.036); token 329 \"ac\"; contadores Contadores { needed: 512768, hits: 50409, cpu: 462359 }"
+  ],
+  "cenario": "A",
+  "extras": {
+    "arq:/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5b-textos/pedido-A.txt": "4ab72d751f8f7e67c6c93513f235ad239f0cb54c21e391dc664bc71d62a54d44",
+    "arq:/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5b-textos/pedido-C.txt": "e80bce7b40f94aa2c86cb5f2e8345f7230982711e7ec0441654df8c273157b25",
+    "arq:/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct/tokenizer.json": "ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654",
+    "arq:/home/brenoperucchi/models/granite-3.1-3b-a800m-instruct/tokenizer.json": "ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654",
+    "hash_bin": "c04af9514895d9c5e06d6361184309cf39e38edb2f9ac2cc1a680c4a4cfa1eff",
+    "hash_criterio": "4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b"
+  },
+  "falha": null,
+  "ids_n": 2003,
+  "integro": true,
+  "modelo": "3b",
+  "reps": [
+    {
+      "cpu": 462359,
+      "crono": {
+        "T_detok": 0.001313,
+        "T_entrada": 0.034786000000000004,
+        "T_entrega": 0.020970000000000003,
+        "T_escolha": 0.021922,
+        "T_leitura": 36524.94071,
+        "T_logits": 0.140417,
+        "T_sequencia": 5653.671873,
+        "T_token": 0.6548889999999999
+      },
+      "gap": 7.322572708129883,
+      "hits": 50409,
+      "ids_fnv": "13e217b73c1681af",
+      "ids_n": 2003,
+      "logits_ok": true,
+      "needed": 512768,
+      "palavra": "ac",
+      "produto_ms": 42179.452585,
+      "token": 329,
+      "visivel": true
+    },
+    {
+      "cpu": 462359,
+      "crono": {
+        "T_detok": 0.001573,
+        "T_entrada": 0.03644,
+        "T_entrega": 0.02061,
+        "T_escolha": 0.021801,
+        "T_leitura": 37002.119524,
+        "T_logits": 0.17383200000000001,
+        "T_sequencia": 5689.045222,
+        "T_token": 0.672342
+      },
+      "gap": 7.322572708129883,
+      "hits": 50409,
+      "ids_fnv": "13e217b73c1681af",
+      "ids_n": 2003,
+      "logits_ok": true,
+      "needed": 512768,
+      "palavra": "ac",
+      "produto_ms": 42692.055314,
+      "token": 329,
+      "visivel": true
+    },
+    {
+      "cpu": 462359,
+      "crono": {
+        "T_detok": 0.0016530000000000002,
+        "T_entrada": 0.036309,
+        "T_entrega": 0.031169,
+        "T_escolha": 0.021951000000000002,
+        "T_leitura": 37902.247398,
+        "T_logits": 0.23625100000000002,
+        "T_sequencia": 5739.17597,
+        "T_token": 0.675609
+      },
+      "gap": 7.322572708129883,
+      "hits": 50409,
+      "ids_fnv": "13e217b73c1681af",
+      "ids_n": 2003,
+      "logits_ok": true,
+      "needed": 512768,
+      "palavra": "ac",
+      "produto_ms": 43642.390462,
+      "token": 329,
+      "visivel": true
+    },
+    {
+      "cpu": 462359,
+      "crono": {
+        "T_detok": 0.0016330000000000001,
+        "T_entrada": 0.036419,
+        "T_entrega": 0.019457,
+        "T_escolha": 0.021792000000000002,
+        "T_leitura": 37002.108596,
+        "T_logits": 0.158542,
+        "T_sequencia": 5782.046238999999,
+        "T_token": 0.678474
+      },
+      "gap": 7.322572708129883,
+      "hits": 50409,
+      "ids_fnv": "13e217b73c1681af",
+      "ids_n": 2003,
+      "logits_ok": true,
+      "needed": 512768,
+      "palavra": "ac",
+      "produto_ms": 42785.035183,
+      "token": 329,
+      "visivel": true
+    },
+    {
+      "cpu": 462359,
+      "crono": {
+        "T_detok": 0.001413,
+        "T_entrada": 0.037061000000000004,
+        "T_entrega": 0.027713,
+        "T_escolha": 0.021601,
+        "T_leitura": 36604.267287,
+        "T_logits": 0.14678,
+        "T_sequencia": 5662.112314,
+        "T_token": 0.6715599999999999
+      },
+      "gap": 7.322572708129883,
+      "hits": 50409,
+      "ids_fnv": "13e217b73c1681af",
+      "ids_n": 2003,
+      "logits_ok": true,
+      "needed": 512768,
+      "palavra": "ac",
+      "produto_ms": 42267.249099,
+      "token": 329,
+      "visivel": true
+    }
+  ],
+  "tipo": "quente"
+}

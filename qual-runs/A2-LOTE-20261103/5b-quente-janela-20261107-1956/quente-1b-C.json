@@ -1,0 +1,136 @@
+{
+  "aquecimento": [
+    "aquecimento descartado, produto 9829.7 ms (entrada 0.01, token 0.15, sequência 2808.7, leitura 7020.7, logits 0.1, escolha 0.022, detok 0.001, entrega 0.037); token 705 \"To\"; contadores Contadores { needed: 95808, hits: 9434, cpu: 86374 }"
+  ],
+  "cenario": "C",
+  "extras": {
+    "arq:/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5b-textos/pedido-A.txt": "4ab72d751f8f7e67c6c93513f235ad239f0cb54c21e391dc664bc71d62a54d44",
+    "arq:/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5b-textos/pedido-C.txt": "e80bce7b40f94aa2c86cb5f2e8345f7230982711e7ec0441654df8c273157b25",
+    "arq:/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct/tokenizer.json": "ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654",
+    "arq:/home/brenoperucchi/models/granite-3.1-3b-a800m-instruct/tokenizer.json": "ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654",
+    "hash_bin": "c04af9514895d9c5e06d6361184309cf39e38edb2f9ac2cc1a680c4a4cfa1eff",
+    "hash_criterio": "4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b"
+  },
+  "falha": null,
+  "ids_n": 499,
+  "integro": true,
+  "modelo": "1b",
+  "reps": [
+    {
+      "cpu": 86374,
+      "crono": {
+        "T_detok": 0.002394,
+        "T_entrada": 0.085313,
+        "T_entrega": 0.035708,
+        "T_escolha": 0.022473,
+        "T_leitura": 4408.175005,
+        "T_logits": 0.267921,
+        "T_sequencia": 1863.158243,
+        "T_token": 0.198919
+      },
+      "gap": 1.2047996520996094,
+      "hits": 9434,
+      "ids_fnv": "4e864c74b098dc52",
+      "ids_n": 499,
+      "logits_ok": true,
+      "needed": 95808,
+      "palavra": "To",
+      "produto_ms": 6271.861172999999,
+      "token": 705,
+      "visivel": true
+    },
+    {
+      "cpu": 86374,
+      "crono": {
+        "T_detok": 0.001583,
+        "T_entrada": 0.08924,
+        "T_entrega": 0.024226,
+        "T_escolha": 0.021291,
+        "T_leitura": 4411.966234,
+        "T_logits": 0.13508699999999998,
+        "T_sequencia": 1840.952838,
+        "T_token": 0.27808
+      },
+      "gap": 1.2047996520996094,
+      "hits": 9434,
+      "ids_fnv": "4e864c74b098dc52",
+      "ids_n": 499,
+      "logits_ok": true,
+      "needed": 95808,
+      "palavra": "To",
+      "produto_ms": 6253.379769,
+      "token": 705,
+      "visivel": true
+    },
+    {
+      "cpu": 86374,
+      "crono": {
+        "T_detok": 0.001563,
+        "T_entrada": 0.045066,
+        "T_entrega": 0.042531000000000006,
+        "T_escolha": 0.048102,
+        "T_leitura": 4423.73614,
+        "T_logits": 0.170995,
+        "T_sequencia": 1765.937858,
+        "T_token": 0.194531
+      },
+      "gap": 1.2047996520996094,
+      "hits": 9434,
+      "ids_fnv": "4e864c74b098dc52",
+      "ids_n": 499,
+      "logits_ok": true,
+      "needed": 95808,
+      "palavra": "To",
+      "produto_ms": 6190.1321720000005,
+      "token": 705,
+      "visivel": true
+    },
+    {
+      "cpu": 86374,
+      "crono": {
+        "T_detok": 0.001253,
+        "T_entrada": 0.030489,
+        "T_entrega": 0.026520000000000002,
+        "T_escolha": 0.021471,
+        "T_leitura": 4399.85271,
+        "T_logits": 0.518567,
+        "T_sequencia": 1750.894233,
+        "T_token": 0.19323800000000002
+      },
+      "gap": 1.2047996520996094,
+      "hits": 9434,
+      "ids_fnv": "4e864c74b098dc52",
+      "ids_n": 499,
+      "logits_ok": true,
+      "needed": 95808,
+      "palavra": "To",
+      "produto_ms": 6151.508774,
+      "token": 705,
+      "visivel": true
+    },
+    {
+      "cpu": 86374,
+      "crono": {
+        "T_detok": 0.001352,
+        "T_entrada": 0.039405,
+        "T_entrega": 0.029587,
+        "T_escolha": 0.04235,
+        "T_leitura": 4597.593589,
+        "T_logits": 0.199039,
+        "T_sequencia": 1772.345287,
+        "T_token": 0.196885
+      },
+      "gap": 1.2047996520996094,
+      "hits": 9434,
+      "ids_fnv": "4e864c74b098dc52",
+      "ids_n": 499,
+      "logits_ok": true,
+      "needed": 95808,
+      "palavra": "To",
+      "produto_ms": 6370.408501,
+      "token": 705,
+      "visivel": true
+    }
+  ],
+  "tipo": "quente"
+}
