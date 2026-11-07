@@ -1,0 +1,6 @@
+== célula 3b A frio (2003 ids)
+meta: 45000.0 ms (45.00 s)
+mediana das repetições frias (DECIDE contra a meta): 39941.2 ms (39.94 s)
+só descrição, não decide: pior repetição 40658.7 ms (40.66 s); desvio 552.1 ms (0.55 s)
+rótulo da célula: ATINGE
+integridade do conjunto: íntegra

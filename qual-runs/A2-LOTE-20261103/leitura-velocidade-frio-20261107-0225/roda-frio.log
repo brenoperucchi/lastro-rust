@@ -1,0 +1,46 @@
+07/11 02:24:01 início: 1b cenário C repetição 1
+frio 1b C rep 1: total 11832.0 ms (11.83 s), válido true, integridade íntegra
+07/11 02:24:13 fim: 1b cenário C repetição 1, código 0
+07/11 02:24:13 início: 1b cenário C repetição 2
+frio 1b C rep 2: total 10804.8 ms (10.80 s), válido true, integridade íntegra
+07/11 02:24:25 fim: 1b cenário C repetição 2, código 0
+07/11 02:24:25 início: 1b cenário C repetição 3
+frio 1b C rep 3: total 11221.6 ms (11.22 s), válido true, integridade íntegra
+07/11 02:24:37 fim: 1b cenário C repetição 3, código 0
+07/11 02:24:37 início: 1b cenário A repetição 1
+frio 1b A rep 1: total 21690.3 ms (21.69 s), válido true, integridade íntegra
+07/11 02:25:00 fim: 1b cenário A repetição 1, código 0
+07/11 02:25:00 início: 1b cenário A repetição 2
+frio 1b A rep 2: total 21207.5 ms (21.21 s), válido true, integridade íntegra
+07/11 02:25:22 fim: 1b cenário A repetição 2, código 0
+07/11 02:25:22 início: 1b cenário A repetição 3
+frio 1b A rep 3: total 21280.2 ms (21.28 s), válido true, integridade íntegra
+07/11 02:25:44 fim: 1b cenário A repetição 3, código 0
+07/11 02:25:44 início: 3b cenário C repetição 1
+frio 3b C rep 1: total 21223.0 ms (21.22 s), válido true, integridade íntegra
+07/11 02:26:07 fim: 3b cenário C repetição 1, código 0
+07/11 02:26:07 início: 3b cenário C repetição 2
+frio 3b C rep 2: total 20801.3 ms (20.80 s), válido true, integridade íntegra
+07/11 02:26:29 fim: 3b cenário C repetição 2, código 0
+07/11 02:26:29 início: 3b cenário C repetição 3
+frio 3b C rep 3: total 20184.6 ms (20.18 s), válido true, integridade íntegra
+07/11 02:26:51 fim: 3b cenário C repetição 3, código 0
+07/11 02:26:51 início: 3b cenário A repetição 1
+frio 3b A rep 1: total 39941.2 ms (39.94 s), válido true, integridade íntegra
+07/11 02:27:32 fim: 3b cenário A repetição 1, código 0
+07/11 02:27:32 início: 3b cenário A repetição 2
+frio 3b A rep 2: total 39573.1 ms (39.57 s), válido true, integridade íntegra
+07/11 02:28:13 fim: 3b cenário A repetição 2, código 0
+07/11 02:28:13 início: 3b cenário A repetição 3
+frio 3b A rep 3: total 40658.7 ms (40.66 s), válido true, integridade íntegra
+07/11 02:28:55 fim: 3b cenário A repetição 3, código 0
+07/11 02:28:55 consolidação (sem GPU)
+decisão da velocidade da leitura em blocos de 8, estado frio (regra de rótulos do critério):
+  1b C frio: ATINGE: mediana 11.22 s (meta 20 s)
+  1b A frio: ATINGE: mediana 21.28 s (meta 30 s)
+  3b C frio: ATINGE: mediana 20.80 s (meta 30 s)
+  3b A frio: ATINGE: mediana 39.94 s (meta 45 s)
+conjunto: ATINGE
+integridade: binário, critério e arquivos de ids IGUAIS aos gravados
+carga externa (nvidia-smi, loadavg, timers): registrada pelo script da janela, fora deste programa; não decide rótulo
+
