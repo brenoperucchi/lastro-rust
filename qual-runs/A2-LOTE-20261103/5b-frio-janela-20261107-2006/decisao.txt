@@ -1,0 +1,8 @@
+decisão da primeira palavra a partir de texto cru, velocidade, estado frio (ATINGE, NÃO ATINGE, SEM PROVA; resultado DESCRITIVO, vai ao Breno):
+  1b C frio: ATINGE: mediana 12.66 s (meta 20.00 s)
+  1b A frio: ATINGE: mediana 26.30 s (meta 30.00 s)
+  3b C frio: ATINGE: mediana 24.04 s (meta 30.00 s)
+  3b A frio: NÃO ATINGE: mediana 50.98 s (meta 45.00 s) [meta]
+conjunto: NÃO ATINGE
+integridade: binário, critério e arquivos de entrada IGUAIS aos gravados e aos congelados
+carga externa (nvidia-smi, loadavg, timers): registrada à parte, antes e depois da janela, pelo script da janela, fora deste programa; não decide rótulo

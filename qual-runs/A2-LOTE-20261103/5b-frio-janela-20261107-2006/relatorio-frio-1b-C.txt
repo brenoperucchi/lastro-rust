@@ -1,0 +1,7 @@
+== célula 1b C frio (500 ids por pedido)
+meta: 20000.0 ms (20.00 s)
+mediana das repetições frias, do início do main até a palavra entregue (DECIDE contra a meta): 12657.3 ms (12.66 s)
+só descrição, não decide: pior repetição 12674.6 ms (12.67 s); desvio 147.1 ms (0.15 s)
+só descrição, não decide: repetições com primeiro token não visível: 0 de 3
+rótulo da célula: ATINGE
+integridade do conjunto: íntegra

@@ -1,0 +1,3 @@
+Janela J3 (5b, velocidade FRIA, RTX 4090 GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd), 07/11 20:06.
+Autorizacao permanente do Breno via coordenador, 07/11 01:42, confirmada para o 5b em 19:24. Decisao do Breno (19:56): a J3 roda mesmo com NAO ATINGE no quente (nota-criterio-5b-j3-apos-quente-20261107.txt). J2 fechada e commitada antes desta janela.
+Criterio sha256 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b; limite 30 min; sem repeticao automatica; 5090 fora.

@@ -1,0 +1,58 @@
+07/11 20:06:22 início: 1b cenário C repetição 1
+To
+frio 1b C rep 1: total 12657.3 ms (12.66 s), válido true, integridade íntegra
+07/11 20:06:36 fim: 1b cenário C repetição 1, código 0
+07/11 20:06:36 início: 1b cenário C repetição 2
+To
+frio 1b C rep 2: total 12674.6 ms (12.67 s), válido true, integridade íntegra
+07/11 20:06:49 fim: 1b cenário C repetição 2, código 0
+07/11 20:06:50 início: 1b cenário C repetição 3
+To
+frio 1b C rep 3: total 12411.6 ms (12.41 s), válido true, integridade íntegra
+07/11 20:07:03 fim: 1b cenário C repetição 3, código 0
+07/11 20:07:03 início: 1b cenário A repetição 1
+copied
+frio 1b A rep 1: total 25845.4 ms (25.85 s), válido true, integridade íntegra
+07/11 20:07:29 fim: 1b cenário A repetição 1, código 0
+07/11 20:07:29 início: 1b cenário A repetição 2
+copied
+frio 1b A rep 2: total 26298.1 ms (26.30 s), válido true, integridade íntegra
+07/11 20:07:57 fim: 1b cenário A repetição 2, código 0
+07/11 20:07:57 início: 1b cenário A repetição 3
+copied
+frio 1b A rep 3: total 26646.7 ms (26.65 s), válido true, integridade íntegra
+07/11 20:08:24 fim: 1b cenário A repetição 3, código 0
+07/11 20:08:24 início: 3b cenário C repetição 1
+A
+frio 3b C rep 1: total 23335.2 ms (23.34 s), válido true, integridade íntegra
+07/11 20:08:49 fim: 3b cenário C repetição 1, código 0
+07/11 20:08:49 início: 3b cenário C repetição 2
+A
+frio 3b C rep 2: total 25568.9 ms (25.57 s), válido true, integridade íntegra
+07/11 20:09:16 fim: 3b cenário C repetição 2, código 0
+07/11 20:09:16 início: 3b cenário C repetição 3
+A
+frio 3b C rep 3: total 24038.8 ms (24.04 s), válido true, integridade íntegra
+07/11 20:09:42 fim: 3b cenário C repetição 3, código 0
+07/11 20:09:42 início: 3b cenário A repetição 1
+ac
+frio 3b A rep 1: total 51589.5 ms (51.59 s), válido true, integridade íntegra
+07/11 20:10:35 fim: 3b cenário A repetição 1, código 0
+07/11 20:10:35 início: 3b cenário A repetição 2
+ac
+frio 3b A rep 2: total 50980.7 ms (50.98 s), válido true, integridade íntegra
+07/11 20:11:27 fim: 3b cenário A repetição 2, código 0
+07/11 20:11:27 início: 3b cenário A repetição 3
+ac
+frio 3b A rep 3: total 49485.0 ms (49.49 s), válido true, integridade íntegra
+07/11 20:12:18 fim: 3b cenário A repetição 3, código 0
+07/11 20:12:18 consolidação (sem GPU)
+decisão da primeira palavra a partir de texto cru, velocidade, estado frio (ATINGE, NÃO ATINGE, SEM PROVA; resultado DESCRITIVO, vai ao Breno):
+  1b C frio: ATINGE: mediana 12.66 s (meta 20.00 s)
+  1b A frio: ATINGE: mediana 26.30 s (meta 30.00 s)
+  3b C frio: ATINGE: mediana 24.04 s (meta 30.00 s)
+  3b A frio: NÃO ATINGE: mediana 50.98 s (meta 45.00 s) [meta]
+conjunto: NÃO ATINGE
+integridade: binário, critério e arquivos de entrada IGUAIS aos gravados e aos congelados
+carga externa (nvidia-smi, loadavg, timers): registrada à parte, antes e depois da janela, pelo script da janela, fora deste programa; não decide rótulo
+
