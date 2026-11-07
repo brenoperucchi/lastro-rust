@@ -1,0 +1,4 @@
+Autorização da janela 4(b) (quente) da etapa 4, RTX 4090 GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd.
+Decisão do Breno de 07/11/2026 01:42 (via coordenador): "toda janela que o lastro-rust quiser fazer na 4090 está liberada. Toda." Condições: critério congelado antes dos dados, limite de tempo próprio, trava de encerramento, sem repetição automática após REPROVA ou SEM PROVA, backups restaurados ao fim, aviso ao coordenador no início e no fim. A 5090 não entra.
+Confirmação do coordenador de 07/11/2026 02:03: a autorização permanente de 01:42 vale como o "autorizo" nominal das janelas 4(b) e 4(c) da etapa 4 na RTX 4090; o aquecimento extra do modo 1 na primeira célula de cada modelo foi aceito (ciente e de acordo); a 5090 continua fora.
+Critério: criterio-leitura-velocidade.txt sha256 6e0fbaadc15d5f8f9ba2b7d6bb7e1e6956226720ea5dcbf311424b017dd1c859.

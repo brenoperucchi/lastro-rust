@@ -1,0 +1,7 @@
+início 07/11 02:03:38
+uuid, memory.used [MiB], utilization.gpu [%]
+GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 3606 MiB, 11 %
+6646, 1005 MiB, /usr/bin/voxtype
+16260, 478 MiB, /opt/google/chrome/chrome --type=gpu-process --gpu-recent-crash-
+loadavg 1.77 2.29 2.06 1/7822 2121942
+binário 1fa13846a20b1bc3cccf99f0fcd0a1745654615a32979e00f31c65010f35aa2b

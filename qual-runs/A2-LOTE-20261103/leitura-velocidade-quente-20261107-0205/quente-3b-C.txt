@@ -1,0 +1,21 @@
+tipo=quente
+modelo=3b
+cenario=C
+integro=1
+x.cont_m1=Contadores { needed: 128000, hits: 12164, cpu: 115836 }
+x.cont_m8=Contadores { needed: 128000, hits: 12164, cpu: 115836 }
+x.hash_bin=1fa13846a20b1bc3cccf99f0fcd0a1745654615a32979e00f31c65010f35aa2b
+x.hash_criterio=6e0fbaadc15d5f8f9ba2b7d6bb7e1e6956226720ea5dcbf311424b017dd1c859
+x.ids:/home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-1b-a400m-instruct/conversa-0/tokens.npy=08d9bb3a3cf28262b3a55ca9229425db859b9257f9c9e32fc471bacb45ebc793
+x.ids:/home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-1b-a400m-instruct/conversa-1/tokens.npy=6e46a1c9a0301f5cc16484f6e4cc89f475aaa988988a212ee9c18ba6b37000fb
+x.ids:/home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-1b-a400m-instruct/conversa-4/tokens.npy=409cf962772b5bf6d02a56640c3ce51723d6695e0d07f616cc82b2769af9f451
+x.ids:/home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-0/tokens.npy=5164abf37ac91eed1187e1c16ee1e5af5dc83fd4a54b32b22cca990233f4dc47
+x.ids:/home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-1/tokens.npy=269d4745a8a9101f8c626b28a43e3811c14172f13810047311707bfae7fbf0cb
+x.ids:/home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-2/tokens.npy=6b3772b6de1b82e3be378db5b4f6cff8384b1ca9307b5737f13c12c13f1ab8bf
+# aquecimento descartado, modo 8: sequência 5582.9 ms, leitura 9278.1 ms, logits 0.2 ms, indicador 9278.2 ms, contadores Contadores { needed: 128000, hits: 12164, cpu: 115836 }
+# aquecimento descartado, modo 1: sequência 5332.1 ms, leitura 16439.8 ms, logits 0.1 ms, indicador 16439.9 ms, contadores Contadores { needed: 128000, hits: 12164, cpu: 115836 }
+par ind=1 m1_primeiro=1 m1_seq=5404.194051 m1_leit=16924.536024999998 m1_log=0.156494 m8_seq=5367.608618 m8_leit=7018.8838430000005 m8_log=0.12648800000000002 erro=3.6726047256011783e-7 nao_finito=0 argmax_ok=1 cont_ok=1
+par ind=2 m1_primeiro=0 m1_seq=5286.967073999999 m1_leit=17368.927408 m1_log=0.135155 m8_seq=5493.801444 m8_leit=7156.496365 m8_log=0.133411 erro=3.6726047256011783e-7 nao_finito=0 argmax_ok=1 cont_ok=1
+par ind=3 m1_primeiro=1 m1_seq=5559.692955 m1_leit=17042.679409 m1_log=0.139944 m8_seq=5173.997026 m8_leit=6837.311586 m8_log=0.136928 erro=3.6726047256011783e-7 nao_finito=0 argmax_ok=1 cont_ok=1
+par ind=4 m1_primeiro=0 m1_seq=5284.2701 m1_leit=16837.793343 m1_log=0.142648 m8_seq=5204.617861 m8_leit=6734.260727 m8_log=0.136527 erro=3.6726047256011783e-7 nao_finito=0 argmax_ok=1 cont_ok=1
+par ind=5 m1_primeiro=1 m1_seq=5449.086727 m1_leit=16714.935362 m1_log=0.161974 m8_seq=5261.415554 m8_leit=6888.330992 m8_log=0.131688 erro=3.6726047256011783e-7 nao_finito=0 argmax_ok=1 cont_ok=1

@@ -1,0 +1,2 @@
+tipo=quente-final
+integro=1
