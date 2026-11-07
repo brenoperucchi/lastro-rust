@@ -1,0 +1,24 @@
+A2-PASSO E4b: registro da janela curta (A) de GPU, 06/11/2026, 21:40:27 a 21:40:46 -03.
+Autorização: decisão do Breno de 06/11 21:39 (sequência recomendada em proposta-janela-e4b-20261106.md, início já), recebida do lastro-rust-cerebro; passo 1 liberado nomeando os seis testes e o UUID. Disparo único.
+Comando (uma vez): CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd E4B_GPU_AUTORIZADO=1 cargo test --offline --manifest-path /home/brenoperucchi/Devs/lastro-rust/rust/moe-rt/Cargo.toml --test motor_passo_gpu -- --ignored --test-threads=1
+Commit do repositório: b1b688e8c4fd26a9ca74dac6a7baaae90d71b837 (sem alteração em rust/ no git status; o código revisado na rodada 81 é o do commit 266a8fe).
+SHA-256 do binário de teste (/home/brenoperucchi/Devs/lastro-rust/rust/moe-rt/target/debug/deps/motor_passo_gpu-6d5094e19c35e468): 513848a4f9dfa3fe9dd490967f13ecc692ff3c6811ec6218ce72bab00a0368ac
+GPU antes: índice 0 = GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd (RTX 4090), 3493 MiB usados, 15% de uso; processos só de desktop (voxtype 6646, chrome gpu-process 16260), nenhum de computação alheio. Depois: os mesmos dois PIDs.
+Resultado: 6 passed, 0 failed, em 19,07 s (modelo pequeno de teste). O 6º é o teste novo cabeca_cronometrada_devolve_tempo_valido_e_o_motor_segue, que cobre a cronometragem da cabeça também depois do close; passou pela primeira vez na GPU.
+Não mede velocidade e não substitui o portão de correção da seção 3 do critério nos modelos reais (primeira execução da janela de medida).
+Saída bruta completa: /tmp/claude-1000/-home-brenoperucchi-Devs-lastro-rust/46cdbe1b-904f-422b-9a0c-ab7628b69d27/scratchpad/j1-saida.log (cópia abaixo).
+--- saída (últimas linhas) ---
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running tests/motor_passo_gpu.rs (rust/moe-rt/target/debug/deps/motor_passo_gpu-6d5094e19c35e468)
+
+running 6 tests
+test cabeca_cronometrada_devolve_tempo_valido_e_o_motor_segue ... ok
+test leitura_do_kv_que_falha_preserva_o_cache ... ok
+test m_diferente_dos_tokens_preparados_e_recusado ... ok
+test mutante_de_lens_e_acusado_pelo_oraculo_do_kv ... ok
+test passo_de_oito_bate_com_o_token_a_token_na_gpu ... ok
+test prefill_em_lote_e_depois_decode_por_begin_token ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 19.07s
+
+exit=0
