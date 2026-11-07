@@ -1,0 +1,64 @@
+CRITÉRIO CONGELADO DO DEGRAU 5a: tokenizador/detokenizador mínimo em Rust, offline, e renderização fixa do chat template do Granite
+Congelado em 2026-11-07, ANTES de qualquer execução do código Rust contra os casos. Sem GPU, sem dependência nova, sem mexer no Engine.
+
+1. ESCOPO
+- Módulo /home/brenoperucchi/Devs/lastro-rust/rust/moe-rt/src/tokenizador.rs (mais src/tokenizador/tabelas.rs gerado), só std e serde_json.
+- Modelo: tokenizer.json do Granite 3.1 (1B-A400M e 3B-A800M são idênticos byte a byte), sha256
+  ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654 (/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct/tokenizer.json).
+- Referência: tokenizers 0.23.3 e transformers 5.22.0 em /home/brenoperucchi/Devs/lastro-rust/tools/.venv-ref, só CPU.
+- Fora do escopo: tools, documents e controls do template; roles além de system/user/assistant; qualquer outro tokenizer.json.
+
+2. ARQUIVO DE CASOS (congelado)
+- Gerado por /home/brenoperucchi/Devs/lastro-rust/tools/gera_ref_5a.py (sha256 d457ee8fd4749d8a8e843ae801be24673c1b9ab6d6299a880cb6ef2278e9ad71)
+  em /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5a-referencia/casos.json
+  sha256 72a6e20ced30f0fc10db00b213c3481b69b4629b3225ad386cadc26bd3cc3efb (geração conferida determinística: duas execuções, mesmo hash).
+- Data fixa do template: "November 07, 2026" (strftime_now do transformers substituído por relógio fixo; demais casos de data indicados no caso).
+- 519 casos de codificação e 29 decodificações, por categoria:
+  ref-texts 9 (texto-a e os 8 prompts de prompts-traco.json crus);
+  pedido-template 8 (os 8 prompts renderizados, sistema padrão, add_generation_prompt=True);
+  template-variantes 14 (com sistema, sistema vazio, só sistema com e sem aviso, multi-turno, conteúdo vazio, especiais no conteúdo,
+    sistema no meio, usuário duplo, assistente primeiro, data de um dígito, data bissexta, sem aviso do assistente);
+  conversa-traco 16 (textos de TRACOS-20261029, 8 do 1B e 8 do 3B, usados nas etapas 3 e 4);
+  conversa-template 16 (as mesmas conversas renderizadas pelo template com a data do arquivo, 29 de outubro de 2026; o script aborta se a
+    renderização do HF não reproduzir o arquivo byte a byte);
+  borda 54 (vazio, espaços, quebras repetidas, tabulação, CRLF, acentos pt-br, emoji incluindo ZWJ e bandeira, CJK, árabe/hebraico,
+    devanágari com marcas, tailandês, números romanos e letras circuladas, dígitos de outros scripts, símbolos, <|end_of_text|> e
+    <|start_of_role|> literais, outros adicionados, quase-adicionados, números longos, URLs, código, JSON, shell, contrações em inglês,
+    aspas tipográficas, caracteres de controle, espaços Unicode, NFD, zalgo, U+FFFD e uso privado, plano astral, repetição longa, planos 4 a 7 sem o byte 0xF1);
+  varredura-unicode 402 (todos os valores escalares de U+0000 a U+32400, U+E0000..U+E0200 e amostras de U+F0000, U+FFFF0, U+10FFF0, em blocos
+    de 512, cada ponto c como "a"+c+"1"+c+" ");
+  decode-guloso 6 (ids gerados de REF-greedy-granite-1b e -3b, 3 casos cada) e decode-cortado 23 (prefixos de ids que partem caracteres).
+- Emenda antes da primeira execução válida: ao carregar o tokenizer.json o código Rust falhou por o vocabulário não ter os caracteres ByteLevel dos bytes
+  0xC0, 0xC1, 0xF1, 0xF5..0xFF (o `tokenizers` os descarta). Nenhum id tinha sido comparado. Acrescentado o caso borda-plano-4-a-7-sem-byte-f1 (único
+  ponto de UTF-8 válido afetado: U+40000..U+7FFFF) e regerado casos.json (hashes acima já são os finais).
+- Nenhum caso será removido depois de ver resultado. Casos podem ser ACRESCENTADOS só em novo arquivo e novo critério.
+
+3. REGRAS DE IGUALDADE (todas exigidas, em 100% dos casos de cada item)
+(i) ids: codifica(texto) do Rust IDÊNTICO a tok(texto).input_ids do HF (sem BOS), em todos os casos de codificação.
+(ii) template: renderiza_chat(mensagens, add_generation_prompt, data) IDÊNTICO byte a byte a apply_chat_template(..., tokenize=False) do HF com a
+     mesma data, em todos os casos tipo "chat" (pedido-template, template-variantes, conversa-template). Lista vazia é erro tipado (o template falharia).
+(iii) tokens.npy de texto-a (qual-runs/REF-granite-1b-texto-a/tokens.npy): exatamente 277 ids, iguais aos do Rust sobre tools/ref-texts/texto-a.txt.
+(iv) ida e volta em bytes: decodifica_bytes(codifica(t)) == bytes de t SEM os bytes 0xF1 (que o vocabulário não tem e o HF descarta; só ocorrem em U+40000..U+7FFFF), em todos os casos de codificação (o texto renderizado, nos de chat).
+(v) detokenização: decodifica(ids_do_HF) IGUAL a tok.decode(ids, clean_up_tokenization_spaces=False) em todos os casos de codificação e nas
+    decodificações decode-guloso; e, nos decode-guloso, a diferença para generated_text da referência é DECLARADA (esperado 0).
+    O decode padrão do HF e o clean_up legado forçado (tok.clean_up_tokenization) são só MEDIDOS e declarados: o transformers 5.x ignora clean_up
+    em BPE (decode padrão == sem clean_up); o clean_up legado forçado remove espaços antes de pontuação e o Rust NÃO o implementa.
+(vi) decode-cortado (ids que terminam no meio de um caractere): só MEDIDO e declarado (HF troca por U+FFFD por token, o Rust pela sequência inteira).
+(vii) Integridade: erro tipado e sem panic para id fora do vocabulário, JSON inválido e tokenizer.json fora do suportado.
+
+4. RÓTULOS
+- ATINGE: (i) a (v) e (vii) verdadeiros em 100% dos casos.
+- NÃO ATINGE: execução válida (hashes conferidos) e algum caso divergente em (i) a (v) ou (vii). Qualquer id divergente é NÃO ATINGE; o caso e o id
+  entram no relatório, sem dependência nova para consertar (parar e voltar ao Breno).
+- SEM PROVA: hash de casos.json, do tokenizer.json ou deste critério diferente dos constantes no teste Rust; arquivo ausente; teste não executado.
+
+5. CLASSES UNICODE
+- \p{L} e \p{N} do pré-tokenizador vêm de src/tokenizador/tabelas.rs, gerado por /home/brenoperucchi/Devs/lastro-rust/tools/gera_tabelas_5a.py
+  (sha256 cf0a8c1ad9a778e2f10026a244dac2b829abd35d5bc5abb638a2dfef332b4a17) varrendo TODOS os valores escalares contra o pré-tokenizador do
+  tokenizers 0.23.3. \s usa char::is_whitespace (o gerador confere 25 pontos White_Space idênticos ao oracle).
+- A diferença para char::is_alphabetic/is_numeric é medida pelo teste std_vs_tabelas_unicode e declarada no relatório.
+
+6. EXECUÇÃO
+- env -u E4B_GPU_AUTORIZADO -u E4B_MEDIDA_AUTORIZADA -u MOE_RT_REQUIRE_GPU -u LEITURA_CORRECAO_AUTORIZADA -u LEITURA_VELOCIDADE_AUTORIZADA CUDA_VISIBLE_DEVICES= \
+  cargo test --offline --lib -- tokenizador   (de /home/brenoperucchi/Devs/lastro-rust/rust/moe-rt). Sem GPU.
+- Relatório: /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5a-referencia/resultado-5a.txt

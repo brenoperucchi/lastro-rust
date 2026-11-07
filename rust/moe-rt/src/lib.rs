@@ -24,6 +24,7 @@ pub mod motor;
 pub mod npy;
 pub mod pool;
 pub mod route;
+pub mod tokenizador;
 pub mod velocidade_regra;
 pub mod weights;
 

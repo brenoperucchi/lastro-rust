@@ -1,0 +1,48 @@
+RESULTADO DO DEGRAU 5a (tokenizador/detokenizador Rust) em 2026-11-07
+Critério: /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/criterio-5a-tokenizador.txt (sha256 f35f6232f3a36ebd5f48ecaa0b29b860030e3fd96ded26b7cec1004c654cedc0)
+casos.json sha256 72a6e20ced30f0fc10db00b213c3481b69b4629b3225ad386cadc26bd3cc3efb; tokenizer.json sha256 ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654
+Comando: env -u ... CUDA_VISIBLE_DEVICES= cargo test --offline --lib -- tokenizador (8 testes passaram, só CPU)
+
+RÓTULO: ATINGE (ids, template, texto-a.npy, ida e volta, decode sem clean_up: 100% em todas as categorias; 0 divergências)
+
+Contagens (iguais/total) por categoria e verificação:
+borda/decode-sem-cleanup: 54/54
+borda/ida-e-volta: 54/54
+borda/ids: 54/54
+conversa-template/decode-sem-cleanup: 16/16
+conversa-template/ida-e-volta: 16/16
+conversa-template/ids: 16/16
+conversa-template/template: 16/16
+conversa-traco/decode-sem-cleanup: 16/16
+conversa-traco/ida-e-volta: 16/16
+conversa-traco/ids: 16/16
+decode-cortado (medida): 23/23
+decode-guloso/decode-sem-cleanup: 6/6
+pedido-template/decode-sem-cleanup: 8/8
+pedido-template/ida-e-volta: 8/8
+pedido-template/ids: 8/8
+pedido-template/template: 8/8
+ref-texts/decode-sem-cleanup: 9/9
+ref-texts/ida-e-volta: 9/9
+ref-texts/ids: 9/9
+template-variantes/decode-sem-cleanup: 14/14
+template-variantes/ida-e-volta: 14/14
+template-variantes/ids: 14/14
+template-variantes/template: 14/14
+texto-a.npy: 1/1
+varredura-unicode/decode-sem-cleanup: 402/402
+varredura-unicode/ida-e-volta: 402/402
+varredura-unicode/ids: 402/402
+diferença para o clean_up legado FORÇADO (só medida): 16 (ex.: ["conversa-1b-0", "conversa-1b-0-template", "conversa-1b-2", "conversa-1b-2-template", "conversa-1b-6"])
+
+Diferenças só declaradas:
+- decode padrão do HF (transformers 5.22, ignora clean_up em BPE) != decode sem clean_up: 0 casos.
+- decode-guloso (6 ids de REF-greedy 1B e 3B) != generated_text da referência: 0.
+- clean_up legado FORÇADO (tok.clean_up_tokenization, tira espaço antes de pontuação e junta apóstrofos) difere do decode sem clean_up em 16 casos (12 de conversa: 1b-0, 1b-2, 1b-6, 3b-0, 3b-1, 3b-6 e suas versões -template; 4 de borda: codigo-simbolos, contracoes-borda, repeticao-longa, pontuacao-e-espacos)
+  ; o Rust NÃO o implementa. Quem precisar do texto com clean_up legado deve aplicá-lo à parte.
+- decode-cortado (23 prefixos de ids que partem um caractere): Rust (U+FFFD sobre a sequência inteira) igual ao HF (U+FFFD por token) em 23/23.
+- Bytes 0xC0, 0xC1, 0xF1, 0xF5..0xFF não têm caractere no vocabulário; o tokenizers os descarta. Em UTF-8 válido só U+40000..U+7FFFF caem aí
+  (caso borda-plano-4-a-7-sem-byte-f1: ids iguais; ida e volta compara sem os bytes 0xF1).
+- std vs \p{L}/\p{N} (teste std_vs_tabelas_unicode): is_alphabetic é verdadeiro em 6393 pontos que NÃO são \p{L} da referência (ex. U+0345, U+0363..);
+  \p{L} sem is_alphabetic: 0; \p{N} sem is_numeric: 0; is_numeric sem \p{N}: 13 (U+11DE0..., Unicode mais novo no std que no tokenizers 0.23.3).
+  Tratado com tabelas geradas do oracle (tools/gera_tabelas_5a.py), não com std.
