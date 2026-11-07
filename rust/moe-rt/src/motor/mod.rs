@@ -17,6 +17,7 @@
 pub mod backend;
 pub mod engine;
 pub mod fake;
+pub mod leitura;
 pub mod line;
 pub mod mem;
 pub mod sync;
@@ -27,6 +28,8 @@ mod loom_tests;
 pub(crate) mod tests;
 #[cfg(all(test, not(motor_loom)))]
 mod passo_tests;
+#[cfg(all(test, not(motor_loom)))]
+mod leitura_tests;
 
 pub use backend::{geq, release_value, Backend, CpuGroup, CpuStep, HostExperts, LayerIo, LayerOffsets, Role};
 pub use engine::{Engine, Parts, Published};

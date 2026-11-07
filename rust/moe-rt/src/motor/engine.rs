@@ -206,6 +206,26 @@ impl<B: Backend> Engine<B> {
         b.write_value(c, &self.sh.seq[self.cfg.layers], t)
     }
 
+    /// A posição da sequência do próximo passo (só leitura; a rotina de leitura de N ids a confere com a do backend).
+    pub fn position(&self) -> u64 {
+        self.pos
+    }
+
+    /// O maior número de posições por passo desta configuração (só leitura).
+    pub fn max_positions(&self) -> usize {
+        self.cfg.max_positions
+    }
+
+    /// Se o motor já foi encerrado (falha ou `close`): nenhum passo novo é aceito.
+    pub fn is_closed(&self) -> bool {
+        self.closed
+    }
+
+    /// Encerra o motor na ordem do `Drop`, sem consumi-lo (a rotina de leitura o usa quando o preparo de um bloco falha no meio).
+    pub(crate) fn encerra(&mut self) {
+        self.shutdown();
+    }
+
     /// Enfileira o token do `Published`: a tabela, as esperas pelos `ready` e as camadas (um passo de uma posição).
     pub fn enqueue_token(&mut self, p: Published) -> R<(), B> {
         self.enqueue_step(p, 1)

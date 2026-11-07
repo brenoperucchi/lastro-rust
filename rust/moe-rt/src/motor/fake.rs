@@ -138,6 +138,10 @@ struct State {
     released: bool,
     violations: Vec<Violation>,
     main_calls: u64,
+    /// Cada `begin_step(pos, m)` recebido, na ordem em que o motor o enfileirou (só com `max_positions > 1`).
+    begins: Vec<(u64, usize)>,
+    /// Só para teste: o `relax` da linha principal com a fila de cálculo vazia (a espera da publicação em `next_published`) falha.
+    relax_publicacao_falha: bool,
     shutdown: bool,
 }
 
@@ -307,6 +311,8 @@ impl FakeGpu {
             released: false,
             violations: Vec::new(),
             main_calls: 0,
+            begins: Vec::new(),
+            relax_publicacao_falha: false,
             shutdown: false,
         };
         Self {
@@ -368,6 +374,16 @@ impl FakeGpu {
         if let Some(h) = self.exec.lock().unwrap_or_else(|e| e.into_inner()).take() {
             h.join().expect("executor da GPU falsa");
         }
+    }
+
+    /// Só para teste: a partir daqui, esperar uma publicação (`next_published` com a fila de cálculo vazia) falha com `Injected`.
+    pub fn arma_falha_na_publicacao(&self) {
+        lock(&self.st).relax_publicacao_falha = true;
+    }
+
+    /// Os `begin_step(pos, m)` enfileirados até agora, na ordem (os testes da leitura de N ids conferem a ordem preparo × passo).
+    pub fn begin_steps(&self) -> Vec<(u64, usize)> {
+        lock(&self.st).begins.clone()
     }
 
     pub fn violations(&self) -> Vec<Violation> {
@@ -566,6 +582,7 @@ impl Backend for FakeGpu {
 
     fn begin_step(&self, s: &FakeStream, _t: u32, pos: u64, m: usize) -> Result<(), FakeError> {
         self.point()?;
+        lock(&self.st).begins.push((pos, m));
         self.enqueue(s.0, Op::BeginStep { pos, m })
     }
 
@@ -606,6 +623,14 @@ impl Backend for FakeGpu {
     }
 
     fn relax(&self) -> Result<(), FakeError> {
+        {
+            // A linha de serviço (papel 1) não é afetada. O `sync` só chama `relax` com a fila não vazia; com a fila de cálculo vazia, quem espera é a principal (o teste não registra papel) por uma publicação.
+            let mut st = lock(&self.st);
+            if st.relax_publicacao_falha && papel_atual() != 1 && st.q[COMPUTE].is_empty() {
+                st.relax_publicacao_falha = false; // uma vez só: o fechamento do motor precisa do `relax` normal
+                return Err(FakeError::Injected);
+            }
+        }
         #[cfg(not(motor_loom))]
         if let Some(s) = &self.sched {
             return s.yield_now(self);
