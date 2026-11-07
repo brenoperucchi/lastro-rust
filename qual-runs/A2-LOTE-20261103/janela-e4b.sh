@@ -87,7 +87,14 @@ for t in "${TIMERS[@]}"; do
   $SYSTEMCTL --user cat "$t" >/dev/null 2>&1 || recusa "o systemd não conhece a unidade $t (escopo --user, XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR)"
 done
 
-# 1c. Reserva ATÔMICA da janela (ln falha se o ponteiro já existe): duas janelas simultâneas nunca passam juntas.
+# 1c. Trava comum com a recuperação (mesmo arquivo), mantida até a captura terminar e SOLTA antes de lançar o comando (o comando e o vigia
+#     não herdam a posse: um SIGKILL deste roteiro deixa a recuperação livre para agir). Dentro dela: reserva ATÔMICA (ln) da janela.
+exec 8> "$PENDENTE.rec.lock" || recusa "não consegui abrir a trava $PENDENTE.rec.lock"
+flock -n 8 || recusa "há uma recuperação ou outra janela em preparação (trava $PENDENTE.rec.lock ocupada)"
+[ ! -e "$PENDENTE" ] || recusa "há uma janela anterior não recuperada: $(cat "$PENDENTE" 2>/dev/null). Rode recupera-timers-e4b.sh antes de começar outra."
+PAI=$$
+PAI_ID=$(ident_pid "$PAI") || recusa "não consegui identificar este processo em /proc"
+echo "$PAI $PAI_ID" > "$ESTADO/supervisor.id"; sync "$ESTADO/supervisor.id"   # antes da reserva: a recuperação nunca vê reserva sem dono identificável
 printf '%s\n' "$ESTADO" > "$PENDENTE.$$.tmp" && sync "$PENDENTE.$$.tmp" && ln "$PENDENTE.$$.tmp" "$PENDENTE" 2>/dev/null; rc=$?
 rm -f "$PENDENTE.$$.tmp"
 [ "$rc" = 0 ] || recusa "não consegui reservar a janela: há outra janela em curso ou não recuperada ($(cat "$PENDENTE" 2>/dev/null)). Rode recupera-timers-e4b.sh antes de começar outra."
@@ -96,10 +103,9 @@ rm -f "$PENDENTE.$$.tmp"
 trap 'rm -f "$PENDENTE" "$PENDENTE.$$.tmp"' EXIT
 trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 
+[ -z "${JANELA_GANCHO_RESERVA:-}" ] || while [ ! -e "$JANELA_GANCHO_RESERVA" ]; do sleep 0.05; done   # gancho de teste: segura a janela logo após a reserva
+
 # 2. Captura VALIDADA e estado inicial em arquivo (antes de qualquer stop). Falha de leitura = recusa, sem pausar nada.
-PAI=$$
-PAI_ID=$(ident_pid "$PAI") || abandona "não consegui identificar este processo em /proc"
-echo "$PAI $PAI_ID" > "$ESTADO/supervisor.id"
 { echo "início: $(date -Is) pid=$$ XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"; } > "$ESTADO/estado.txt"
 : > "$ESTADO/ativos.tmp"
 for t in "${TIMERS[@]}"; do
@@ -111,6 +117,7 @@ for t in "${TIMERS[@]}"; do
   [ "$vt" = active ] && echo "$t" >> "$ESTADO/ativos.tmp"
 done
 sync "$ESTADO/estado.txt" "$ESTADO/ativos.tmp" "$ESTADO/supervisor.id" && mv "$ESTADO/ativos.tmp" "$ESTADO/ativos.txt" || abandona "não consegui gravar o estado inicial"
+exec 8>&-   # solta a trava comum: daqui em diante a janela é identificável (supervisor.id) e a recuperação recusa enquanto o supervisor viver
 
 RESTAURADO=0; RESTAURA_RC=0; PGID=; SPID=; VIGIA=; NAOMORREU=0; LIMITE_ATINGIDO=0; INT_PEND=; ANC=
 # O comando roda numa sessão própria (setsid): a sessão tem o id do líder. Dentro dela há uma ÂNCORA: um `sleep` que ignora TERM, criado antes do
@@ -129,29 +136,50 @@ grupo_confere() {
   ancora_ok || return 2
   return 0
 }
-mata_grupo() { # TERM, espera $KILL_APOS, KILL, espera 5 s; 0 = o grupo morreu, 1 = não morreu, 2 = identidade divergente (nada enviado)
+EH_VIGIA=0
+cancelado() { [ "$EH_VIGIA" = 1 ] && [ -e "$ESTADO/vigia-cancela.flag" ]; }
+gancho_vigia() { # gancho de teste: segura o vigia depois de uma validação positiva e antes do sinal
+  [ "$EH_VIGIA" = 1 ] && [ -n "${JANELA_GANCHO_VIGIA:-}" ] || return 0
+  while [ ! -e "$JANELA_GANCHO_VIGIA.$1" ]; do sleep 0.05; done
+}
+envia() { # envia $1 (TERM|KILL) ao grupo e registra
+  echo "$1 -$PGID $(date -Is)" >> "$ESTADO/sinais.log"
+  kill -"$1" -- "-$PGID" 2>/dev/null
+}
+mata_grupo() { # TERM, espera $KILL_APOS, KILL, espera 5 s; 0 = o grupo morreu, 1 = não morreu, 2 = sem âncora verificável (nada enviado), 3 = vigia cancelado (nada enviado)
   grupo_confere; local c=$?
   [ "$c" = 1 ] && return 0
   [ "$c" = 2 ] && return 2
-  kill -TERM -- "-$PGID" 2>/dev/null
-  for _ in $(seq 1 "$KILL_APOS"); do grupo_vivo || return 0; sleep 1; done
+  gancho_vigia term
+  cancelado && return 3
+  envia TERM
+  for _ in $(seq 1 "$KILL_APOS"); do grupo_vivo || return 0; cancelado && return 3; sleep 1; done
   grupo_confere; c=$?
   [ "$c" = 1 ] && return 0
   [ "$c" = 2 ] && return 2
-  kill -KILL -- "-$PGID" 2>/dev/null
+  gancho_vigia kill
+  cancelado && return 3
+  envia KILL
   for _ in 1 2 3 4 5; do grupo_vivo || return 0; sleep 1; done
   return 1
 }
 restaura() {
   [ "$RESTAURADO" = 0 ] || return
   RESTAURADO=1
-  touch "$ESTADO/fim.flag"
-  [ -n "$VIGIA" ] && kill "$VIGIA" 2>/dev/null
+  touch "$ESTADO/fim.flag" "$ESTADO/vigia-cancela.flag"
+  # O vigia é desligado e COLHIDO antes de qualquer retirada da âncora: quem ainda pode sinalizar o grupo tem de sumir primeiro.
+  if [ -n "$VIGIA" ]; then kill "$VIGIA" 2>/dev/null; wait "$VIGIA" 2>/dev/null; VIGIA=; fi
   # Um sinal pode chegar antes da leitura do PGID: recupera pelo arquivo e, no limite, pelo PID do setsid (filho nosso, ainda não colhido).
   [ -n "$PGID" ] || PGID=$(cat "$ESTADO/filho.pgid" 2>/dev/null || true)
   [ -n "$PGID" ] || { [ -n "$SPID" ] && { PGID=$SPID; touch "$ESTADO/vai.cancela"; kill -TERM "$SPID" 2>/dev/null; }; }
-  touch "$ESTADO/vai.cancela"
   [ -n "$ANC" ] || { ANC=$(cat "$ESTADO/ancora.pid" 2>/dev/null || true); }
+  # Comando nunca liberado (sem aval) e identidade da âncora não gravada: o líder ainda espera o aval (nada foi cancelado) e a âncora é filha
+  # direta dele; essa é a prova de posse nesse caso, antes de o líder sair e de a âncora ficar órfã.
+  if [ ! -e "$ESTADO/vai" ] && [ ! -s "$ESTADO/ancora.id" ] && [ -n "$ANC" ] && [ -n "$PGID" ] \
+     && [ "$(ps -o ppid= -p "$ANC" 2>/dev/null | tr -d ' ')" = "$PGID" ] && [ "$(ps -o sid= -p "$ANC" 2>/dev/null | tr -d ' ')" = "$PGID" ]; then
+    kill -KILL "$ANC" 2>/dev/null
+  fi
+  touch "$ESTADO/vai.cancela"
   if grupo_vivo; then
     mata_grupo; r=$?
     [ "$r" = 0 ] || NAOMORREU=1
@@ -228,7 +256,7 @@ done
 
 # 5. O comando, numa sessão própria, com vigia de tempo. O lançamento é uma fase PROTEGIDA: sinais só são anotados (INT_PEND) até o
 #    comando estar registrado e com vigia; e o comando só começa depois do aval (arquivo vai), então um sinal na largada cancela sem rodar nada.
-echo "comando: $*" > "$ESTADO/comando.txt"; echo "gancho_atraso_lancamento=${JANELA_ATRASO_LANCAMENTO:-}" >> "$ESTADO/comando.txt"
+echo "comando: $*" > "$ESTADO/comando.txt"; echo "ganchos_de_teste: atraso_lancamento=${JANELA_ATRASO_LANCAMENTO:-} reserva=${JANELA_GANCHO_RESERVA:-} vigia=${JANELA_GANCHO_VIGIA:-}" >> "$ESTADO/comando.txt"
 trap 'INT_PEND=130' INT; trap 'INT_PEND=143' TERM; trap 'INT_PEND=129' HUP
 read -r -d '' EMB <<'EOS'
 echo $$ > "$1"; V=$2; A=$3; L=$4; shift 4
@@ -243,9 +271,10 @@ for _ in $(seq 1 50); do [ -s "$ESTADO/filho.pgid" ] && [ -s "$ESTADO/ancora.pid
 PGID=$(cat "$ESTADO/filho.pgid" 2>/dev/null || true)
 ANC=$(cat "$ESTADO/ancora.pid" 2>/dev/null || true)
 # Sem identidade do líder e da âncora o comando não é liberado (falha fechada).
-{ [ -n "$PGID" ] && [ -n "$ANC" ] && ident_pid "$PGID" > "$ESTADO/filho.id" 2>/dev/null && ident_pid "$ANC" > "$ESTADO/ancora.id" 2>/dev/null && [ -s "$ESTADO/filho.id" ] && [ -s "$ESTADO/ancora.id" ]; } || INT_PEND=125
+{ [ -n "$PGID" ] && [ -n "$ANC" ] && ident_pid "$PGID" > "$ESTADO/filho.id" 2>/dev/null && { [ -z "${JANELA_TESTE_FALHA_ID_ANCORA:-}" ] && ident_pid "$ANC" > "$ESTADO/ancora.id" 2>/dev/null; } && [ -s "$ESTADO/filho.id" ] && [ -s "$ESTADO/ancora.id" ]; } || INT_PEND=125
 trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 (
+  EH_VIGIA=1
   echo "$BASHPID" > "$ESTADO/vigia.pid"
   for _ in $(seq 1 "$LIMITE"); do
     [ -e "$ESTADO/fim.flag" ] && exit 0
@@ -256,6 +285,7 @@ trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
   grupo_vivo || { mata_ancora; exit 0; }
   echo 1 > "$ESTADO/limite.flag"
   mata_grupo; r=$?
+  if [ "$r" = 3 ]; then rm -f "$ESTADO/limite.flag"; exit 0; fi   # o comando acabou antes do sinal: não houve limite
   if [ "$r" != 0 ]; then
     echo "$r" > "$ESTADO/nao-morreu.flag"
     # só sinaliza o supervisor se ele ainda é o mesmo processo (PID não reaproveitado)
@@ -268,11 +298,11 @@ date -Is > "$ESTADO/comando-inicio.txt"
 touch "$ESTADO/vai"
 # A âncora (e não o líder, que o bash colhe sozinho) mantém o número do grupo reservado enquanto houver descendentes; ela é morta ao fim.
 while grupo_vivo; do sleep 0.2; done
-mata_ancora
-wait "$SPID" 2>/dev/null
-touch "$ESTADO/fim.flag"
-wait "$VIGIA" 2>/dev/null
+touch "$ESTADO/fim.flag" "$ESTADO/vigia-cancela.flag"
+wait "$VIGIA" 2>/dev/null     # o vigia confirma que não pode mais sinalizar...
 VIGIA=
+mata_ancora                   # ...e só então a âncora (que prende o número do grupo) é retirada
+wait "$SPID" 2>/dev/null
 date -Is > "$ESTADO/comando-fim.txt"
 [ -e "$ESTADO/limite.flag" ] && exit 124
 [ -s "$ESTADO/rc-comando.txt" ] || exit 125

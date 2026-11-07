@@ -69,7 +69,7 @@ confere normal active active
 grep -q "RESTAURAÇÃO OK" "$D/e-normal/restauracao.txt" && [ ! -e "$PEND" ] && passou "normal: restauração conferida e ponteiro apagado" || falha "normal: restauração ou ponteiro"
 grep -q "^stop a.timer" "$FAKE_DIR/log" && grep -q "^stop b.timer" "$FAKE_DIR/log" && passou "normal: parou os dois .timer" || falha "normal: não parou os dois"
 proc_vivo "$(cat "$D/e-normal/ancora.pid")" && falha "normal: a âncora da sessão sobrou" || passou "normal: a âncora da sessão foi encerrada"
-grep -q "^gancho_atraso_lancamento=$" "$D/e-normal/comando.txt" && passou "normal: comando.txt registra que o gancho de teste estava desligado" || falha "normal: comando.txt sem registro do gancho"
+grep -q "^ganchos_de_teste: atraso_lancamento= reserva= vigia=$" "$D/e-normal/comando.txt" && passou "normal: comando.txt registra que o gancho de teste estava desligado" || falha "normal: comando.txt sem registro do gancho"
 
 # 2. parados
 prepara parados inactive inactive
@@ -236,6 +236,49 @@ if mutante sem-ancora 's/^  ancora_ok || return 2$/  :/'; then
   kill -KILL -- "-$(cat "$D/e-identm/filho.pgid")" 2>/dev/null
   SYSTEMCTL="$D/fake-systemctl" PENDENTE="$PEND" "$R" > /dev/null 2>&1
 fi
+
+# 8i. Trava comum: recuperação não remove a reserva de uma janela ainda em preparação; janela não começa com a trava ocupada
+prepara reserva active active
+JANELA_GANCHO_RESERVA="$D/lib-reserva" roda_exec --estado "$D/e-reserva" -- bash -c 'exit 0' & pid=$!
+espera_arq "$PEND" || falha "reserva: o ponteiro não apareceu"
+saida=$(SYSTEMCTL="$D/fake-systemctl" PENDENTE="$PEND" "$R" 2>&1); rc=$?
+[ $rc = 2 ] && [ -s "$PEND" ] && ! grep -qE "^(start|stop) " "$FAKE_DIR/log" && passou "reserva: com a janela em preparação a recuperação recusa e a reserva fica" || falha "reserva: rc=$rc ponteiro=$(cat "$PEND" 2>/dev/null)"
+touch "$D/lib-reserva"; wait $pid; rc=$?
+[ $rc = 0 ] && [ ! -e "$PEND" ] && passou "reserva: a janela retomada executou uma única vez e terminou" || falha "reserva: rc=$rc"
+confere reserva active active
+prepara trava active active
+( exec 9> "$PEND.rec.lock"; flock 9; sleep 2 ) & sleep 0.4
+roda --estado "$D/e-trava" -- bash -c 'exit 0' > /dev/null 2>&1; rc=$?
+[ $rc = 2 ] && ! grep -qE "^(start|stop) " "$FAKE_DIR/log" && passou "trava: com a trava comum ocupada (recuperação em curso) a janela recusa sem mexer em nada" || falha "trava: rc=$rc"
+wait
+
+# 8j. Vigia desligado antes de a âncora sair: o vigia fica retido depois de validar o grupo, o comando termina, e a âncora continua viva
+retido() { # nome etapa comando...
+  n=$1; et=$2; shift 2
+  prepara "$n" active active; rm -f "$D/gv-$n".*
+  [ $et = kill ] && touch "$D/gv-$n.term"
+  JANELA_GANCHO_VIGIA="$D/gv-$n" roda_exec --estado "$D/e-$n" --limite 1 --kill-apos 1 -- "$@" & pid=$!
+  espera_arq "$D/e-$n/vigia-cancela.flag" || falha "$n: o supervisor não chegou ao fim do comando"
+  sleep 0.6
+  if proc_vivo "$(cat "$D/e-$n/ancora.pid")" && kill -0 $pid 2>/dev/null; then passou "$n: com o vigia retido a âncora e o supervisor continuam vivos"; else falha "$n: a âncora saiu antes de o vigia confirmar"; fi
+  touch "$D/gv-$n.$et"; wait $pid; rc=$?
+}
+retido vigiaB term bash -c 'sleep 3'
+[ $rc = 0 ] && [ ! -s "$D/e-vigiaB/sinais.log" ] && passou "vigiaB: depois de liberado o vigia não enviou sinal (o comando já tinha terminado) e a saída foi 0" || falha "vigiaB: rc=$rc sinais=$(cat "$D/e-vigiaB/sinais.log" 2>/dev/null)"
+proc_vivo "$(cat "$D/e-vigiaB/ancora.pid")" && falha "vigiaB: a âncora sobrou" || passou "vigiaB: a âncora foi retirada depois do vigia"
+confere vigiaB active active
+retido vigiaK kill bash -c 'trap "" TERM; sleep 3'
+grep -q '^TERM ' "$D/e-vigiaK/sinais.log" && ! grep -q '^KILL ' "$D/e-vigiaK/sinais.log" && passou "vigiaK: o KILL não foi enviado depois do fim do comando (só o TERM, legítimo)" || falha "vigiaK: sinais=$(cat "$D/e-vigiaK/sinais.log" 2>/dev/null)"
+proc_vivo "$(cat "$D/e-vigiaK/ancora.pid")" && falha "vigiaK: a âncora sobrou" || passou "vigiaK: a âncora foi retirada depois do vigia"
+confere vigiaK active active
+
+# 8k. Falha ao gravar a identidade da âncora: o comando não roda e a âncora não fica órfã
+prepara semid active active; rm -f "$D/marcador-semid"
+JANELA_TESTE_FALHA_ID_ANCORA=1 roda --estado "$D/e-semid" -- bash -c "touch '$D/marcador-semid'" > /dev/null 2>&1; rc=$?
+sleep 0.3
+[ $rc = 125 ] && [ ! -e "$D/marcador-semid" ] && passou "semid: sem identidade da âncora o comando não rodou (125)" || falha "semid: rc=$rc"
+proc_vivo "$(cat "$D/e-semid/ancora.pid")" && falha "semid: a âncora ficou órfã" || passou "semid: a âncora não ficou órfã"
+confere semid active active
 
 # 8f2. Identidade ausente ou vazia: falha fechada, nenhum sinal
 for variante in ausente vazia; do
@@ -412,7 +455,7 @@ if mutante sem-trap 's/^trap finaliza EXIT$/:/'; then
   [ "$(cat "$FAKE_DIR/a.timer")" = inactive ] && passou "mutante sem trap: pego (o timer ficou parado)" || falha "mutante sem trap NÃO foi pego"
 fi
 # (b) sem KILL: o comando que ignora TERM tem de sobreviver
-if mutante sem-kill 's/kill -KILL -- "-\$PGID" 2>\/dev\/null/:/'; then
+if mutante sem-kill 's/^  envia KILL$/  :/'; then
   prepara mut2 active active
   JANELA="$D/mut-sem-kill.sh" roda --estado "$D/e-mut2" --limite 2 --kill-apos 1 -- bash -c 'trap "" TERM; sleep 25' > /dev/null 2>&1
   if grupo_vivo "$(cat "$D/e-mut2/filho.pgid")"; then passou "mutante sem KILL: pego (o grupo que ignora TERM sobreviveu)"; else falha "mutante sem KILL NÃO foi pego"; fi
