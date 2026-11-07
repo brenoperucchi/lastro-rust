@@ -1,0 +1,12 @@
+decisão da correção da leitura (regra de rótulos do critério):
+  1b: PASSA
+  3b: PASSA
+conjunto: PASSA
+integridade: binário, critério (f18f659797582f45d3d8732fb89a08c8451bd28c3c5dde295e3b2b6a572eba12) e 6 arquivos de ids: IGUAIS aos iniciais
+binário 4756d0cf57896fd3f63eb3b0a61bb354c253543f82c57060dc88ebce53ed9afa
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-1b-a400m-instruct/conversa-0/tokens.npy: 08d9bb3a3cf28262b3a55ca9229425db859b9257f9c9e32fc471bacb45ebc793
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-1b-a400m-instruct/conversa-1/tokens.npy: 6e46a1c9a0301f5cc16484f6e4cc89f475aaa988988a212ee9c18ba6b37000fb
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-1b-a400m-instruct/conversa-4/tokens.npy: 409cf962772b5bf6d02a56640c3ce51723d6695e0d07f616cc82b2769af9f451
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-0/tokens.npy: 5164abf37ac91eed1187e1c16ee1e5af5dc83fd4a54b32b22cca990233f4dc47
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-1/tokens.npy: 269d4745a8a9101f8c626b28a43e3811c14172f13810047311707bfae7fbf0cb
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-2/tokens.npy: 6b3772b6de1b82e3be378db5b4f6cff8384b1ca9307b5737f13c12c13f1ab8bf

@@ -1,0 +1,72 @@
+leitura-correcao: células ["1b", "3b"]; C 500 ids, A 2003 ids, continuação [1205, 798]; max_len 2048; limites 1e-5 (entre modos) e 1e-4 (logits contra X, L2)
+integridade antes: binário 4756d0cf57896fd3f63eb3b0a61bb354c253543f82c57060dc88ebce53ed9afa; critério f18f659797582f45d3d8732fb89a08c8451bd28c3c5dde295e3b2b6a572eba12; 6 arquivos de ids
+== célula 1b: 24 camadas, 32 experts, 76 slots (10%), max_len 2048
+ids: C 500 (resto 4), A 2003 (resto 3), continuação [1205, 798] (restos 5 e 6)
+contadores (needed, hits, cpu): C m1 Contadores { needed: 96000, hits: 9719, cpu: 86281 } m8 Contadores { needed: 96000, hits: 9719, cpu: 86281 }; A m1 Contadores { needed: 384576, hits: 38279, cpu: 346297 } m8 Contadores { needed: 384576, hits: 38279, cpu: 346297 } m8-cont Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+comparações (nível 2):
+  a C: logits@499 m8 vs m1                     erro 4.200e-7 (limite 1e-5) => OK
+  a C: KV m8 vs m1                             erro 2.072e-6 (limite 1e-5) => OK
+  a A: logits@2002 m8(uma) vs m1               erro 4.327e-7 (limite 1e-5) => OK
+  a A: KV m8(uma) vs m1                        erro 2.007e-6 (limite 1e-5) => OK
+  a A-cont: logits@1204 m8 vs m1               erro 4.903e-7 (limite 1e-5) => OK
+  a A-cont: logits@2002 m8 vs m1               erro 4.327e-7 (limite 1e-5) => OK
+  a A-cont: KV@1204 m8 vs m1                   erro 1.906e-6 (limite 1e-5) => OK
+  a A-cont: KV@2002 m8 vs m1                   erro 1.827e-6 (limite 1e-5) => OK
+  b C: logits@499 m8 vs X                      erro 7.569e-7 (limite 1e-4) => OK
+  b A: logits@2002 m8(uma) vs X                erro 5.769e-7 (limite 1e-4) => OK
+  b A-cont: logits@1204 m8 vs X                erro 6.733e-7 (limite 1e-4) => OK
+  b A-cont: logits@2002 m8 vs X                erro 7.390e-7 (limite 1e-4) => OK
+  c: logits@2002 m8(cont) vs m8(uma)           erro 4.099e-7 (limite 1e-5) => OK
+  c: KV m8(cont) vs m8(uma)                    erro 1.578e-6 (limite 1e-5) => OK
+perfil do erro do KV por faixa de posições (só descrição; não decide): faixas 0-63, 64-511, 512-1023, 1024-2047
+  a C (m8 vs m1): 1.98e-6  2.07e-6  0.00e0  0.00e0
+  a A (m8 uma vs m1): 1.83e-6  1.30e-6  1.60e-6  2.01e-6
+  a A-cont (m8 vs m1): 1.83e-6  1.30e-6  1.60e-6  1.45e-6
+integridade conferida no fim da célula: íntegra
+rótulo da célula: PASSA
+
+== célula 3b: 32 camadas, 40 experts, 128 slots (10%), max_len 2048
+ids: C 500 (resto 4), A 2003 (resto 3), continuação [1205, 798] (restos 5 e 6)
+contadores (needed, hits, cpu): C m1 Contadores { needed: 128000, hits: 12164, cpu: 115836 } m8 Contadores { needed: 128000, hits: 12164, cpu: 115836 }; A m1 Contadores { needed: 512768, hits: 48996, cpu: 463772 } m8 Contadores { needed: 512768, hits: 48996, cpu: 463772 } m8-cont Contadores { needed: 512768, hits: 48996, cpu: 463772 }
+comparações (nível 2):
+  a C: logits@499 m8 vs m1                     erro 3.673e-7 (limite 1e-5) => OK
+  a C: KV m8 vs m1                             erro 1.759e-6 (limite 1e-5) => OK
+  a A: logits@2002 m8(uma) vs m1               erro 4.045e-7 (limite 1e-5) => OK
+  a A: KV m8(uma) vs m1                        erro 4.919e-6 (limite 1e-5) => OK
+  a A-cont: logits@1204 m8 vs m1               erro 4.978e-7 (limite 1e-5) => OK
+  a A-cont: logits@2002 m8 vs m1               erro 3.383e-7 (limite 1e-5) => OK
+  a A-cont: KV@1204 m8 vs m1                   erro 4.919e-6 (limite 1e-5) => OK
+  a A-cont: KV@2002 m8 vs m1                   erro 4.919e-6 (limite 1e-5) => OK
+  b C: logits@499 m8 vs X                      erro 7.971e-7 (limite 1e-4) => OK
+  b A: logits@2002 m8(uma) vs X                erro 7.230e-7 (limite 1e-4) => OK
+  b A-cont: logits@1204 m8 vs X                erro 8.152e-7 (limite 1e-4) => OK
+  b A-cont: logits@2002 m8 vs X                erro 9.335e-7 (limite 1e-4) => OK
+  c: logits@2002 m8(cont) vs m8(uma)           erro 3.115e-7 (limite 1e-5) => OK
+  c: KV m8(cont) vs m8(uma)                    erro 2.826e-6 (limite 1e-5) => OK
+perfil do erro do KV por faixa de posições (só descrição; não decide): faixas 0-63, 64-511, 512-1023, 1024-2047
+  a C (m8 vs m1): 1.76e-6  1.41e-6  0.00e0  0.00e0
+  a A (m8 uma vs m1): 1.76e-6  1.07e-6  4.92e-6  3.46e-6
+  a A-cont (m8 vs m1): 1.76e-6  1.07e-6  4.92e-6  2.44e-6
+integridade conferida no fim da célula: íntegra
+rótulo da célula: PASSA
+
+integridade: binário, critério (f18f659797582f45d3d8732fb89a08c8451bd28c3c5dde295e3b2b6a572eba12) e 6 arquivos de ids: IGUAIS aos iniciais
+decisão da correção da leitura (regra de rótulos do critério):
+  1b: PASSA
+  3b: PASSA
+conjunto: PASSA
+integridade: binário, critério (f18f659797582f45d3d8732fb89a08c8451bd28c3c5dde295e3b2b6a572eba12) e 6 arquivos de ids: IGUAIS aos iniciais
+binário 4756d0cf57896fd3f63eb3b0a61bb354c253543f82c57060dc88ebce53ed9afa
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-1b-a400m-instruct/conversa-0/tokens.npy: 08d9bb3a3cf28262b3a55ca9229425db859b9257f9c9e32fc471bacb45ebc793
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-1b-a400m-instruct/conversa-1/tokens.npy: 6e46a1c9a0301f5cc16484f6e4cc89f475aaa988988a212ee9c18ba6b37000fb
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-1b-a400m-instruct/conversa-4/tokens.npy: 409cf962772b5bf6d02a56640c3ce51723d6695e0d07f616cc82b2769af9f451
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-0/tokens.npy: 5164abf37ac91eed1187e1c16ee1e5af5dc83fd4a54b32b22cca990233f4dc47
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-1/tokens.npy: 269d4745a8a9101f8c626b28a43e3811c14172f13810047311707bfae7fbf0cb
+ids /home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-2/tokens.npy: 6b3772b6de1b82e3be378db5b4f6cff8384b1ca9307b5737f13c12c13f1ab8bf
+
+Running as unit: lastro-limite-1696955-1794024979566103332.service
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 4min 54.884s
+             CPU time consumed: 33min 47.221s
+                   Memory peak: 19.6G (swap: 0B)

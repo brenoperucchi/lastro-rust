@@ -1,0 +1,4 @@
+uuid, memory.used [MiB], utilization.gpu [%]
+GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 3994 MiB, 32 %
+6646, 1005 MiB, /usr/bin/voxtype
+16260, 447 MiB, /opt/google/chrome/chrome --type=gpu-process --gpu-recent-crash-
