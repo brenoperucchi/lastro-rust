@@ -1,0 +1,75 @@
+CRITÉRIO DA VELOCIDADE DA LEITURA EM BLOCOS NOS MODELOS REAIS (A2, etapa 4)
+Congelado em 07/11/2026, ANTES de qualquer dado real. Recorte e decisões da seção 9 aprovados pelo Breno em 07/11/2026 (via coordenador), com todas as
+recomendações, em /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/recorte-etapa4-velocidade-textos-longos-20261107.md.
+Este arquivo NÃO pode mudar depois de observar qualquer resultado. Qualquer limite, meta, parâmetro ou recorte novo é decisão só do Breno, antes de repetir.
+O hash SHA-256 deste arquivo é uma constante do programa (CRITERIO_SHA em src/bin/leitura-velocidade.rs); o programa recusa outro conteúdo antes de abrir a
+GPU e confere o hash de novo ao fim de cada célula e no fim.
+
+1. ESCOPO. Velocidade da leitura em blocos de até 8 posições (le_ids, commit 27b951d; correção já provada na etapa 3, commits cb00e98 e d91644d) nos
+   Granite 3.1 1B e 3B, indicador interno com ids prontos, até os logits da última posição. Duas perguntas por modelo e cenário: (a) o modo de blocos
+   (max_positions 8) é pelo menos 15% mais rápido que o modo de 1 por vez, no mesmo programa; (b) a mediana do modo de blocos cabe nas metas aceitas.
+   NÃO atesta tempo de produto (tokenização, texto cru, escolha do token, entrega), geração depois da leitura, ganho em 4.000 tokens ou mais (cenário B
+   fora), comparação com o llama.cpp, outra tabela de especialistas, outra carga da máquina, nem "frio de disco" (os arquivos do modelo ficam no cache de
+   páginas do sistema; esvaziar o cache exigiria root e fica fora).
+
+2. CÉLULAS E METAS. Célula = modelo x cenário x estado (quente ou frio): 8 células. Cenários e ids congelados como na etapa 3 (mesmos arquivos e hashes):
+   C = 500 ids, A = 2.003 ids; 1b: C = conversa-4, A = conversa-0 e conversa-1 concatenadas; 3b: C = conversa-2, A = conversa-0 e conversa-1; pasta
+   TRACOS-20261029/<modelo>/conversa-N/tokens.npy. Todo id menor que o vocabulário; ids faltando ou fora do vocabulário: célula SEM PROVA.
+   Metas aceitas em 06/11/2026 (não reabertas), em segundos:
+                       Quente 1B / 3B     Frio 1B / 3B
+     C, 500 ids        5 / 10             20 / 30
+     A, 2.003 ids      15 / 30            30 / 45
+
+3. INDICADORES (relógio monotônico do processo, em milissegundos; a stream é sincronizada dentro de read_logits).
+   T_leitura: a chamada de le_ids (UMA chamada por repetição, sem leitura de KV e sem cortes dentro do tempo; blocos de 8 no modo de blocos, 1 por vez no
+   modo 1). T_logits: read_logits. T_sequencia: criação de motor e backend novos (cada um recarrega os pesos na GPU).
+   Indicador QUENTE = T_leitura + T_logits. T_sequencia fica FORA do indicador quente e é só registrada. Limitação declarada: o Engine não tem reset de
+   sequência; a preparação de uma sequência de serviço real (reset sobre pesos já carregados) não é medida.
+   Indicador FRIO = do primeiro instante do main do processo até os logits lidos: conferência de integridade, config.json, tokens.npy, criação do
+   contexto CUDA, carga dos pesos, compilação dos kernels (JIT), criação de motor e backend, le_ids, read_logits. Não inclui a execução do binário pelo
+   sistema. Frio de processo, não de disco.
+
+4. DESENHO.
+   Modos: modo 8 (max_positions 8) e modo 1 (max_positions 1). Nos dois: tabela congelada (10% dos slots, chaves espaçadas por igual, backlog = 0, admissão
+   Event), max_len 2.048, mesmos threads e afinidade da etapa 3, mesmos ids. Motor e backend NOVOS por repetição (o Engine não é alterado).
+   QUENTE (um processo; 1b antes de 3b; por modelo, cenário C antes de A): por célula, aquecimento descartado e 5 pares. O aquecimento é uma repetição do
+   modo 8; na primeira célula de cada modelo (cenário C, o mais barato) soma-se uma repetição do modo 1, para que o primeiro uso do modo 1 não caia dentro
+   de um par. O aquecimento é registrado e nunca entra em mediana, ganho ou deriva. Um par = uma repetição de cada modo; ordem ALTERNADA: par ímpar
+   (1, 3, 5) começa pelo modo 1, par par (2, 4) pelo modo 8. Ganho = 1 - (mediana do indicador do modo 8) / (mediana do indicador do modo 1).
+   Portão de correção em cada par: logits do modo 8 contra os do modo 1 com norma máxima relativa <= 1e-5 (mesma regra da etapa 3) e argmax igual, e
+   contadores (needed, hits, cpu) iguais com hits e cpu positivos.
+   Deriva: mediana do indicador do modo 1 nas duas primeiras repetições contra a das duas últimas; diferença = |a - b| / min(a, b).
+   FRIO (um processo = uma repetição de uma célula; só modo 8): 3 repetições por célula, cada uma em processo novo, ordem 1b (C, A) e depois 3b (C, A).
+   A repetição 1 também conta (não há aquecimento no frio). Cada processo grava seu arquivo de resultado e NÃO decide rótulo; a consolidação (sem GPU)
+   aplica as regras abaixo. Sem comparação de ganho no frio, só a meta. Nenhum portão numérico por par no frio (um só modo por processo): valem posição
+   igual a N, hits e cpu positivos e logits finitos; hash dos logits e argmax são gravados só como descrição.
+   Duas janelas separadas, cada uma com seu "autorizo" e pasta de saída nova: uma quente (um processo) e uma fria (12 processos, em sequência, sob o
+   mesmo roteiro de limite). Cada janela vale uma vez, no máximo 30 minutos, RTX 4090 UUID GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, sob o roteiro
+   roda-com-limite.sh. A janela fria só vale depois da quente fechada. Backups: tratados por outro roteiro; este critério não mexe em timers.
+   O programa nunca repete nada sozinho, nem escolhe outros ids ou outra tabela, nem altera meta, limite ou parâmetro depois de ver um resultado.
+
+5. PARÂMETROS (aprovados): 5 pares no quente; 3 repetições no frio; deriva máxima 10% (estritamente maior que 10% é SEM PROVA); piso de ganho 15%
+   (herdado do E4b); mediana contra a meta (meta exata ainda atinge; ganho exatamente 15% ainda atinge); mediana de número par: média dos dois centrais.
+
+6. REGRA ÚNICA DE RÓTULOS (nova; não é o rótulo da correção nem o do E4b): ATINGE, NÃO ATINGE, SEM PROVA.
+   Nível 1, validade por célula: SEM PROVA, e os tempos da célula não são lidos como prova, se ocorrer: portão de autorização fechado
+   (LEITURA_VELOCIDADE_AUTORIZADA=1 é a única que abre; nenhuma guarda antiga vale); UUID da GPU diferente do combinado; integridade quebrada (hash do
+   binário, do critério ou dos tokens.npy usados mudou), caso em que TODAS as células ficam SEM PROVA; max_len menor que o maior N; ids insuficientes
+   ou fora do vocabulário; posição do motor ou do backend diferente de N depois da leitura; erro do motor, da GPU ou falta de memória; portão de
+   correção de qualquer par falhou (alerta de correção que volta ao Breno: velocidade com resultado diferente não vale); contadores diferentes entre os
+   modos, ou hits ou cpu zerados; menos de 5 pares válidos (quente) ou menos de 3 repetições (frio); mais pares ou repetições que o desenho; ordem dos
+   pares diferente da alternada; tempo não finito, zero ou negativo; deriva acima do limite (quente); tempo-limite estourado antes de a célula terminar
+   (célula ausente ou interrompida).
+   Nível 2, só em célula válida: quente: ganho >= 15% E mediana do indicador do modo 8 <= meta quente; frio: mediana das 3 repetições <= meta fria.
+   Nível 3: célula ATINGE se passa no nível 2; NÃO ATINGE se válida e falha em algum item do nível 2 (o relatório diz qual: ganho, meta ou ambos);
+   SEM PROVA nos casos do nível 1. Conjunto de uma janela: NÃO ATINGE se alguma célula NÃO ATINGE; senão SEM PROVA se alguma célula estiver SEM PROVA;
+   senão ATINGE. O resumo por célula é sempre publicado, de modo que um conjunto NÃO ATINGE mostra quais células atingiram.
+   Só como DESCRIÇÃO (não decide): pior repetição por célula, desvio entre repetições (desvio-padrão amostral), T_leitura e T_logits separados,
+   T_sequencia, partes do tempo frio, carga externa (nvidia-smi, loadavg, timers; registrada por script fora do programa).
+
+7. CORTE POR TEMPO-LIMITE. 1B antes do 3B. Se o limite de 30 minutos cortar a janela, as células já fechadas com integridade conferida mantêm o
+   rótulo; a célula interrompida e as não rodadas ficam SEM PROVA; o conjunto sai pela regra de sempre; nada repete sozinho. Nova tentativa exige
+   autorização própria e pasta nova.
+
+8. DEPOIS DA JANELA. NÃO ATINGE ou SEM PROVA: parar e voltar ao Breno com os dados. ATINGE do conjunto não é autorização para nada além do que o
+   Breno aprovar. Cada janela de GPU precisa de "autorizo" que a nomeie; nenhuma autorização antiga vale.

@@ -24,6 +24,7 @@ pub mod motor;
 pub mod npy;
 pub mod pool;
 pub mod route;
+pub mod velocidade_regra;
 pub mod weights;
 
 /// Os testes de unidade que usam a GPU rodam em threads do mesmo processo; os dois testes de portão do núcleo fecham uma
