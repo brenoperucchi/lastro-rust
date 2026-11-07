@@ -1,0 +1,4 @@
+Janela J1 (5b, correção, RTX 4090 GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd), 07/11 19:55.
+Autorização permanente do Breno, via coordenador, 07/11 01:42: "toda janela que o lastro-rust quiser fazer na 4090 está liberada. Toda."
+Confirmação do coordenador (07/11 02:03) de que ela vale como o "autorizo" nominal das janelas; e, nesta sessão, o coordenador repetiu: "A janela do 5b na 4090 está liberada pela autorização permanente; só me avise o início e o fim."
+Condições: critério congelado antes (criterio-5b-primeira-palavra.txt sha256 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b), limite 30 min, sem repetição automática, backups restaurados, 5090 fora.

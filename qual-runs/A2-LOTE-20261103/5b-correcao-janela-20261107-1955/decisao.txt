@@ -1,0 +1,6 @@
+decisão da correção da primeira palavra a partir de texto cru (PASSA, REPROVA, SEM PROVA):
+  1b: PASSA
+  3b: PASSA
+conjunto: PASSA
+integridade: binário, critério e arquivos de entrada IGUAIS aos gravados e aos congelados
+se REPROVA ou SEM PROVA: a velocidade não roda sem nova decisão do Breno

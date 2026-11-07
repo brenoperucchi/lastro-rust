@@ -1,0 +1,6 @@
+== correção 3b
+pedido 0: PASSA: ids iguais, argmax igual; token 10921 palavra "Here" (referência 10921 gap 2.8850, segundo 914), visivel true
+pedido 1: PASSA: ids iguais, argmax igual; token 65 palavra "O" (referência 65 gap 0.7597, segundo 23370), visivel true
+pedido 2: PASSA: ids iguais, argmax igual; token 10921 palavra "Here" (referência 10921 gap 1.5208, segundo 69), visivel true
+rótulo: PASSA
+integridade do conjunto: íntegra

@@ -1,0 +1,7 @@
+início 07/11 19:55:26
+uuid, memory.used [MiB], utilization.gpu [%]
+GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 3552 MiB, 1 %
+6405, 1005 MiB, /usr/bin/voxtype
+464446, 370 MiB, /opt/google/chrome/chrome --type=gpu-process --gpu-recent-crash-count=0 --ozone-platform=wayland --render-node-override=/dev/dri/renderD128 --crashpad-handler-pid=464406 --enable-crash-reporter=c482c697-9e14-4c2c-a098-9179c456f82e? --change-stack-guard-on-fork=enable --gpu-preferences=YAAAAAAAAACgAAACAAAAAAAAAAAAAGAASAAAAAAAAAABAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAMAAAAAQAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --shared-files --metrics-shmem-handle=4?i?9179338578248871387?6895826335259330756?262144 --field-trial-handle=3?i?14901703746200388465?8469444751806103201?262144 --enable-features=OverlayScrollbar --variations-seed-version=20261106-170047.808000-production --pseudonymization-salt-handle=7?i?5479763204591782356?17308934497283281233?4 --trace-process-track-uuid=3190708988185955192
+loadavg 1.91 2.13 2.12 9/4960 611606
+binário c04af9514895d9c5e06d6361184309cf39e38edb2f9ac2cc1a680c4a4cfa1eff

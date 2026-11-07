@@ -1,0 +1,6 @@
+== correção 1b
+pedido 0: PASSA: ids iguais, argmax igual; token 705 palavra "To" (referência 705 gap 1.4013, segundo 3472), visivel true
+pedido 1: PASSA: ids iguais, argmax igual; token 23370 palavra "Um" (referência 23370 gap 1.2944, segundo 71), visivel true
+pedido 2: PASSA: ids iguais, argmax igual; token 1318 palavra "The" (referência 1318 gap 0.4096, segundo 9630), visivel true
+rótulo: PASSA
+integridade conferida no fim do modelo: íntegra

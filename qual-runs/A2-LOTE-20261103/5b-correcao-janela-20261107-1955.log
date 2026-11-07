@@ -1,0 +1,40 @@
+integridade antes: binário c04af9514895d9c5e06d6361184309cf39e38edb2f9ac2cc1a680c4a4cfa1eff; critério 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b; 5 arquivos de entrada
+To
+1b pedido 0: 103 ids, token 705 "To", produto 6434.1 ms
+Um
+1b pedido 1: 101 ids, token 23370 "Um", produto 2678.4 ms
+The
+1b pedido 2: 143 ids, token 1318 "The", produto 2950.6 ms
+== correção 1b
+pedido 0: PASSA: ids iguais, argmax igual; token 705 palavra "To" (referência 705 gap 1.4013, segundo 3472), visivel true
+pedido 1: PASSA: ids iguais, argmax igual; token 23370 palavra "Um" (referência 23370 gap 1.2944, segundo 71), visivel true
+pedido 2: PASSA: ids iguais, argmax igual; token 1318 palavra "The" (referência 1318 gap 0.4096, segundo 9630), visivel true
+rótulo: PASSA
+integridade conferida no fim do modelo: íntegra
+
+Here
+3b pedido 0: 103 ids, token 10921 "Here", produto 10154.3 ms
+O
+3b pedido 1: 101 ids, token 65 "O", produto 7331.4 ms
+Here
+3b pedido 2: 143 ids, token 10921 "Here", produto 8149.2 ms
+== correção 3b
+pedido 0: PASSA: ids iguais, argmax igual; token 10921 palavra "Here" (referência 10921 gap 2.8850, segundo 914), visivel true
+pedido 1: PASSA: ids iguais, argmax igual; token 65 palavra "O" (referência 65 gap 0.7597, segundo 23370), visivel true
+pedido 2: PASSA: ids iguais, argmax igual; token 10921 palavra "Here" (referência 10921 gap 1.5208, segundo 69), visivel true
+rótulo: PASSA
+integridade conferida no fim do modelo: íntegra
+
+decisão da correção da primeira palavra a partir de texto cru (PASSA, REPROVA, SEM PROVA):
+  1b: PASSA
+  3b: PASSA
+conjunto: PASSA
+integridade: binário, critério e arquivos de entrada IGUAIS aos gravados e aos congelados
+se REPROVA ou SEM PROVA: a velocidade não roda sem nova decisão do Breno
+
+Running as unit: lastro-limite-611741-1794092127271836226.service
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 47.863s
+             CPU time consumed: 2min 7.835s
+                   Memory peak: 18G (swap: 0B)
