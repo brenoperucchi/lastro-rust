@@ -1,0 +1,43 @@
+CRITÉRIO DA CORREÇÃO DA LEITURA EM BLOCOS NOS MODELOS REAIS (A2, etapa 3)
+Congelado em 07/11/2026, ANTES de qualquer dado real. Tolerâncias aprovadas pelo Breno em 07/11/2026 00:57 (via coordenador) como pré-registradas
+no recorte /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/recorte-etapa3-correcao-modelos-reais-20261107.md, seção 5.
+Este arquivo NÃO pode mudar depois de observar qualquer resultado. Qualquer limite novo ou recorte novo é decisão só do Breno, antes de repetir.
+O hash SHA-256 deste arquivo é conferido pelo programa antes e depois da execução (integridade).
+
+1. ESCOPO. Correção numérica da leitura em blocos de até 8 posições (le_ids, commit 27b951d) nos Granite 3.1 1B e 3B, indicador interno com ids
+   prontos até os logits da última posição. NÃO atesta velocidade, produto, primeira palavra, tokenização, amostragem nem geração livre.
+
+2. CENÁRIOS (por modelo; max_len de construção 2.048; um motor e um backend NOVOS por leitura/sequência).
+   C: 500 ids (resto 4). A: 2.003 ids (resto 3). Continuação: 1.205 e depois 798 ids (restos 5 e 6; soma 2.003, os mesmos ids de A).
+   Ids: traços de conversa do repo, por modelo: pasta TRACOS-20261029/<modelo>/conversa-N/tokens.npy.
+     1b: C = 500 primeiros ids de conversa-4; A = 2.003 primeiros ids de conversa-0 e conversa-1 concatenadas.
+     3b: C = 500 primeiros ids de conversa-2; A = 2.003 primeiros ids de conversa-0 e conversa-1 concatenadas.
+   Todo id deve ser menor que o vocabulário do modelo; faltando ids ou id fora do vocabulário: célula SEM PROVA.
+
+3. MODOS E TABELA. Modo 1: motor com max_positions = 1 (um id por passo). Modo 8: max_positions = 8 (blocos de 8 e resto). Nos dois: tabela
+   congelada (10% dos slots, chaves espaçadas por igual, backlog = 0, admissão Event). Referência X: passada residente (GpuModel, todos os
+   experts na GPU, um token por vez) sobre os mesmos ids, max_len 2.048.
+
+4. COMPARAÇÕES (pontos: fim de cada chamada de le_ids).
+   (a) modo 8 contra modo 1: logits da última posição e KV de todas as camadas e posições lidas (K e V): norma máxima relativa
+       max|got - want| / max(max|want|, 1e-6) <= 1e-5. Cenário C (posição 499), A (posição 2.002) e continuação (1.204 e 2.002).
+   (b) modo 8 contra X: logits da última posição: erro L2 relativo <= 1e-4 e argmax igual. Mesmos pontos.
+   (c) continuação (modo 8, 1.205 + 798) contra uma leitura só de 2.003 (modo 8): logits finais e KV, limite de (a).
+   Valor não finito (NaN ou infinito), vetor vazio ou de tamanho diferente em qualquer vetor comparado, do motor ou da referência, é
+   FALHA NUMÉRICA (erro infinito), com registro de qual vetor.
+   Só como DESCRIÇÃO (não decide): erro máximo do KV por faixa de posições (0-63, 64-511, 512-1023, 1024-2047), na comparação (a).
+
+5. REGRA ÚNICA DE RÓTULOS (nova; não é o rótulo de velocidade do E4b).
+   Nível 1, validade por célula (modelo): SEM PROVA, e as comparações da célula não são lidas como prova, se ocorrer: portão de autorização
+   fechado; UUID da GPU diferente do combinado; max_len menor que o maior N; ids insuficientes ou fora do vocabulário; posição do motor
+   diferente de N depois da leitura; erro do motor, da GPU ou falta de memória; falta ou erro de qualquer referência; hits ou cpu igual a
+   zero em algum modo, ou contadores (needed, hits, cpu) diferentes entre os modos; tempo-limite estourado antes de a célula terminar;
+   integridade quebrada (hash do binário, do critério ou dos tokens.npy usados mudou), caso em que TODAS as células ficam SEM PROVA.
+   Nível 2, só em célula válida: cada comparação dá OK ou FALHA NUMÉRICA.
+   Nível 3: célula PASSA se todas as comparações forem OK; REPROVA se houver ao menos uma FALHA NUMÉRICA; SEM PROVA nos casos do nível 1.
+   Conjunto: REPROVA se alguma célula REPROVA; senão SEM PROVA se alguma célula estiver SEM PROVA; senão PASSA.
+   O programa nunca repete sozinho, nem escolhe outros ids ou outra tabela depois de ver um resultado, nem altera limite.
+
+6. UMA JANELA. Uma primeira janela de correção, no máximo 30 minutos, RTX 4090 UUID GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, pasta de saída
+   nova, sob o roteiro de limite (roda-com-limite.sh). REPROVA ou SEM PROVA: parar e voltar ao coordenador; nova tentativa exige autorização
+   e pasta nova.

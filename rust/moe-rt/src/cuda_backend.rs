@@ -536,6 +536,16 @@ impl CudaBackend {
         Ok(())
     }
 
+    /// O tamanho do vocabulário do modelo (só leitura; `Err` sem modelo).
+    pub fn vocab(&self) -> Result<usize, CudaError> {
+        Ok(self.st.lock().unwrap_or_else(|e| e.into_inner()).dense.as_ref().ok_or(CudaError::Config("sem modelo"))?.cfg().vocab)
+    }
+
+    /// O `max_len` do cache KV com que o modelo foi construído (só leitura; `Err` sem modelo).
+    pub fn max_len(&self) -> Result<usize, CudaError> {
+        Ok(self.st.lock().unwrap_or_else(|e| e.into_inner()).dense.as_ref().ok_or(CudaError::Config("sem modelo"))?.max_len())
+    }
+
     /// A posição do próximo token na sequência corrente (0 depois de `reset_sequence`).
     pub fn sequence_position(&self) -> Result<usize, CudaError> {
         Ok(self.st.lock().unwrap_or_else(|e| e.into_inner()).dense.as_ref().ok_or(CudaError::Config("sem modelo"))?.position())
@@ -602,6 +612,43 @@ impl CudaBackend {
         ck!(sys::cuStreamSynchronize(s.raw()));
         let mut st = self.st.lock().unwrap_or_else(|e| e.into_inner());
         st.dense.as_mut().ok_or(CudaError::Config("sem modelo"))?.read_logits(&s.0)
+    }
+}
+
+/// O adaptador de `le_ids` (etapa 3): prepara os ids de cada bloco por `begin_step_tokens`, SEMPRE na stream de cálculo do motor (a que
+/// foi passada a `parts`): preparar em outra stream correria contra o passo anterior. Não guarda estado além dos limites lidos na construção.
+pub struct LeitorCuda {
+    b: Arc<CudaBackend>,
+    compute: CudaStream,
+    vocab: usize,
+    max_len: usize,
+}
+
+impl LeitorCuda {
+    /// `compute` tem de ser a stream de cálculo do `Engine` deste backend (o clone passado a `CudaBackend::parts`).
+    pub fn novo(b: Arc<CudaBackend>, compute: CudaStream) -> Result<Self, CudaError> {
+        let (vocab, max_len) = (b.vocab()?, b.max_len()?);
+        Ok(Self { b, compute, vocab, max_len })
+    }
+}
+
+impl crate::motor::leitura::PreparaPasso for LeitorCuda {
+    type Error = CudaError;
+    fn vocab(&self) -> usize {
+        self.vocab
+    }
+    fn max_positions(&self) -> usize {
+        self.b.max_pos
+    }
+    fn max_len(&self) -> usize {
+        self.max_len
+    }
+    /// Sem modelo (não acontece depois de `novo`), a posição "infinita" faz toda leitura ser recusada por `valida`.
+    fn posicao(&self) -> u64 {
+        self.b.sequence_position().map(|p| p as u64).unwrap_or(u64::MAX)
+    }
+    fn prepara(&self, ids: &[usize]) -> Result<(), CudaError> {
+        self.b.begin_step_tokens(&self.compute, ids)
     }
 }
 

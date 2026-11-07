@@ -11,6 +11,7 @@ pub mod cache;
 pub mod cpu;
 pub mod diag;
 pub mod e4b_regra;
+pub mod leitura_regra;
 #[cfg(not(motor_loom))]
 pub mod cuda_backend;
 #[cfg(not(motor_loom))]

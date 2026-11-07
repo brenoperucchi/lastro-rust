@@ -144,6 +144,11 @@ impl Dense {
         })
     }
 
+    /// O comprimento máximo do cache KV desta construção (só leitura).
+    pub fn max_len(&self) -> usize {
+        self.max_len
+    }
+
     pub fn cfg(&self) -> &Config {
         &self.cfg
     }
