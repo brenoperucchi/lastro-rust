@@ -1,0 +1,27 @@
+{
+ "fonte": "tools/ref-texts/texto-a.txt",
+ "palavras_na_fonte": 166,
+ "data_template": "November 07, 2026",
+ "cenarios": {
+  "C": {
+   "alvo": 500,
+   "palavras": 267,
+   "ids": {
+    "1b": 499,
+    "3b": 499
+   },
+   "sha256": "e80bce7b40f94aa2c86cb5f2e8345f7230982711e7ec0441654df8c273157b25",
+   "arquivo": "pedido-C.txt"
+  },
+  "A": {
+   "alvo": 2003,
+   "palavras": 1217,
+   "ids": {
+    "1b": 2003,
+    "3b": 2003
+   },
+   "sha256": "4ab72d751f8f7e67c6c93513f235ad239f0cb54c21e391dc664bc71d62a54d44",
+   "arquivo": "pedido-A.txt"
+  }
+ }
+}

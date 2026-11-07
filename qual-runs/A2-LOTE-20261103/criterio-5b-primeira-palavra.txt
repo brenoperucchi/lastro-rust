@@ -1,0 +1,77 @@
+CRITÉRIO DO DEGRAU 5b: PRIMEIRA PALAVRA A PARTIR DE TEXTO CRU (A2, etapa 5)
+Congelado em 07/11/2026, ANTES de qualquer dado de GPU do degrau 5b. Recorte e decisões: recorte-etapa5-interface-de-texto-20261107.md (seções 3, 4, 5, 7;
+decisão do Breno: "primeira palavra" = primeiro token detokenizado visível; quente "por pedido" sem reset no Engine, que não é alterado).
+Este arquivo NÃO pode mudar depois de observar qualquer resultado. Qualquer limite, meta, parâmetro ou texto novo é decisão só do Breno, antes de repetir.
+O hash SHA-256 deste arquivo é uma constante do programa (CRITERIO_SHA em src/bin/primeira-palavra.rs); o programa recusa outro conteúdo antes de abrir a
+GPU e confere o hash de novo no fim de cada célula, de cada repetição fria e na consolidação.
+
+1. ESCOPO. Binário primeira-palavra (src/bin/primeira-palavra.rs; regras puras em src/primeira_palavra_regra.rs). Texto cru entra, o programa aplica o
+   chat template do Granite com a data FIXA 2026-11-07 ("November 07, 2026"), tokeniza com o tokenizador Rust do degrau 5a (commit 29f4387), lê os ids em
+   blocos de 8 (le_ids, LeitorCuda, tabela congelada de 10% dos slots, backlog 0, admissão Event, max_len 2.048, motor e backend NOVOS por pedido),
+   lê os logits (read_logits), escolhe o argmax, detokeniza esse token e o entrega na saída com flush. Granite 3.1 1B e 3B, RTX 4090 UUID
+   GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd. A 5090 nunca. NÃO atesta: geração depois da primeira palavra, multi-turno, cache de prefixo, contexto acima de
+   2.048, cenário B, qualidade das respostas, serviço, outros modelos. Sem GPU no desenho: o código foi escrito e testado em CPU; a GPU só abre numa janela
+   com "autorizo" do Breno que a nomeie.
+
+2. "PRIMEIRA PALAVRA" (decisão do Breno): o primeiro token detokenizado visível. O programa lê UM passo (o argmax dos logits da última posição do prompt)
+   e detokeniza esse token. A flag "visivel" (pelo menos um caractere não branco) é GRAVADA; um primeiro token só de espaço ou quebra de linha NÃO muda o
+   rótulo (descrição; achar o próximo visível exigiria o laço de geração do degrau 5c, fora deste critério).
+
+3. CRONÔMETROS (Instant, monotônico), separados, por repetição, gravados em JSON (<arquivo>.json ao lado do registro):
+   T_entrada (do início da obtenção do texto cru até ele estar na memória: argumento, stdin ou arquivo), T_token (renderização do template e tokenização),
+   T_sequencia (criação de contexto de stream, motor e backend NOVOS, que recarregam os pesos na GPU), T_leitura (le_ids), T_logits (read_logits, com a stream
+   sincronizada), T_escolha (argmax), T_detok (detokenização do token), T_entrega (escrita da palavra na saída padrão com flush).
+   INDICADOR DE PRODUTO = do instante em que o texto cru está disponível até a primeira palavra entregue (flush feito), medido por Instant, não pela soma;
+   a soma das etapas é gravada para conferência (só descrição). INDICADOR FRIO = do primeiro instante do main até a primeira palavra entregue (inclui
+   conferência de hashes, config, tokenizador, contexto CUDA, carga dos pesos, JIT, T_sequencia). Frio de processo, não de disco.
+   LIMITAÇÃO DECLARADA (importante): o Engine NÃO tem reset de sequência. Por isso o quente POR PEDIDO inclui T_sequencia (motor e backend novos a cada
+   pedido), ao contrário do indicador quente da etapa 4, que o deixou de fora. Pela aritmética da seção 2.4 do recorte, isso pode dar NÃO ATINGE nas metas
+   quentes; esse resultado é esperado como possível, é DESCRITIVO e vai ao Breno; não é falha do programa nem motivo para repetir. A mediana do quente
+   SEM T_sequencia também é gravada, só como descrição (não decide).
+
+4. CORREÇÃO (modo correcao; uma janela; 1B antes do 3B). Pedidos: os 3 primeiros de tools/ref-texts/prompts-traco.json, um por vez, motor e backend novos,
+   data fixa. Referência: qual-runs/A2-LOTE-20261103/5b-referencia/ref-<modelo>.json (tools/ref_primeira_palavra.py, transformers em CPU, float32, mesma data,
+   mesmo template): ids do prompt, argmax, segundo colocado e diferença de logit (gap).
+   Por pedido, PASSA exige TODOS: (a) os ids obtidos do texto cru pelo Rust são IDÊNTICOS aos da referência (mesmo comprimento e valores); (b) o argmax dos logits
+   do Lastro é igual ao argmax da referência; EXCEÇÃO de empate: se o gap da referência é MENOR que 1e-3 e o argmax do Lastro é o segundo colocado da referência,
+   o pedido fica como EMPATE, vale como passou e é descrito (dentro do limite, mesma regra do M1b); (c) a palavra impressa é a detokenização desse token.
+   REPROVA: execução válida e falha em (a) ou (b). SEM PROVA: portão de autorização fechado; UUID errado; integridade quebrada; erro do motor, da GPU ou de
+   leitura; logits não finitos; hits ou cpu zerados; referência ausente, ilegível ou de outro prompt; menos de 3 pedidos por modelo; tempo-limite estourado.
+   Rótulos da correção: PASSA / REPROVA / SEM PROVA (REPROVA vence SEM PROVA, SEM PROVA vence PASSA; integridade quebrada deixa tudo SEM PROVA).
+   Se a correção REPROVAR ou ficar SEM PROVA, a velocidade NÃO roda sem nova decisão do Breno.
+
+5. VELOCIDADE (modo velocidade). Células: modelo (1b, 3b) x cenário (C, A) x estado (quente, frio) = 8 células. Textos, gerados de forma determinística por
+   tools/gera_textos_5b.py a partir de tools/ref-texts/texto-a.txt (palavras repetidas em ciclo e cortadas): pedido-C.txt (267 palavras) e pedido-A.txt (1.217
+   palavras), em qual-runs/A2-LOTE-20261103/5b-textos/. Contagem de ids do pedido já renderizado pelo template, conferida pelo tokenizador Rust no programa:
+   C = 499 ids (alvo 500), A = 2.003 ids (alvo 2.003), tolerância de ±2% sobre o alvo (C de 490 a 510; A de 1.963 a 2.043); contagem fora da faixa: célula
+   SEM PROVA. Os mesmos textos servem ao 1B e ao 3B (o tokenizer.json é o mesmo).
+   Metas (em segundos), aceitas em 06/11/2026 e não reabertas: QUENTE 1B/3B: C 5/10, A 15/30; FRIO 1B/3B: C 20/30, A 30/45.
+   QUENTE: um processo; 1b antes de 3b; cenário C antes de A; por célula, 1 repetição de AQUECIMENTO descartada (registrada, nunca entra em mediana) e 5
+   repetições válidas, cada uma com motor e backend NOVOS (pesos do host já na RAM; T_sequencia entra no indicador de produto). Decide a MEDIANA das 5
+   repetições do indicador de produto contra a meta quente (meta exata ainda atinge; mediana de número par, se houver, é a média dos centrais).
+   FRIO: um processo = uma repetição de uma célula; 3 repetições por célula, cada uma em processo NOVO; ordem 1b (C, A) depois 3b (C, A); a repetição 1 também
+   conta (sem aquecimento). Decide a MEDIANA das 3 do indicador frio contra a meta fria. Cada processo grava o registro e NÃO decide rótulo; a consolidação
+   (sem GPU) aplica as regras.
+   Rótulos: ATINGE / NÃO ATINGE / SEM PROVA. SEM PROVA (nível 1), tempos não lidos como prova: portão fechado (PRIMEIRA_PALAVRA_AUTORIZADA=1 é o único que abre; nenhuma
+   guarda antiga vale); UUID diferente; integridade quebrada (hash do binário, do critério, do tokenizer.json ou dos textos/referências mudou), caso em que TODAS as
+   células ficam SEM PROVA; contagem de ids fora da faixa; id fora do vocabulário; posição do motor ou do backend diferente de N; erro do motor, da GPU ou de
+   memória; logits não finitos; hits ou cpu zerados; token escolhido ou contadores diferentes entre as repetições de uma célula quente (alerta de correção);
+   menos de 5 repetições válidas (quente) ou menos de 3 (frio); mais que o desenho; tempo não finito, zero ou negativo; tempo-limite estourado (célula ausente).
+   NÃO ATINGE (nível 2, só em célula válida): mediana contra a meta. ATINGE: mediana <= meta. Conjunto: NÃO ATINGE se alguma célula NÃO ATINGE; senão SEM PROVA
+   se alguma estiver SEM PROVA; senão ATINGE. O resumo por célula é sempre publicado.
+   Só como DESCRIÇÃO (não decide): pior repetição, desvio-padrão amostral, as oito partes do tempo, mediana quente sem T_sequencia, a flag "visivel", carga externa.
+
+6. INTEGRIDADE E PORTÕES. Variável própria PRIMEIRA_PALAVRA_AUTORIZADA=1 (nenhuma outra abre); CUDA_VISIBLE_DEVICES exatamente o UUID acima. O programa
+   confere SHA-256 do binário (gravado e recomparado), deste critério (constante CRITERIO_SHA), do tokenizer.json (ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654),
+   de prompts-traco.json (e5e53c33edaa9c5c972a88ddab44f7de0b5bfef0d5be204c97527191b770ac3c), de pedido-C.txt (e80bce7b40f94aa2c86cb5f2e8345f7230982711e7ec0441654df8c273157b25),
+   de pedido-A.txt (4ab72d751f8f7e67c6c93513f235ad239f0cb54c21e391dc664bc71d62a54d44), de ref-1b.json (787675e72f135dc8d6072b0c60971fbcdce6ff8616698596f1fb3c26d568d59b)
+   e de ref-3b.json (7425c1d8e21be1c37f66a0f950bdc46a48737321e959a3f081a20c9534d8e35f), todos ANTES de ler texto ou abrir a GPU e de novo no fim. Data do template:
+   só 2026-11-07 nos modos correcao e velocidade (outra data recusa). O modo livre (texto à escolha, data do dia) não decide rótulo e não vale como prova.
+
+7. JANELAS. Três janelas separadas, cada uma com "autorizo" do Breno que a nomeie e pasta de saída NOVA: J1 correção (1B e 3B, até 30 min), J2 velocidade quente (até
+   30 min), J3 velocidade fria (12 processos, até 30 min, só depois de J2 fechada). Sob roda-com-limite.sh (limite de tempo) e, para as pausas de timers, sob
+   janela-e4b.sh como nas etapas anteriores; roteiros novos: roda-5b-janela.sh e roda-5b-frio.sh. Se J1 reprovar ou ficar SEM PROVA, parar antes de J2 e J3.
+   Corte por tempo-limite: células fechadas com integridade conferida mantêm o rótulo; a interrompida e as não rodadas ficam SEM PROVA; nada repete sozinho.
+
+8. DEPOIS DA JANELA. Qualquer resultado (inclusive ATINGE) vai ao Breno com os dados; NÃO ATINGE ou SEM PROVA: parar. O resultado quente é descritivo (ver a seção 3).
+   Nenhuma autorização antiga vale.
