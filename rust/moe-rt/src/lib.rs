@@ -21,6 +21,7 @@ pub mod geracao_regra;
 pub mod gpu_model;
 pub mod hits;
 pub mod lastro_cli;
+pub mod lastro_servidor;
 pub mod model;
 pub mod motor;
 pub mod npy;
