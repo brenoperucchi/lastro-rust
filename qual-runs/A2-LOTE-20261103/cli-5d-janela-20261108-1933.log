@@ -1,0 +1,20 @@
+etapa 5d, comando de linha (critério sha256 acf84e6ce79b8ff7a200c6734e1fab96060c2c3b73911faa198e85980950180a)
+recusas: OK
+1b curto (arg): PASSA (igual byte a byte, código 0; total 12574.1 ms, primeiro byte 11865.0 ms)
+1b medio (stdin): PASSA (igual byte a byte, código 0; total 11002.0 ms, primeiro byte 10329.4 ms)
+1b longo (arg): PASSA (igual byte a byte, código 0; total 12514.5 ms, primeiro byte 11838.9 ms)
+3b curto (arg): PASSA (igual byte a byte, código 0; total 18634.6 ms, primeiro byte 17327.1 ms)
+3b medio (stdin): PASSA (igual byte a byte, código 0; total 20078.1 ms, primeiro byte 18692.3 ms)
+3b longo (arg): PASSA (igual byte a byte, código 0; total 22964.1 ms, primeiro byte 21729.7 ms)
+saídas iguais: 6 de 6
+integridade: íntegra (binário, critérios, textos, referências e tokenizers iguais antes e depois e aos congelados)
+código 1 (falha de execução do binário) conta como 'código errado' e vira REPROVA
+o tempo até o primeiro byte sai igual ao total porque a saída é escrita de uma vez no fim; não é latência do primeiro token
+tempos (descritivos, sem rótulo): ver as linhas acima e execucoes.txt (rc, total ms, primeiro byte ms)
+rótulo: PASSA
+Running as unit: lastro-limite-3312000-1794177217742260752.service
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 1min 38.589s
+             CPU time consumed: 5min 38.680s
+                   Memory peak: 17.8G (swap: 0B)

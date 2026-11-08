@@ -1,0 +1,6 @@
+1b curto arg 0 12574.1 11865.0
+1b medio stdin 0 11002.0 10329.4
+1b longo arg 0 12514.5 11838.9
+3b curto arg 0 18634.6 17327.1
+3b medio stdin 0 20078.1 18692.3
+3b longo arg 0 22964.1 21729.7

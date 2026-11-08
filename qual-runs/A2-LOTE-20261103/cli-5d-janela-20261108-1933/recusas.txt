@@ -1,0 +1,19 @@
+ok: 1a vazio pelo argumento (código 2, 60 ms): lastro: recusado: entrada vazia ou só espaços
+ok: 1b só espaços pelo argumento (código 2, 61 ms): lastro: recusado: entrada vazia ou só espaços
+ok: 1c só espaços pela entrada padrão (código 2, 59 ms): lastro: recusado: entrada vazia ou só espaços
+ok: 1d entrada padrão vazia (código 2, 59 ms): lastro: recusado: entrada vazia ou só espaços
+ok: 2a texto grande, 64 novos (código 2, 65 ms): lastro: recusado: texto grande demais: 3060 ids do prompt mais 64 novos passam de 2048 posições
+ok: 2b texto grande, 1 novo (código 2, 66 ms): lastro: recusado: texto grande demais: 3060 ids do prompt mais 1 novos passam de 2048 posições
+ok: 3a modelo inexistente (código 2, 3 ms): lastro: recusado: modelo inexistente: /tmp/recusas-5d.NK9UZB/nao-existe não é uma pasta
+ok: 3d modelo inexistente, sem texto, entrada aberta (código 2, 3 ms): lastro: recusado: modelo inexistente: /tmp/recusas-5d.NK9UZB/nao-existe não é uma pasta
+ok: 3b modelo sem tokenizer.json (código 2, 3 ms): lastro: recusado: modelo sem tokenizer.json: /tmp/recusas-5d.NK9UZB/m
+ok: 3c modelo sem pesos (código 2, 3 ms): lastro: recusado: modelo sem pesos (*.safetensors): /tmp/recusas-5d.NK9UZB/m
+ok: 4a --novos 0 (código 2, 3 ms): lastro: recusado: --novos fora de 1..64: 0
+ok: 4b --novos 65 (código 2, 3 ms): lastro: recusado: --novos fora de 1..64: 65
+ok: 4c opção desconhecida (código 2, 3 ms): lastro: recusado: opção desconhecida: --x
+ok: 4d --modelo duplicado (código 2, 3 ms): lastro: recusado: --modelo duplicado
+ok: 4e --novos duplicado (código 2, 3 ms): lastro: recusado: --novos duplicado
+ok: 4f dois textos (código 2, 3 ms): lastro: recusado: texto duplicado (mais de um argumento de texto)
+ok: 4g sem --modelo (código 2, 3 ms): lastro: recusado: falta --modelo
+ok: 4h --data inválida (código 2, 3 ms): lastro: recusado: --data tem de ser "Month DD, YYYY" (ex.: "November 07, 2026"), não "2026-11-07"
+RECUSAS OK (todas sem GPU)
