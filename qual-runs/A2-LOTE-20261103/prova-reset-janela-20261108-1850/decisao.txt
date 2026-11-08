@@ -1,0 +1,5 @@
+prova 2 do reset de sequência (critério sha256 955becbb243772087258bf2bde1c564c9cbc0630926806a0ed5a8258726662c9)
+1b: PASSA
+3b: PASSA
+integridade do conjunto: íntegra
+rótulo: PASSA

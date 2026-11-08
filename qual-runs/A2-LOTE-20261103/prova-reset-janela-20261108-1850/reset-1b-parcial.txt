@@ -1,0 +1,15 @@
+== reset de sequência 1b
+pedido 0 (A): idêntico bit a bit (2003 ids, token 40281, 49155 logits) [controle: motor novo nos dois braços]
+pedido 1 (C): idêntico bit a bit (499 ids, token 705, 49155 logits)
+pedido 2 (A): idêntico bit a bit (2003 ids, token 40281, 49155 logits)
+pedido 3 (C): idêntico bit a bit (499 ids, token 705, 49155 logits)
+T_sequencia pedido 0 (A): A 2669.407 ms, B 1725.837 ms
+T_sequencia pedido 1 (C): A 1709.226 ms, B 0.000 ms
+T_sequencia pedido 2 (A): A 1690.038 ms, B 0.000 ms
+T_sequencia pedido 3 (C): A 1735.498 ms, B 0.000 ms
+criações do motor: braço A 4, braço B 1 (esperado 1)
+velocidade (descritiva) braço B pedido 1 (C): T_sequencia 0.000 ms (esperado ~0, sem rótulo); produto 4308.720 ms vs meta 6000 ms ATINGE [amostra única, não a mediana do modo quente]
+velocidade (descritiva) braço B pedido 2 (A): T_sequencia 0.000 ms (esperado ~0, sem rótulo); produto 16849.993 ms vs meta 18000 ms ATINGE [amostra única, não a mediana do modo quente]
+velocidade (descritiva) braço B pedido 3 (C): T_sequencia 0.000 ms (esperado ~0, sem rótulo); produto 4173.061 ms vs meta 6000 ms ATINGE [amostra única, não a mediana do modo quente]
+rótulo: PASSA
+integridade conferida no fim do modelo: íntegra

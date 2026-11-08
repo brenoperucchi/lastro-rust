@@ -1,0 +1,5 @@
+fim: 2026-11-08T18:55:20-03:00
+saída do roteiro: 0
+limite atingido: 0
+processo não morreu: 0
+restauração com falha: 0

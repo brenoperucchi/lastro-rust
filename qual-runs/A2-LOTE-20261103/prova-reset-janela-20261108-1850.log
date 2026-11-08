@@ -1,0 +1,77 @@
+integridade antes: binário b4659b2e8a948849971db4844d588028f9d9a99f32b0423895374d4ab1db81e5; critério de reset 955becbb243772087258bf2bde1c564c9cbc0630926806a0ed5a8258726662c9; critério 5b 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b; 4 arquivos de entrada
+copied
+1b braço A pedido 0 (A): 2003 ids, token 40281, T_sequencia 2669.407 ms
+To
+1b braço A pedido 1 (C): 499 ids, token 705, T_sequencia 1709.226 ms
+copied
+1b braço A pedido 2 (A): 2003 ids, token 40281, T_sequencia 1690.038 ms
+To
+1b braço A pedido 3 (C): 499 ids, token 705, T_sequencia 1735.498 ms
+copied
+1b braço B pedido 0 (A): 2003 ids, token 40281, T_sequencia 1725.837 ms
+To
+1b braço B pedido 1 (C): 499 ids, token 705, T_sequencia 0.000 ms
+copied
+1b braço B pedido 2 (A): 2003 ids, token 40281, T_sequencia 0.000 ms
+To
+1b braço B pedido 3 (C): 499 ids, token 705, T_sequencia 0.000 ms
+== reset de sequência 1b
+pedido 0 (A): idêntico bit a bit (2003 ids, token 40281, 49155 logits) [controle: motor novo nos dois braços]
+pedido 1 (C): idêntico bit a bit (499 ids, token 705, 49155 logits)
+pedido 2 (A): idêntico bit a bit (2003 ids, token 40281, 49155 logits)
+pedido 3 (C): idêntico bit a bit (499 ids, token 705, 49155 logits)
+T_sequencia pedido 0 (A): A 2669.407 ms, B 1725.837 ms
+T_sequencia pedido 1 (C): A 1709.226 ms, B 0.000 ms
+T_sequencia pedido 2 (A): A 1690.038 ms, B 0.000 ms
+T_sequencia pedido 3 (C): A 1735.498 ms, B 0.000 ms
+criações do motor: braço A 4, braço B 1 (esperado 1)
+velocidade (descritiva) braço B pedido 1 (C): T_sequencia 0.000 ms (esperado ~0, sem rótulo); produto 4308.720 ms vs meta 6000 ms ATINGE [amostra única, não a mediana do modo quente]
+velocidade (descritiva) braço B pedido 2 (A): T_sequencia 0.000 ms (esperado ~0, sem rótulo); produto 16849.993 ms vs meta 18000 ms ATINGE [amostra única, não a mediana do modo quente]
+velocidade (descritiva) braço B pedido 3 (C): T_sequencia 0.000 ms (esperado ~0, sem rótulo); produto 4173.061 ms vs meta 6000 ms ATINGE [amostra única, não a mediana do modo quente]
+rótulo: PASSA
+integridade conferida no fim do modelo: íntegra
+
+ac
+3b braço A pedido 0 (A): 2003 ids, token 329, T_sequencia 5391.421 ms
+A
+3b braço A pedido 1 (C): 499 ids, token 51, T_sequencia 5306.173 ms
+ac
+3b braço A pedido 2 (A): 2003 ids, token 329, T_sequencia 5270.294 ms
+A
+3b braço A pedido 3 (C): 499 ids, token 51, T_sequencia 5336.118 ms
+ac
+3b braço B pedido 0 (A): 2003 ids, token 329, T_sequencia 5369.286 ms
+A
+3b braço B pedido 1 (C): 499 ids, token 51, T_sequencia 0.000 ms
+ac
+3b braço B pedido 2 (A): 2003 ids, token 329, T_sequencia 0.000 ms
+A
+3b braço B pedido 3 (C): 499 ids, token 51, T_sequencia 0.000 ms
+== reset de sequência 3b
+pedido 0 (A): idêntico bit a bit (2003 ids, token 329, 49155 logits) [controle: motor novo nos dois braços]
+pedido 1 (C): idêntico bit a bit (499 ids, token 51, 49155 logits)
+pedido 2 (A): idêntico bit a bit (2003 ids, token 329, 49155 logits)
+pedido 3 (C): idêntico bit a bit (499 ids, token 51, 49155 logits)
+T_sequencia pedido 0 (A): A 5391.421 ms, B 5369.286 ms
+T_sequencia pedido 1 (C): A 5306.173 ms, B 0.000 ms
+T_sequencia pedido 2 (A): A 5270.294 ms, B 0.000 ms
+T_sequencia pedido 3 (C): A 5336.118 ms, B 0.000 ms
+criações do motor: braço A 4, braço B 1 (esperado 1)
+velocidade (descritiva) braço B pedido 1 (C): T_sequencia 0.000 ms (esperado ~0, sem rótulo); produto 8407.815 ms vs meta 12000 ms ATINGE [amostra única, não a mediana do modo quente]
+velocidade (descritiva) braço B pedido 2 (A): T_sequencia 0.000 ms (esperado ~0, sem rótulo); produto 33494.756 ms vs meta 36000 ms ATINGE [amostra única, não a mediana do modo quente]
+velocidade (descritiva) braço B pedido 3 (C): T_sequencia 0.000 ms (esperado ~0, sem rótulo); produto 8362.307 ms vs meta 12000 ms ATINGE [amostra única, não a mediana do modo quente]
+rótulo: PASSA
+integridade conferida no fim do modelo: íntegra
+
+prova 2 do reset de sequência (critério sha256 955becbb243772087258bf2bde1c564c9cbc0630926806a0ed5a8258726662c9)
+1b: PASSA
+3b: PASSA
+integridade do conjunto: íntegra
+rótulo: PASSA
+
+Running as unit: lastro-limite-3026578-1794174615939997331.service
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 5min 4.178s
+             CPU time consumed: 38min 22.048s
+                   Memory peak: 17.9G (swap: 0B)

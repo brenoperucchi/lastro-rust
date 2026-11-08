@@ -1,0 +1,1 @@
+autorização: coordenador 08/11 17:56 (decisão do Breno: seguir o plano, reset de sequência), 4090 permanente, 30 min, sem repetição automática, critério criterio-reset-sequencia-20261108.md sha 955becbb..., binário primeira-palavra sha b4659b2e8a94... (commit 4068182)

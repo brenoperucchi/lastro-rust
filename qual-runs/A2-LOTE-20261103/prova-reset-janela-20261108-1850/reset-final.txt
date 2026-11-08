@@ -1,0 +1,2 @@
+tipo=reset-final
+integro=1
