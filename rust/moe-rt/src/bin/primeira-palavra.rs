@@ -605,7 +605,7 @@ fn correcao(args: &Args, exe: &Path) -> Result<i32, String> {
 /// Os dois braços de um modelo: A = motor e backend NOVOS por pedido; B = um motor reutilizado com `nova_sequencia` entre os pedidos (o braço A roda
 /// inteiro antes do B, nunca dois motores vivos). Falha antes de qualquer pedido (config, pesos, texto fora da faixa) deixa o registro sem pedidos.
 fn reset_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> rr::RegistroReset {
-    let mut rec = rr::RegistroReset { modelo: nome.into(), integro: true, falha: None, pedidos: vec![], extras: vec![] };
+    let mut rec = rr::RegistroReset { modelo: nome.into(), integro: true, falha: None, pedidos: vec![], criacoes_a: 0, criacoes_b: 0, extras: vec![] };
     let r: Result<(), String> = (|| {
         let cfg = carrega_config(mdir)?;
         let tok = carrega_tokenizador(mdir)?;
@@ -620,9 +620,11 @@ fn reset_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> r
         let host = carrega_host(mdir, &cfg)?;
         let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads };
         let mut guardada = pp::SequenciaReutilizavel::nova();
+        let criou_a = std::cell::Cell::new(0usize);
         rec.pedidos = rr::executa_prova(
             |i, cen| {
                 let (texto, t_entrada, entrada_ms) = le_texto_de_arquivo(&arquivo_pedido(&args.textos, cen))?;
+                criou_a.set(criou_a.get() + 1);
                 let r = pedido_real(&c, &tok, &texto, t_entrada, entrada_ms, &data)?;
                 println!("{nome} braço A pedido {i} ({}): {} ids, token {}, T_sequencia {:.3} ms", cen.nome(), r.medida.ids_n, r.medida.token, r.medida.crono.sequencia_ms);
                 Ok(r)
@@ -634,6 +636,8 @@ fn reset_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> r
                 Ok(r)
             },
         );
+        rec.criacoes_a = criou_a.get();
+        rec.criacoes_b = guardada.criacoes;
         guardada.encerra().map_err(|e| format!("encerramento do motor reutilizado: {e}"))
     })();
     if let Err(e) = r {

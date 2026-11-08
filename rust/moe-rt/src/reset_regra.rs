@@ -3,7 +3,8 @@
 //! braços, A = motor NOVO por pedido e B = UM motor reutilizado com `nova_sequencia` entre os pedidos. Por pedido, ids (`ids_n`, `ids_fnv`,
 //! ids), token escolhido e CADA logit por `f32::to_bits` têm de ser idênticos entre os braços. Qualquer diferença REPROVA (mesmo com o argmax
 //! igual); erro, ausência de resultado ou integridade quebrada dá SEM PROVA; REPROVA vence SEM PROVA e integridade quebrada derruba tudo.
-use crate::primeira_palavra_regra::{Resultado, RotuloCorrecao};
+use crate::leitura_regra::Contadores;
+use crate::primeira_palavra_regra::{Cronometros, Resultado, RotuloCorrecao};
 use crate::velocidade_regra::Cen;
 use serde_json::{json, Value};
 
@@ -11,6 +12,18 @@ use serde_json::{json, Value};
 pub const ORDEM: [Cen; 4] = [Cen::A, Cen::C, Cen::A, Cen::C];
 /// sha256 do critério de reset congelado (08/11/2026).
 pub const CRITERIO_RESET_SHA: &str = "955becbb243772087258bf2bde1c564c9cbc0630926806a0ed5a8258726662c9";
+
+/// Metas novas (06/11/2026, memória a 2400 MT/s) em ms por célula, só para a descrição da prova 3: 1b C 6 s, 1b A 18 s, 3b C 12 s, 3b A 36 s.
+pub fn meta_nova_ms(modelo: &str, cen: Cen) -> Option<f64> {
+    let s = match (modelo, cen) {
+        ("1b", Cen::C) => 6.0,
+        ("1b", Cen::A) => 18.0,
+        ("3b", Cen::C) => 12.0,
+        ("3b", Cen::A) => 36.0,
+        _ => return None,
+    };
+    Some(s * 1000.0)
+}
 
 /// O que um braço guarda de um pedido.
 #[derive(Clone, Debug, PartialEq)]
@@ -21,11 +34,17 @@ pub struct Medida {
     pub token: usize,
     pub logits: Vec<f32>,
     pub sequencia_ms: f64,
+    /// Do texto cru até a palavra entregue (só descrição).
+    pub produto_ms: f64,
+    /// Os oito cronômetros inteiros do pedido (só descrição).
+    pub crono: Cronometros,
+    /// Contadores needed/hits/cpu do pedido (só descrição).
+    pub cont: Contadores,
 }
 
 impl Medida {
     pub fn de_resultado(r: &Resultado) -> Self {
-        Self { ids: r.ids.clone(), ids_n: r.medida.ids_n, ids_fnv: r.medida.ids_fnv, token: r.medida.token, logits: r.logits.clone(), sequencia_ms: r.medida.crono.sequencia_ms }
+        Self { ids: r.ids.clone(), ids_n: r.medida.ids_n, ids_fnv: r.medida.ids_fnv, token: r.medida.token, logits: r.logits.clone(), sequencia_ms: r.medida.crono.sequencia_ms, produto_ms: r.medida.produto_ms, crono: r.medida.crono, cont: r.medida.cont }
     }
 }
 
@@ -41,12 +60,25 @@ pub struct Diferenca {
     pub primeiro_logit_divergente: Option<usize>,
     /// Posições com `to_bits` diferente; as que só existem de um lado contam como divergentes.
     pub logits_divergentes: usize,
+    /// Maior |a-b| entre logits finitos dos dois lados (só descrição; 0 se não houver par finito).
+    pub max_abs: f64,
+    /// Maior distância em ULP entre logits finitos (só descrição).
+    pub max_ulp: u64,
 }
 
 impl Diferenca {
     pub fn identica(&self) -> bool {
         self.ids_iguais && self.ids_n_igual && self.fnv_igual && self.token_igual && self.logits_len.0 == self.logits_len.1 && self.logits_divergentes == 0
     }
+}
+
+/// Distância em ULP entre dois f32 finitos (mapeia os bits para uma reta ordenada; +0 e -0 ficam a 0).
+fn ulp_dist(a: f32, b: f32) -> u64 {
+    let ord = |x: f32| -> i64 {
+        let i = x.to_bits() as i32;
+        (if i < 0 { i32::MIN.wrapping_sub(i) } else { i }) as i64
+    };
+    (ord(a) - ord(b)).unsigned_abs()
 }
 
 /// Primeiro índice divergente e quantos divergem entre duas listas comparadas pelo critério `eq` (o excedente de uma delas diverge).
@@ -70,6 +102,13 @@ fn divergencias<T>(a: &[T], b: &[T], eq: impl Fn(&T, &T) -> bool) -> (Option<usi
 pub fn compara(a: &Medida, b: &Medida) -> Diferenca {
     let (pid, nid) = divergencias(&a.ids, &b.ids, |x, y| x == y);
     let (plg, nlg) = divergencias(&a.logits, &b.logits, |x, y| x.to_bits() == y.to_bits());
+    let (mut max_abs, mut max_ulp) = (0.0f64, 0u64);
+    for (x, y) in a.logits.iter().zip(&b.logits) {
+        if x.is_finite() && y.is_finite() {
+            max_abs = max_abs.max((*x as f64 - *y as f64).abs());
+            max_ulp = max_ulp.max(ulp_dist(*x, *y));
+        }
+    }
     Diferenca {
         ids_iguais: nid == 0,
         primeiro_id_divergente: pid,
@@ -79,6 +118,8 @@ pub fn compara(a: &Medida, b: &Medida) -> Diferenca {
         logits_len: (a.logits.len(), b.logits.len()),
         primeiro_logit_divergente: plg,
         logits_divergentes: nlg,
+        max_abs,
+        max_ulp,
     }
 }
 
@@ -99,6 +140,9 @@ pub struct RegistroReset {
     /// Falha fora dos pedidos (carga do modelo, encerramento do motor reutilizado).
     pub falha: Option<String>,
     pub pedidos: Vec<PedidoReset>,
+    /// Quantas vezes o motor foi criado em cada braço (A: um por pedido; B: esperado 1). Só B entra em `avalia`.
+    pub criacoes_a: usize,
+    pub criacoes_b: usize,
     pub extras: Vec<(String, String)>,
 }
 
@@ -193,9 +237,14 @@ pub fn avalia(r: &RegistroReset) -> AvalReset {
     if let Some(f) = &r.falha {
         motivos.push(format!("falha: {f}"));
     }
+    let b_com_erro = r.pedidos.iter().any(|p| p.b.is_err());
+    let nao_reutilizou = !r.pedidos.is_empty() && !b_com_erro && r.criacoes_b != 1;
+    if nao_reutilizou {
+        motivos.push(format!("braço B não reutilizou o motor ({} criações, esperada 1)", r.criacoes_b));
+    }
     let rotulo = if por.contains(&ResPedido::Reprova) {
         RotuloCorrecao::Reprova
-    } else if !ordem_ok || r.falha.is_some() || por.contains(&ResPedido::SemProva) {
+    } else if !ordem_ok || r.falha.is_some() || nao_reutilizou || por.contains(&ResPedido::SemProva) {
         RotuloCorrecao::SemProva
     } else {
         RotuloCorrecao::Passa
@@ -219,7 +268,8 @@ pub fn rotulo_conjunto(v: &[RotuloCorrecao], integro: bool) -> RotuloCorrecao {
 
 fn medida_json(m: &Result<Medida, String>) -> Value {
     match m {
-        Ok(m) => json!({"ids": m.ids, "ids_n": m.ids_n, "ids_fnv": format!("{:016x}", m.ids_fnv), "token": m.token, "logits_n": m.logits.len(), "T_sequencia_ms": m.sequencia_ms, "falha": null}),
+        Ok(m) => json!({"ids": m.ids, "ids_n": m.ids_n, "ids_fnv": format!("{:016x}", m.ids_fnv), "token": m.token, "logits_n": m.logits.len(), "T_sequencia_ms": m.sequencia_ms,
+            "produto_ms": m.produto_ms, "crono": m.crono.para_json(), "cont": {"needed": m.cont.needed, "hits": m.cont.hits, "cpu": m.cont.cpu}, "falha": null}),
         Err(e) => json!({"falha": e}),
     }
 }
@@ -243,6 +293,9 @@ impl RegistroReset {
                 "token_igual": d.as_ref().map(|d| d.token_igual),
                 "logits_divergentes": d.as_ref().map(|d| d.logits_divergentes),
                 "primeiro_logit_divergente": d.as_ref().and_then(|d| d.primeiro_logit_divergente),
+                "max_abs_logit": d.as_ref().map(|d| d.max_abs),
+                "max_ulp_logit": d.as_ref().map(|d| d.max_ulp),
+                "controle": p.indice == 0,
             })
         }).collect();
         json!({
@@ -253,6 +306,8 @@ impl RegistroReset {
             "ordem": ORDEM.iter().map(|c| c.nome()).collect::<Vec<_>>(),
             "integro": self.integro,
             "falha": self.falha,
+            "criacoes_braco_A": self.criacoes_a,
+            "criacoes_braco_B": self.criacoes_b,
             "rotulo_sem_integridade": a.rotulo.nome(),
             "rotulo": rotulo_final(a.rotulo, self.integro).nome(),
             "motivos": a.motivos,
@@ -266,8 +321,8 @@ impl RegistroReset {
 pub fn texto(r: &RegistroReset, final_: RotuloCorrecao) -> String {
     let a = avalia(r);
     let mut t = format!("== reset de sequência {}\n", r.modelo);
-    for l in &a.linhas {
-        t += &format!("{l}\n");
+    for (i, l) in a.linhas.iter().enumerate() {
+        t += &format!("{l}{}\n", if i == 0 { " [controle: motor novo nos dois braços]" } else { "" });
     }
     if a.rotulo != RotuloCorrecao::Passa || !r.integro {
         t += &format!("motivo(s): {}\n", a.motivos.join("; "));
@@ -275,6 +330,18 @@ pub fn texto(r: &RegistroReset, final_: RotuloCorrecao) -> String {
     for p in &r.pedidos {
         if let (Ok(x), Ok(y)) = (&p.a, &p.b) {
             t += &format!("T_sequencia pedido {} ({}): A {:.3} ms, B {:.3} ms\n", p.indice, p.cen.nome(), x.sequencia_ms, y.sequencia_ms);
+        }
+    }
+    t += &format!("criações do motor: braço A {}, braço B {} (esperado 1)\n", r.criacoes_a, r.criacoes_b);
+    // Prova 3 (descritiva, fora de `avalia`): braço B do pedido 1 em diante contra a meta nova da célula.
+    for p in r.pedidos.iter().skip(1) {
+        if let Ok(y) = &p.b {
+            let atg = |v: f64, meta: Option<f64>| match meta {
+                Some(m) => format!("{:.3} ms vs meta {:.0} ms {}", v, m, if v <= m { "ATINGE" } else { "NÃO ATINGE" }),
+                None => format!("{v:.3} ms sem meta para {}", r.modelo),
+            };
+            let meta = meta_nova_ms(&r.modelo, p.cen);
+            t += &format!("velocidade (descritiva) braço B pedido {} ({}): T_sequencia {:.3} ms (esperado ~0, sem rótulo); produto {} [amostra única, não a mediana do modo quente]\n", p.indice, p.cen.nome(), y.sequencia_ms, atg(y.produto_ms, meta));
         }
     }
     t += &format!("rótulo: {}\n", final_.nome());
@@ -423,7 +490,7 @@ mod tests {
     }
 
     fn rec(p: Vec<PedidoReset>) -> RegistroReset {
-        RegistroReset { modelo: "1b".into(), integro: true, falha: None, pedidos: p, extras: vec![] }
+        RegistroReset { modelo: "1b".into(), integro: true, falha: None, pedidos: p, criacoes_a: 4, criacoes_b: 1, extras: vec![] }
     }
 
     #[test]
@@ -471,6 +538,8 @@ mod tests {
         let d = d.unwrap();
         assert!(d.token_igual && d.ids_iguais && d.fnv_igual, "argmax e ids iguais");
         assert_eq!((d.logits_divergentes, d.primeiro_logit_divergente), (1, Some(12345)));
+        assert_eq!(d.max_ulp, 1, "um bit do último ULP");
+        assert!(d.max_abs > 0.0 && d.max_abs < 1e-5);
         assert_eq!(res, ResPedido::Reprova);
         let a = avalia(&r);
         assert_eq!(a.por_pedido, vec![ResPedido::Passa, ResPedido::Passa, ResPedido::Reprova, ResPedido::Passa]);
@@ -491,7 +560,7 @@ mod tests {
 
     #[test]
     fn nan_e_zero_com_sinal_sao_comparados_por_bits() {
-        let m = |l: Vec<f32>| Medida { ids: vec![1], ids_n: 1, ids_fnv: 1, token: 0, logits: l, sequencia_ms: 0.0 };
+        let m = |l: Vec<f32>| Medida { ids: vec![1], ids_n: 1, ids_fnv: 1, token: 0, logits: l, sequencia_ms: 0.0, produto_ms: 0.0, crono: Cronometros::default(), cont: Contadores::default() };
         assert!(compara(&m(vec![f32::NAN, 1.0]), &m(vec![f32::NAN, 1.0])).identica(), "mesmo NaN, mesmos bits");
         assert!(!compara(&m(vec![0.0]), &m(vec![-0.0])).identica(), "0.0 e -0.0 têm bits diferentes");
         let d = compara(&m(vec![1.0, 2.0]), &m(vec![1.0]));
@@ -574,5 +643,76 @@ mod tests {
         assert_eq!(gpus.lock().unwrap().len(), 1);
         assert_eq!(gpus.lock().unwrap()[0].resets().len(), 3);
         g.encerra().unwrap();
+    }
+
+    #[test]
+    fn json_tem_produto_crono_criacoes_e_contadores_e_a_descricao_nao_muda_o_rotulo() {
+        let (p, _, _) = prova(&Mutex::new(vec![]), None, None, |_, _| {});
+        let mut r = rec(p);
+        let j = r.para_json();
+        let b = &j["pedidos"][1]["braco_B_motor_reutilizado"];
+        assert!(b["produto_ms"].is_number() && b["crono"]["T_sequencia"].is_number() && b["cont"]["needed"].is_number() && b["cont"]["hits"].is_number() && b["cont"]["cpu"].is_number());
+        assert!(j["pedidos"][0]["braco_A_motor_novo"]["produto_ms"].is_number());
+        assert_eq!((j["criacoes_braco_A"].as_u64(), j["criacoes_braco_B"].as_u64()), (Some(4), Some(1)));
+        assert_eq!((j["pedidos"][0]["controle"].as_bool(), j["pedidos"][1]["controle"].as_bool()), (Some(true), Some(false)));
+        assert!(j["pedidos"][2]["max_ulp_logit"].is_number() && j["pedidos"][2]["max_abs_logit"].is_number());
+        let antes = avalia(&r).rotulo;
+        for x in &mut r.pedidos {
+            x.b.as_mut().unwrap().produto_ms = 1e9;
+            x.b.as_mut().unwrap().sequencia_ms = 1e9;
+            x.b.as_mut().unwrap().crono.leitura_ms = 1e9;
+        }
+        assert_eq!(avalia(&r).rotulo, antes, "velocidade é só descrição");
+        let t = texto(&r, antes);
+        assert!(t.contains("[controle: motor novo nos dois braços]"));
+        assert_eq!(t.matches("velocidade (descritiva) braço B pedido").count(), 3, "pedidos 1 a 3");
+        assert!(t.contains("pedido 1 (C): T_sequencia 1000000000.000 ms (esperado ~0, sem rótulo); produto 1000000000.000 ms vs meta 6000 ms NÃO ATINGE"));
+        assert!(t.contains("pedido 2 (A): T_sequencia 1000000000.000 ms (esperado ~0, sem rótulo); produto 1000000000.000 ms vs meta 18000 ms NÃO ATINGE"));
+    }
+
+    #[test]
+    fn metas_novas_por_celula() {
+        assert_eq!([("1b", Cen::C), ("1b", Cen::A), ("3b", Cen::C), ("3b", Cen::A)].map(|(m, c)| meta_nova_ms(m, c).unwrap() / 1000.0), [6.0, 18.0, 12.0, 36.0]);
+        assert!(meta_nova_ms("7b", Cen::C).is_none());
+    }
+
+    #[test]
+    fn recriacao_forcada_do_motor_no_braco_b_e_sem_prova() {
+        let t = tok();
+        let gpus = Mutex::new(vec![]);
+        let atual = Arc::new(Mutex::new(CURTO));
+        let mut g: SequenciaReutilizavel<FakeGpu, Prep> = SequenciaReutilizavel::nova();
+        let mut pedidos = vec![];
+        for (i, c) in ORDEM.iter().enumerate() {
+            let texto = texto_de(*c);
+            *atual.lock().unwrap() = texto;
+            if i == 2 {
+                g.encerra().unwrap(); // força a recriação sem erro de pedido
+            }
+            let r = primeira_palavra_reutilizando(Instant::now(), 0.0, texto, &data_fixa_texto(), &t, &mut g, || sequencia(&gpus, &atual, false), &mut Vec::new()).unwrap();
+            pedidos.push(Ok(Medida::de_resultado(&r)));
+        }
+        assert_eq!(g.criacoes, 2);
+        let criacoes_b = g.criacoes;
+        g.encerra().unwrap();
+        // Braço A igual ao B (determinístico): reaproveita as mesmas medidas.
+        let ps: Vec<PedidoReset> = pedidos.into_iter().enumerate().map(|(i, m)| PedidoReset { indice: i, cen: ORDEM[i], a: m.clone(), b: m }).collect();
+        let r = RegistroReset { modelo: "1b".into(), integro: true, falha: None, pedidos: ps, criacoes_a: 4, criacoes_b, extras: vec![] };
+        let a = avalia(&r);
+        assert_eq!(a.por_pedido, vec![ResPedido::Passa; 4]);
+        assert_eq!(a.rotulo, RotuloCorrecao::SemProva);
+        assert!(a.motivos.iter().any(|m| m.contains("braço B não reutilizou o motor")));
+        // Com criacoes_b == 1 o mesmo registro passa.
+        let mut ok = r.clone();
+        ok.criacoes_b = 1;
+        assert_eq!(avalia(&ok).rotulo, RotuloCorrecao::Passa);
+    }
+
+    #[test]
+    fn ulp_e_magnitude_so_entre_logits_finitos() {
+        let m = |l: Vec<f32>| Medida { ids: vec![1], ids_n: 1, ids_fnv: 1, token: 0, logits: l, sequencia_ms: 0.0, produto_ms: 0.0, crono: Cronometros::default(), cont: Contadores::default() };
+        let d = compara(&m(vec![1.0, f32::NAN, 0.0, 2.0]), &m(vec![f32::from_bits(1.0f32.to_bits() + 3), 1.0, -0.0, 2.0]));
+        assert_eq!(d.max_ulp, 3);
+        assert!(d.max_abs > 0.0 && d.max_abs < 1e-6, "NaN e ±0 não contam: {}", d.max_abs);
     }
 }
