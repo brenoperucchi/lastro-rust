@@ -1,0 +1,1 @@
+autorização: coordenador 08/11 20:20 (decisão do Breno: fazer o 5e; só 127.0.0.1, iniciado à mão, sem systemd/timer/boot), 4090 permanente, 30 min, sem repetição automática, critério criterio-5e-servidor-20261108.md + nota de emenda 55e602b, commit local 457a993; servidor desligado ao fim

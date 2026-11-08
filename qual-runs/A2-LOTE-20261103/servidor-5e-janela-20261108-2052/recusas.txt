@@ -1,0 +1,18 @@
+ok: 1a sem --modelo (código 2, 3 ms): lastro-servidor: recusado: falta --modelo
+ok: 1b sem --porta (código 2, 3 ms): lastro-servidor: recusado: falta --porta
+ok: 1c porta 0 (código 2, 3 ms): lastro-servidor: recusado: --porta fora de 1..65535: 0
+ok: 1d porta 65536 (código 2, 3 ms): lastro-servidor: recusado: --porta fora de 1..65535: 65536
+ok: 1e porta não numérica (código 2, 3 ms): lastro-servidor: recusado: --porta fora de 1..65535: abc
+ok: 1f --porta duplicado (código 2, 3 ms): lastro-servidor: recusado: --porta duplicado
+ok: 1g --modelo duplicado (código 2, 3 ms): lastro-servidor: recusado: --modelo duplicado
+ok: 1h opção de endereço não existe (código 2, 3 ms): lastro-servidor: recusado: opção desconhecida: --endereco
+ok: 1i argumento posicional (código 2, 3 ms): lastro-servidor: recusado: argumento inesperado: oi
+ok: 2a modelo inexistente (código 2, 3 ms): lastro-servidor: recusado: modelo inexistente: /tmp/recusas-5e.Q8NymF/nao-existe não é uma pasta
+ok: 2b modelo sem tokenizer.json (código 2, 3 ms): lastro-servidor: recusado: modelo sem tokenizer.json: /tmp/recusas-5e.Q8NymF/m
+ok: 2c modelo sem pesos (código 2, 3 ms): lastro-servidor: recusado: modelo sem pesos (*.safetensors): /tmp/recusas-5e.Q8NymF/m
+ok: 3a porta ocupada (código 2, 59 ms): lastro-servidor: recusado: porta 32865 indisponível em 127.0.0.1: Address already in use (os error 98)
+ok: 3b nada escuta em 32865 depois do caso
+ok: 4a sem portão (PRIMEIRA_PALAVRA_AUTORIZADA) (código 2, 63 ms): lastro-servidor: recusado: o uso da GPU exige o 'autorizo' explícito do Breno (PRIMEIRA_PALAVRA_AUTORIZADA=1)
+ok: 4b UUID de outra GPU (portão aberto) (código 2, 63 ms): lastro-servidor: recusado: CUDA_VISIBLE_DEVICES tem de ser GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd (a 4090 combinada); veio Some("GPU-00000000-0000-0000-0000-000000000000")
+ok: nenhum processo lastro-servidor remanescente
+RECUSAS OK (todas sem GPU)

@@ -1,0 +1,2 @@
+comando: /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/roda-com-limite.sh --limite 1800 -- env CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd PRIMEIRA_PALAVRA_AUTORIZADA=1 CURL=curl SS=ss /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/roda-5e-janela.sh --interno --saida /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/servidor-5e-janela-20261108-2052 --bin /home/brenoperucchi/Devs/lastro-rust/rust/moe-rt/target/release/lastro-servidor
+ganchos_de_teste: atraso_lancamento= reserva= vigia=

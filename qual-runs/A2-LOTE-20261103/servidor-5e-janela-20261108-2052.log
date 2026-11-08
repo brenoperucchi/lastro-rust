@@ -1,0 +1,58 @@
+etapa 5e, servidor local (critério sha256 afeb7e2d09f29e767f753dc11f793d3bee459ce5176ecbfa106cecdcfb427ac8)
+recusas de partida: OK
+unidades systemd: a única unidade criada pelo roteiro além da pausa e restauração dos backups é a transitória do limite de tempo (roda-com-limite.sh, systemd-run --collect, sem enable e sem boot); listas antes e depois ao lado da pasta de saída (unidades-antes/depois.txt, timers-antes/depois.txt)
+status 500 do motor conta como status errado e vira REPROVA
+1b: socket (só 127.0.0.1:58221): PASSA
+1b: GET /saude (200, ok): PASSA
+1b: POST /gerar curto (200, corpo igual byte a byte à referência, 4521 ms): PASSA
+1b: POST /gerar medio (200, corpo igual byte a byte à referência, 2790 ms): PASSA
+1b: POST /gerar longo (200, corpo igual byte a byte à referência, 4342 ms): PASSA
+1b: POST /gerar medio-repetido (200, corpo igual byte a byte à referência, 2721 ms): PASSA
+1b: médio repetido idêntico ao primeiro: PASSA
+1b: recusa de corpo vazio (400): PASSA
+1b: POST /gerar curto-depois-da-recusa (200, corpo igual byte a byte à referência, 2039 ms): PASSA
+1b: POST /encerrar (200, ate logo): PASSA
+1b: encerrou com código 0 em até 10 s: PASSA
+1b: porta 58221 fechada: PASSA
+1b: nenhum processo remanescente: PASSA
+3b: socket (só 127.0.0.1:33769): PASSA
+3b: GET /saude (200, ok): PASSA
+3b: POST /gerar curto (200, corpo igual byte a byte à referência, 6948 ms): PASSA
+3b: POST /gerar medio (200, corpo igual byte a byte à referência, 5516 ms): PASSA
+3b: POST /gerar longo (200, corpo igual byte a byte à referência, 8740 ms): PASSA
+3b: POST /gerar medio-repetido (200, corpo igual byte a byte à referência, 5425 ms): PASSA
+3b: médio repetido idêntico ao primeiro: PASSA
+3b: recusa de corpo vazio (400): PASSA
+3b: POST /gerar curto-depois-da-recusa (200, corpo igual byte a byte à referência, 4050 ms): PASSA
+3b: POST /encerrar (200, ate logo): PASSA
+3b: encerrou com código 0 em até 10 s: PASSA
+3b: porta 33769 fechada: PASSA
+3b: nenhum processo remanescente: PASSA
+verificações que passaram: 1b 13 de 13, 3b 13 de 13
+integridade: íntegra (binário, critérios, textos, referências e tokenizers iguais antes e depois e aos congelados)
+tempos (descritivos, sem rótulo; o 1º pedido de cada modelo contra os seguintes):
+  1b partida até 'escutando': 5068 ms
+  1b GET /saude: HTTP 200, 7 ms
+  1b POST /gerar curto: HTTP 200, 4521 ms
+  1b POST /gerar medio: HTTP 200, 2790 ms
+  1b POST /gerar longo: HTTP 200, 4342 ms
+  1b POST /gerar medio-repetido: HTTP 200, 2721 ms
+  1b POST /gerar vazio: HTTP 400, 8 ms
+  1b POST /gerar curto-depois-da-recusa: HTTP 200, 2039 ms
+  1b POST /encerrar: HTTP 200, 8 ms (curl código 0, enviado=1)
+  3b partida até 'escutando': 10343 ms
+  3b GET /saude: HTTP 200, 8 ms
+  3b POST /gerar curto: HTTP 200, 6948 ms
+  3b POST /gerar medio: HTTP 200, 5516 ms
+  3b POST /gerar longo: HTTP 200, 8740 ms
+  3b POST /gerar medio-repetido: HTTP 200, 5425 ms
+  3b POST /gerar vazio: HTTP 400, 8 ms
+  3b POST /gerar curto-depois-da-recusa: HTTP 200, 4050 ms
+  3b POST /encerrar: HTTP 200, 8 ms (curl código 0, enviado=1)
+rótulo: PASSA
+Running as unit: lastro-limite-3755895-1794181940217114549.service
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 1min 6.066s
+             CPU time consumed: 6min 43.465s
+                   Memory peak: 17.8G (swap: 0B)

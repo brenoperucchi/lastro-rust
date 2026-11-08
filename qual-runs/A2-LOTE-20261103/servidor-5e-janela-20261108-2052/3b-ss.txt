@@ -1,0 +1,2 @@
+State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess
+LISTEN 0      128        127.0.0.1:33769      0.0.0.0:*    users:(("lastro-servidor",pid=3758712,fd=3))

@@ -1,0 +1,32 @@
+NEXT                                 LEFT LAST                              PASSED UNIT                                              ACTIVATES
+Sun 2026-11-08 20:53:43 -03           15s Sun 2026-11-08 20:53:13 -03      14s ago omasession-snapshot.timer                         omasession-snapshot.service
+Sun 2026-11-08 20:53:51 -03           23s Sun 2026-11-08 20:53:17 -03       9s ago magicwalls-live.timer                             magicwalls-live.service
+Sun 2026-11-08 20:54:53 -03      1min 25s Sun 2026-11-08 20:49:53 -03 3min 34s ago cic-pull-telegram-ks2.timer                       cic-pull-telegram-ks2.service
+Sun 2026-11-08 20:55:02 -03      1min 35s Sun 2026-11-08 20:45:02 -03     8min ago cerebro-vigia-observacao.timer                    cerebro-vigia-observacao.service
+Sun 2026-11-08 20:55:27 -03       2min 0s Sun 2026-11-08 20:45:27 -03     7min ago inventory-collect.timer                           inventory-collect.service
+Sun 2026-11-08 20:56:52 -03      3min 25s Sun 2026-11-08 20:41:52 -03    11min ago cic-telegram-transcrever.timer                    cic-telegram-transcrever.service
+Sun 2026-11-08 20:56:52 -03      3min 25s Sun 2026-11-08 20:46:52 -03     6min ago cic-telegram-drive-sync.timer                     cic-telegram-drive-sync.service
+Sun 2026-11-08 21:00:00 -03          6min Sun 2026-11-08 20:00:00 -03    53min ago digest-run.timer                                  digest-run.service
+Sun 2026-11-08 21:00:40 -03          7min Sun 2026-11-08 20:45:38 -03     7min ago omabackup-sync.timer                              omabackup-sync.service
+Sun 2026-11-08 21:02:57 -03          9min Sun 2026-11-08 20:00:12 -03    53min ago omabackup-push.timer                              omabackup-push.service
+Sun 2026-11-08 21:03:43 -03         10min Sun 2026-11-08 20:48:43 -03 4min 43s ago herdr-probe.timer                                 herdr-probe.service
+Sun 2026-11-08 21:17:00 -03         23min Sun 2026-11-08 20:17:00 -03    36min ago mfc-xgold-collect.timer                           mfc-xgold-collect.service
+Mon 2026-11-09 06:00:00 -03            9h Sun 2026-11-08 06:00:01 -03            - herdr-reviewers-sweep.timer                       herdr-reviewers-sweep.service
+Mon 2026-11-09 06:30:00 -03            9h Sun 2026-11-08 06:30:00 -03            - omasession-digest.timer                           omasession-digest.service
+Mon 2026-11-09 08:40:00 -03           11h Fri 2026-11-06 08:40:00 -03            - jumba-niveis.timer                                jumba-niveis.service
+Mon 2026-11-09 08:45:00 -03           11h Fri 2026-11-06 08:45:00 -03            - jumba-exportador.timer                            jumba-exportador.service
+Mon 2026-11-09 08:45:00 -03           11h Fri 2026-11-06 08:45:00 -03            - jumba-live.timer                                  jumba-live.service
+Mon 2026-11-09 08:50:00 -03           11h Fri 2026-11-06 08:50:00 -03            - jumba-sombra.timer                                jumba-sombra.service
+Mon 2026-11-09 09:00:00 -03           12h -                                      - agf-laco.timer                                    agf-laco.service
+Mon 2026-11-09 09:30:00 -03           12h Sun 2026-11-08 10:11:13 -03      10h ago acervo-copia-local.timer                          acervo-copia-local.service
+Mon 2026-11-09 09:58:00 -03           13h Fri 2026-11-06 09:58:00 -03            - painel-vivo.timer                                 painel-vivo.service
+Mon 2026-11-09 10:06:13 -03           13h Sun 2026-11-08 10:06:13 -03      10h ago gh-issue-watch-anthropics-claude-code-84247.timer gh-issue-watch-anthropics-claude-code-84247.service
+Mon 2026-11-09 17:45:00 -03           20h Fri 2026-11-06 17:45:01 -03            - jumba-diario.timer                                jumba-diario.service
+Mon 2026-11-09 18:50:00 -03           21h Fri 2026-11-06 18:50:00 -03            - jumba-verifica-ticks.timer                        jumba-verifica-ticks.service
+Mon 2026-11-09 20:30:00 -03           23h Fri 2026-11-06 20:30:01 -03            - agf-b3-ticks.timer                                agf-b3-ticks.service
+Mon 2026-11-09 21:30:00 -03           24h Fri 2026-11-06 21:30:04 -03            - agf-papel-paridade.timer                          agf-papel-paridade.service
+Mon 2026-11-09 21:45:00 -03           24h Fri 2026-11-06 21:45:00 -03            - agf-papel-pares.timer                             agf-papel-pares.service
+Tue 2026-12-01 08:00:00 -03 3 weeks 1 day Sun 2026-11-01 08:00:00 -03            - giacomelli-coleta.timer                           giacomelli-coleta.service
+-                                       - Thu 2026-11-05 18:30:00 -03            - jumba-recuperar-semana.timer                      jumba-recuperar-semana.service
+
+29 timers listed.
