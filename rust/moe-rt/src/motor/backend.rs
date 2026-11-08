@@ -188,6 +188,11 @@ pub trait Backend: Send + Sync + 'static {
     fn begin_step(&self, _s: &Self::Stream, _t: u32, _pos: u64, _m: usize) -> Result<(), Self::Error> {
         Ok(())
     }
+    /// Começa uma sequência nova no backend (posição do modelo volta a 0), com a stream de cálculo ociosa e entre dois tokens. Só o
+    /// `Engine::nova_sequencia` chama. O padrão não faz nada (o backend falso sem estado de sequência).
+    fn reset_sequence(&self) -> Result<(), Self::Error> {
+        Ok(())
+    }
     /// Antes do `route` da camada: o que o modelo roda antes do bloco MoE (no A1.3, a atenção e a norma de entrada do bloco).
     /// O padrão não faz nada (o backend falso e a pilha de blocos MoE do A1.2).
     fn pre_layer(&self, _s: &Self::Stream, _layer: usize) -> Result<(), Self::Error> {

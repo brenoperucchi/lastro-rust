@@ -226,6 +226,25 @@ impl<B: Backend> Engine<B> {
         self.shutdown();
     }
 
+    /// Começa uma sequência nova no mesmo motor: a posição volta a 0 e o backend zera a dele (`Backend::reset_sequence`, com a stream
+    /// de cálculo ociosa: não há token em andamento). A geração `t` NÃO é zerada (o protocolo com a linha de serviço continua
+    /// contíguo), e a linha de serviço, a tabela e a política de cache seguem como estão. Recusa motor encerrado e token enfileirado
+    /// (sem efeito); falha do backend encerra o motor.
+    pub fn nova_sequencia(&mut self) -> R<(), B> {
+        if self.closed {
+            return Err(Error::Cancelled);
+        }
+        if self.current.is_some() {
+            return Err(Error::Config("nova_sequencia com token em andamento"));
+        }
+        if let Err(e) = self.b.reset_sequence() {
+            self.shutdown();
+            return Err(Error::Backend(e));
+        }
+        self.pos = 0;
+        Ok(())
+    }
+
     /// Enfileira o token do `Published`: a tabela, as esperas pelos `ready` e as camadas (um passo de uma posição).
     pub fn enqueue_token(&mut self, p: Published) -> R<(), B> {
         self.enqueue_step(p, 1)

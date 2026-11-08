@@ -8,7 +8,7 @@
 //! O que os testes deste módulo (backend falso) validam é a lógica: divisão em blocos, validação, ordem, posição e erro. Não validam
 //! a correção numérica nem a velocidade da GPU.
 use super::backend::Backend;
-use super::engine::Engine;
+use super::engine::{Engine, Published};
 use super::Error;
 
 /// O que a leitura precisa do backend de modelo: os limites, a posição e o preparo de um bloco de ids.
@@ -77,6 +77,12 @@ pub fn valida<EB, EP>(ids: &[usize], vocab: usize, posicao: u64, max_len: usize)
 /// Lê `ids` em blocos de até `eng.max_positions()`, a partir da posição atual da sequência. Devolve `Ok(ids.len())`; a posição do motor e a
 /// do backend avançam exatamente `ids.len()`.
 pub fn le_ids<B: Backend, P: PreparaPasso>(eng: &mut Engine<B>, prep: &P, ids: &[usize]) -> Result<usize, ErroLeitura<B::Error, P::Error>> {
+    le_ids_com_pendente(eng, prep, ids, &mut None)
+}
+
+/// Como [`le_ids`], mas o primeiro bloco usa o `Published` já em mãos em `pendente` (guardado do pedido anterior, em motor reutilizado)
+/// em vez de esperar um novo. Com `None` é idêntica a `le_ids`. O `pendente` só é consumido quando o primeiro bloco chega a ser publicado.
+pub fn le_ids_com_pendente<B: Backend, P: PreparaPasso>(eng: &mut Engine<B>, prep: &P, ids: &[usize], pendente: &mut Option<Published>) -> Result<usize, ErroLeitura<B::Error, P::Error>> {
     valida(ids, prep.vocab(), prep.posicao(), prep.max_len())?;
     if eng.is_closed() {
         return Err(ErroLeitura::MotorEncerrado);
@@ -93,7 +99,11 @@ pub fn le_ids<B: Backend, P: PreparaPasso>(eng: &mut Engine<B>, prep: &P, ids: &
         // A publicação vem antes do preparo para que um motor que falha aqui não deixe o cache avançado por um bloco que não rodou.
         // `next_published` só consulta o canal e chama `relax`, sem tocar na stream de cálculo; a ordem testada na GPU (preparo e
         // depois `next_published`) e esta são equivalentes.
-        let p = match eng.next_published() {
+        let obtido = match pendente.take() {
+            Some(p) => Ok(p),
+            None => eng.next_published(),
+        };
+        let p = match obtido {
             Ok(p) => p,
             Err(e) => {
                 eng.encerra();

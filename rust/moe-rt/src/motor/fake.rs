@@ -140,6 +140,10 @@ struct State {
     main_calls: u64,
     /// Cada `begin_step(pos, m)` recebido, na ordem em que o motor o enfileirou (só com `max_positions > 1`).
     begins: Vec<(u64, usize)>,
+    /// Os `reset_sequence` recebidos, cada um com quantos `begin_step` já existiam (a ordem relativa aos passos).
+    resets: Vec<usize>,
+    /// Teste: o próximo `reset_sequence` falha (sem registrar o reset).
+    reset_falha: bool,
     /// Só para teste: o `relax` da linha principal com a fila de cálculo vazia (a espera da publicação em `next_published`) falha.
     relax_publicacao_falha: bool,
     shutdown: bool,
@@ -312,6 +316,8 @@ impl FakeGpu {
             violations: Vec::new(),
             main_calls: 0,
             begins: Vec::new(),
+            resets: Vec::new(),
+            reset_falha: false,
             relax_publicacao_falha: false,
             shutdown: false,
         };
@@ -384,6 +390,16 @@ impl FakeGpu {
     /// Os `begin_step(pos, m)` enfileirados até agora, na ordem (os testes da leitura de N ids conferem a ordem preparo × passo).
     pub fn begin_steps(&self) -> Vec<(u64, usize)> {
         lock(&self.st).begins.clone()
+    }
+
+    /// Arma a falha do próximo `reset_sequence`.
+    pub fn arma_falha_no_reset(&self) {
+        lock(&self.st).reset_falha = true;
+    }
+
+    /// Os `reset_sequence` recebidos, cada um com o número de `begin_step` já enfileirados naquele instante.
+    pub fn resets(&self) -> Vec<usize> {
+        lock(&self.st).resets.clone()
     }
 
     pub fn violations(&self) -> Vec<Violation> {
@@ -578,6 +594,17 @@ impl Backend for FakeGpu {
 
     fn max_positions(&self) -> usize {
         self.cfg.max_positions
+    }
+
+    fn reset_sequence(&self) -> Result<(), FakeError> {
+        self.point()?;
+        let mut st = lock(&self.st);
+        if std::mem::take(&mut st.reset_falha) {
+            return Err(FakeError::Injected);
+        }
+        let n = st.begins.len();
+        st.resets.push(n);
+        Ok(())
     }
 
     fn begin_step(&self, s: &FakeStream, _t: u32, pos: u64, m: usize) -> Result<(), FakeError> {

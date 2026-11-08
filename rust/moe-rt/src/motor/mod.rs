@@ -30,6 +30,8 @@ pub(crate) mod tests;
 mod passo_tests;
 #[cfg(all(test, not(motor_loom)))]
 mod leitura_tests;
+#[cfg(all(test, not(motor_loom)))]
+mod sequencia_tests;
 
 pub use backend::{geq, release_value, Backend, CpuGroup, CpuStep, HostExperts, LayerIo, LayerOffsets, Role};
 pub use engine::{Engine, Parts, Published};

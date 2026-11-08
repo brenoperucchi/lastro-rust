@@ -24,6 +24,7 @@ pub mod motor;
 pub mod npy;
 pub mod pool;
 pub mod primeira_palavra_regra;
+pub mod reset_regra;
 pub mod route;
 pub mod tokenizador;
 pub mod velocidade_regra;

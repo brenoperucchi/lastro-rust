@@ -14,6 +14,9 @@
 //!    aquecimento descartado e 5 repetições, motor e backend NOVOS por pedido (T_sequencia entra no indicador de produto: o Engine não tem reset).
 //!  - `--modo velocidade --estado frio --celula nome:dir --cenario C|A --rep 1|2|3 --saida <dir>`: UM processo = UMA repetição; indicador do início
 //!    do `main` até a palavra entregue. Não decide rótulo.
+//!  - `--prova-reset --celula 1b:<dir> [--celula 3b:<dir>] --saida <dir nova> [--criterio-reset arquivo]`: PROVA 2 do reset de sequência
+//!    (`criterio-reset-sequencia-20261108.md`): ordem A longo, C curto, A longo, C curto nos braços A (motor novo por pedido) e B (um motor
+//!    reutilizado com `nova_sequencia`); ids, token e cada logit por `to_bits` idênticos ou REPROVA. Mesmos portões dos outros modos.
 //!  - `--consolida <dir> --modo correcao|velocidade [--estado quente|frio] [--modelos 1b,3b]`: relê os brutos, aplica as regras de
 //!    `moe_rt::primeira_palavra_regra` e escreve `decisao.txt` e os relatórios.
 //! Códigos de saída: 0 gravado e válido, 1 gravado com falha (a célula fica SEM PROVA), 2 recusa antes de qualquer trabalho. Nada repete sozinho.
@@ -25,6 +28,7 @@ use moe_rt::model::{Config as ModelConfig, HostModel};
 use moe_rt::motor::{AdmitMode, Config, Engine};
 use moe_rt::primeira_palavra_regra as pp;
 use moe_rt::primeira_palavra_regra::{CasoCorrecao, RefCaso, RegistroCorrecao, RegistroFrioPP, RegistroQuente, RepMedida, RotuloCorrecao, Sequencia};
+use moe_rt::reset_regra as rr;
 use moe_rt::tokenizador::{formata_data, renderiza_chat, Mensagem, Papel, Tokenizador};
 use moe_rt::velocidade_regra as vr;
 use moe_rt::velocidade_regra::{Avaliacao, Cen, Estado, Rotulo};
@@ -46,6 +50,9 @@ const CRITERIO_PADRAO: &str = "/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2
 const PROMPTS_PADRAO: &str = "/home/brenoperucchi/Devs/lastro-rust/tools/ref-texts/prompts-traco.json";
 const REFERENCIA_PADRAO: &str = "/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5b-referencia";
 const TEXTOS_PADRAO: &str = "/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5b-textos";
+const CRITERIO_RESET_PADRAO: &str = "/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/criterio-reset-sequencia-20261108.md";
+/// Os cenários distintos da prova de reset (os textos congelados do 5b).
+const ORDEM_RESET_CENARIOS: [Cen; 2] = [Cen::C, Cen::A];
 const CENARIOS: [Cen; 2] = [Cen::C, Cen::A];
 
 /// Os hashes esperados dos arquivos de entrada, pelo nome do arquivo (congelados no critério, seção 6).
@@ -66,6 +73,8 @@ enum Modo {
     Livre,
     Correcao,
     Velocidade,
+    /// `--prova-reset`: a PROVA 2 do critério de reset de sequência (braço A x braço B).
+    ProvaReset,
 }
 
 struct Args {
@@ -86,6 +95,9 @@ struct Args {
     texto: Option<String>,
     pedido: Option<(PathBuf, usize)>,
     data: Option<(i32, u32, u32)>,
+    /// `--reutiliza`: a lista de pedidos da correção roda num único motor, com `nova_sequencia` entre os pedidos (padrão: um motor novo por pedido).
+    reutiliza: bool,
+    criterio_reset: PathBuf,
 }
 
 fn nome_valido(s: &str) -> bool {
@@ -118,9 +130,11 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
     let mut r = Args {
         modo: None, estado: None, celulas: vec![], saida: PathBuf::new(), criterio: PathBuf::from(CRITERIO_PADRAO), prompts: PathBuf::from(PROMPTS_PADRAO),
         referencia: PathBuf::from(REFERENCIA_PADRAO), textos: PathBuf::from(TEXTOS_PADRAO), threads: 8, ensaio: false, cenario: None, rep: None, consolida: None,
-        modelos: vec!["1b".into(), "3b".into()], texto: None, pedido: None, data: None,
+        modelos: vec!["1b".into(), "3b".into()], texto: None, pedido: None, data: None, reutiliza: false,
+        criterio_reset: PathBuf::from(CRITERIO_RESET_PADRAO),
     };
     let mut modelos_dados = false;
+    let mut prova_reset = false;
     while let Some(k) = a.next() {
         let mut val = || a.next().ok_or_else(|| format!("{k} pede um valor"));
         match k.as_str() {
@@ -171,13 +185,27 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
             }
             "--data" => r.data = Some(parse_data(&val()?)?),
             "--ensaio" => r.ensaio = true,
+            "--reutiliza" => r.reutiliza = true,
+            "--prova-reset" => prova_reset = true,
+            "--criterio-reset" => r.criterio_reset = PathBuf::from(val()?),
             _ => return Err(format!("opção desconhecida: {k}")),
         }
     }
     if r.modelos.is_empty() || r.modelos.iter().any(|m| fontes_de_ids(m).is_none()) || r.modelos.iter().collect::<BTreeSet<_>>().len() != r.modelos.len() {
         return Err("--modelos: lista de 1b e 3b, sem repetir".into());
     }
-    let modo = r.modo.ok_or("--modo é obrigatório")?;
+    let modo = if prova_reset {
+        if r.modo.is_some() {
+            return Err("--prova-reset já é um modo: não combina com --modo".into());
+        }
+        r.modo = Some(Modo::ProvaReset);
+        Modo::ProvaReset
+    } else {
+        r.modo.ok_or("--modo é obrigatório")?
+    };
+    if modo == Modo::ProvaReset && r.consolida.is_some() {
+        return Err("--prova-reset não tem --consolida".into());
+    }
     if r.consolida.is_some() {
         if modo == Modo::Livre {
             return Err("--consolida é de correcao ou velocidade".into());
@@ -207,6 +235,9 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
     if r.celulas.len() > 2 || (r.celulas.len() == 2 && r.celulas[0].0 != "1b") {
         return Err("no máximo duas células, 1b antes de 3b".into());
     }
+    if r.reutiliza && modo != Modo::Correcao {
+        return Err("--reutiliza é só do modo correcao".into());
+    }
     match modo {
         Modo::Livre => {
             if r.celulas.len() != 1 || r.estado.is_some() || r.cenario.is_some() || r.rep.is_some() || !r.saida.as_os_str().is_empty() {
@@ -214,6 +245,14 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
             }
             if r.texto.is_some() && r.pedido.is_some() {
                 return Err("--texto e --pedido juntos".into());
+            }
+        }
+        Modo::ProvaReset => {
+            if r.texto.is_some() || r.pedido.is_some() || r.data.is_some() || r.estado.is_some() || r.cenario.is_some() || r.rep.is_some() || r.reutiliza {
+                return Err("--prova-reset tem texto, data e pedidos fixos pelo critério (sem --texto, --pedido, --data, --estado, --cenario, --rep nem --reutiliza)".into());
+            }
+            if r.saida.as_os_str().is_empty() && !r.ensaio {
+                return Err("--saida é obrigatória".into());
             }
         }
         Modo::Correcao | Modo::Velocidade => {
@@ -334,6 +373,9 @@ fn arquivos_de_entrada(args: &Args, modo: Modo) -> Vec<PathBuf> {
     let mut v: Vec<PathBuf> = args.celulas.iter().map(|c| c.1.join("tokenizer.json")).collect();
     match modo {
         Modo::Livre => {}
+        Modo::ProvaReset => {
+            v.extend(ORDEM_RESET_CENARIOS.iter().map(|c| arquivo_pedido(&args.textos, *c)));
+        }
         Modo::Correcao => {
             v.push(args.prompts.clone());
             v.extend(args.celulas.iter().map(|c| args.referencia.join(format!("ref-{}.json", c.0))));
@@ -419,6 +461,12 @@ fn pedido_real(c: &Cenario, tok: &Tokenizador, texto: &str, t_entrada: Instant, 
     pp::primeira_palavra(t_entrada, entrada_ms, texto, data, tok, || sequencia_real(c), &mut std::io::stdout())
 }
 
+/// Como `pedido_real`, mas no motor guardado em `r` (criado no primeiro pedido, ou de novo depois de uma falha).
+fn pedido_reutilizando(c: &Cenario, tok: &Tokenizador, texto: &str, t_entrada: Instant, entrada_ms: f64, data: &str,
+                       r: &mut pp::SequenciaReutilizavel<CudaBackend, LeitorCuda>) -> Result<pp::Resultado, String> {
+    pp::primeira_palavra_reutilizando(t_entrada, entrada_ms, texto, data, tok, r, || sequencia_real(c), &mut std::io::stdout())
+}
+
 /// Lê o arquivo de texto de um cenário e devolve (texto, instante em que ficou disponível, T_entrada em ms).
 fn le_texto_de_arquivo(p: &Path) -> Result<(String, Instant, f64), String> {
     let t0 = Instant::now();
@@ -502,11 +550,13 @@ fn correcao_modelo(nome: &str, mdir: &Path, args: &Args, prompts: &[String], dev
         let host = carrega_host(mdir, &cfg)?;
         let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads };
         let data = pp::data_fixa_texto();
+        let mut guardada = pp::SequenciaReutilizavel::nova();
         executa_pedidos(&mut rec, prompts, &refs, |i, p| {
-            let r = pedido_real(&c, &tok, p, Instant::now(), 0.0, &data)?;
+            let r = if args.reutiliza { pedido_reutilizando(&c, &tok, p, Instant::now(), 0.0, &data, &mut guardada)? } else { pedido_real(&c, &tok, p, Instant::now(), 0.0, &data)? };
             println!("{nome} pedido {i}: {} ids, token {} {:?}, produto {:.1} ms", r.medida.ids_n, r.medida.token, r.medida.palavra, r.medida.produto_ms);
             Ok(r)
         });
+        guardada.encerra()?;
         Ok(())
     })();
     if let Err(e) = r {
@@ -546,6 +596,92 @@ fn correcao(args: &Args, exe: &Path) -> Result<i32, String> {
     let modelos: Vec<String> = args.celulas.iter().map(|c| c.0.clone()).collect();
     let ctx = Contexto { exe: exe.to_path_buf(), criterio: args.criterio.clone(), sha_criterio: CRITERIO_SHA.into(), confere_esperado: true };
     let (dec, _) = consolida_correcao(&args.saida, &modelos, &ctx)?;
+    println!("{dec}");
+    Ok(0)
+}
+
+// ---- Prova 2 do reset de sequência ---------------------------------------------------------------------------------------------------
+
+/// Os dois braços de um modelo: A = motor e backend NOVOS por pedido; B = um motor reutilizado com `nova_sequencia` entre os pedidos (o braço A roda
+/// inteiro antes do B, nunca dois motores vivos). Falha antes de qualquer pedido (config, pesos, texto fora da faixa) deixa o registro sem pedidos.
+fn reset_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> rr::RegistroReset {
+    let mut rec = rr::RegistroReset { modelo: nome.into(), integro: true, falha: None, pedidos: vec![], extras: vec![] };
+    let r: Result<(), String> = (|| {
+        let cfg = carrega_config(mdir)?;
+        let tok = carrega_tokenizador(mdir)?;
+        let data = pp::data_fixa_texto();
+        for cen in ORDEM_RESET_CENARIOS {
+            let (t, _, _) = le_texto_de_arquivo(&arquivo_pedido(&args.textos, cen))?;
+            let n = conta_ids(&tok, &t, &data)?;
+            if !pp::ids_na_faixa(n, cen) {
+                return Err(format!("cenário {}: {n} ids fora da faixa de 2% em torno de {}", cen.nome(), cen.n()));
+            }
+        }
+        let host = carrega_host(mdir, &cfg)?;
+        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads };
+        let mut guardada = pp::SequenciaReutilizavel::nova();
+        rec.pedidos = rr::executa_prova(
+            |i, cen| {
+                let (texto, t_entrada, entrada_ms) = le_texto_de_arquivo(&arquivo_pedido(&args.textos, cen))?;
+                let r = pedido_real(&c, &tok, &texto, t_entrada, entrada_ms, &data)?;
+                println!("{nome} braço A pedido {i} ({}): {} ids, token {}, T_sequencia {:.3} ms", cen.nome(), r.medida.ids_n, r.medida.token, r.medida.crono.sequencia_ms);
+                Ok(r)
+            },
+            |i, cen| {
+                let (texto, t_entrada, entrada_ms) = le_texto_de_arquivo(&arquivo_pedido(&args.textos, cen))?;
+                let r = pedido_reutilizando(&c, &tok, &texto, t_entrada, entrada_ms, &data, &mut guardada)?;
+                println!("{nome} braço B pedido {i} ({}): {} ids, token {}, T_sequencia {:.3} ms", cen.nome(), r.medida.ids_n, r.medida.token, r.medida.crono.sequencia_ms);
+                Ok(r)
+            },
+        );
+        guardada.encerra().map_err(|e| format!("encerramento do motor reutilizado: {e}"))
+    })();
+    if let Err(e) = r {
+        rec.falha = Some(e);
+    }
+    rec
+}
+
+fn prova_reset(args: &Args, exe: &Path) -> Result<i32, String> {
+    portoes()?;
+    let (h_bin0, h_crit0, h_5b0) = (sha256(exe)?, sha256(&args.criterio_reset)?, sha256(&args.criterio)?);
+    if h_crit0 != rr::CRITERIO_RESET_SHA {
+        return Err(format!("o critério de reset {} tem sha256 {h_crit0}, não o congelado {}", args.criterio_reset.display(), rr::CRITERIO_RESET_SHA));
+    }
+    if h_5b0 != CRITERIO_SHA {
+        return Err(format!("o critério {} tem sha256 {h_5b0}, não o congelado {CRITERIO_SHA}", args.criterio.display()));
+    }
+    let arq0 = hashes_conferidos(&arquivos_de_entrada(args, Modo::ProvaReset))?;
+    prepara_saida(&args.saida)?;
+    std::fs::write(args.saida.join("decisao.txt"), "em execução: sem decisão\n").map_err(|e| e.to_string())?;
+    println!("integridade antes: binário {h_bin0}; critério de reset {h_crit0}; critério 5b {h_5b0}; {} arquivos de entrada", arq0.len());
+    moe_rt::affinity::set_compute_plan(moe_rt::affinity::Afin::A0.compute_plan(args.threads));
+    let device = Device::new(0).map_err(|e| format!("{e:?}"))?;
+    let mut extras = extras_de_integridade(&h_bin0, &h_crit0, &arq0);
+    extras.push(("hash_criterio_5b".into(), h_5b0.clone()));
+    let agora = |integro_antes: bool| integro_antes && integro_agora(exe, &args.criterio_reset, &h_bin0, &h_crit0, &arq0) && sha256(&args.criterio).ok().as_deref() == Some(h_5b0.as_str());
+    let mut integro = true;
+    let mut rotulos = vec![];
+    let mut linhas = vec![];
+    for (nome, mdir) in &args.celulas {
+        let mut rec = reset_modelo(nome, mdir, args, &device);
+        integro = agora(integro);
+        rec.integro = integro;
+        rec.extras.extend(extras.iter().cloned());
+        let a = rr::avalia(&rec);
+        let final_ = rr::rotulo_final(a.rotulo, integro);
+        let txt = format!("{}integridade conferida no fim do modelo: {}\n", rr::texto(&rec, final_), if integro { "íntegra" } else { "QUEBRADA" });
+        println!("{txt}");
+        grava_json(&args.saida.join(format!("reset-{nome}.json")), &rec.para_json())?;
+        std::fs::write(args.saida.join(format!("reset-{nome}-parcial.txt")), &txt).map_err(|e| e.to_string())?;
+        rotulos.push(a.rotulo);
+        linhas.push(format!("{nome}: {}", final_.nome()));
+    }
+    integro = agora(integro);
+    std::fs::write(args.saida.join("reset-final.txt"), format!("tipo=reset-final\nintegro={}\n", integro as u8)).map_err(|e| e.to_string())?;
+    let conj = rr::rotulo_conjunto(&rotulos, integro);
+    let dec = format!("prova 2 do reset de sequência (critério sha256 {})\n{}\nintegridade do conjunto: {}\nrótulo: {}\n", rr::CRITERIO_RESET_SHA, linhas.join("\n"), if integro { "íntegra" } else { "QUEBRADA: todos SEM PROVA" }, conj.nome());
+    std::fs::write(args.saida.join("decisao.txt"), &dec).map_err(|e| e.to_string())?;
     println!("{dec}");
     Ok(0)
 }
@@ -1079,6 +1215,14 @@ fn ensaio(args: &Args, exe: &Path, modo: Modo) -> Result<(), String> {
                     println!("ensaio {nome} cenário {}: {n} ids (alvo {}, {} da faixa de 2%)", cen.nome(), cen.n(), if pp::ids_na_faixa(n, cen) { "DENTRO" } else { "FORA" });
                 }
             }
+            Modo::ProvaReset => {
+                for cen in ORDEM_RESET_CENARIOS {
+                    let t = std::fs::read_to_string(arquivo_pedido(&args.textos, cen)).map_err(|e| e.to_string())?;
+                    let n = conta_ids(&tok, &t, &data)?;
+                    println!("ensaio {nome} cenário {}: {n} ids (alvo {}, {} da faixa de 2%)", cen.nome(), cen.n(), if pp::ids_na_faixa(n, cen) { "DENTRO" } else { "FORA" });
+                }
+                println!("ensaio {nome}: ordem {}", rr::ORDEM.iter().map(|c| c.nome()).collect::<Vec<_>>().join(", "));
+            }
             Modo::Livre => {}
         }
     }
@@ -1096,6 +1240,7 @@ fn principal(t0: Instant) -> Result<i32, String> {
         let ctx = Contexto { exe, criterio: args.criterio.clone(), sha_criterio: CRITERIO_SHA.into(), confere_esperado: true };
         let dec = match modo {
             Modo::Correcao => consolida_correcao(dir, &args.modelos, &ctx)?.0,
+            Modo::ProvaReset => return Err("--prova-reset não tem --consolida".into()),
             _ => consolida_velocidade(dir, args.estado.ok_or("sem --estado")?, &args.modelos, &ctx)?.0,
         };
         println!("{dec}");
@@ -1108,6 +1253,7 @@ fn principal(t0: Instant) -> Result<i32, String> {
     match (modo, args.estado) {
         (Modo::Livre, _) => livre(&args),
         (Modo::Correcao, _) => correcao(&args, &exe),
+        (Modo::ProvaReset, _) => prova_reset(&args, &exe),
         (Modo::Velocidade, Some(Estado::Quente)) => quente(&args, &exe),
         (Modo::Velocidade, _) => frio(t0, &args, &exe),
     }
@@ -1137,6 +1283,17 @@ mod tests {
         let d = std::env::temp_dir().join(format!("primeira-palavra-{nome}-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn reutiliza_e_opcional_e_so_da_correcao() {
+        let base = ["--modo", "correcao", "--celula", "1b:/m", "--saida", "/o"];
+        assert!(!parse_args(v(&base)).unwrap().reutiliza, "o padrão não reutiliza o motor");
+        let mut com = base.to_vec();
+        com.push("--reutiliza");
+        assert!(parse_args(v(&com)).unwrap().reutiliza);
+        assert!(parse_args(v(&["--modo", "livre", "--celula", "1b:/m", "--reutiliza"])).is_err());
+        assert!(parse_args(v(&["--modo", "velocidade", "--estado", "quente", "--celula", "1b:/m", "--saida", "/o", "--reutiliza"])).is_err());
     }
 
     #[test]
@@ -1479,5 +1636,35 @@ mod tests {
         let (_, conj) = consolida_correcao(&d, &["1b".into()], &ctx).unwrap();
         assert_eq!(conj, RotuloCorrecao::SemProva);
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn prova_reset_argumentos_e_arquivos() {
+        let base = ["--prova-reset", "--celula", "1b:/m", "--saida", "/o"];
+        let a = parse_args(v(&base)).unwrap();
+        assert_eq!(a.modo, Some(Modo::ProvaReset));
+        assert_eq!(a.criterio_reset, PathBuf::from(CRITERIO_RESET_PADRAO));
+        assert!(parse_args(v(&["--prova-reset", "--celula", "1b:/m", "--ensaio"])).is_ok(), "ensaio não precisa de saída");
+        assert!(parse_args(v(&["--prova-reset", "--celula", "1b:/m"])).is_err(), "sem saída");
+        assert!(parse_args(v(&["--prova-reset", "--saida", "/o"])).is_err(), "sem célula");
+        assert!(parse_args(v(&["--prova-reset", "--modo", "correcao", "--celula", "1b:/m", "--saida", "/o"])).is_err(), "não combina com --modo");
+        for extra in [vec!["--texto", "oi"], vec!["--data", "2026-11-08"], vec!["--reutiliza"], vec!["--estado", "quente"], vec!["--cenario", "A"], vec!["--rep", "1"]] {
+            let mut x = base.to_vec();
+            x.extend(extra);
+            assert!(parse_args(v(&x)).is_err(), "{x:?}");
+        }
+        let mut x = base.to_vec();
+        x.extend(["--consolida", "/d"]);
+        assert!(parse_args(v(&x)).is_err());
+        let c = parse_args(v(&["--prova-reset", "--celula", "1b:/m1", "--celula", "3b:/m3", "--saida", "/o", "--criterio-reset", "/c.md"])).unwrap();
+        assert_eq!(c.celulas.len(), 2);
+        assert_eq!(c.criterio_reset, PathBuf::from("/c.md"));
+        assert!(parse_args(v(&["--prova-reset", "--celula", "3b:/m", "--celula", "1b:/m2", "--saida", "/o"])).is_err(), "1b antes de 3b");
+        let nomes: Vec<String> = arquivos_de_entrada(&c, Modo::ProvaReset).iter().map(|p| nome_do_arquivo(p)).collect();
+        assert!(nomes.contains(&"pedido-A.txt".into()) && nomes.contains(&"pedido-C.txt".into()) && !nomes.contains(&"prompts-traco.json".into()));
+        assert_eq!(nomes.iter().filter(|n| *n == "tokenizer.json").count(), 2);
+        // Os portões são os dos outros modos (a recusa vem antes de qualquer acesso ao device).
+        assert!(exige_autorizacao(None).is_err() && exige_uuid(Some("outra")).is_err());
+        assert_eq!(rr::CRITERIO_RESET_SHA.len(), 64);
     }
 }

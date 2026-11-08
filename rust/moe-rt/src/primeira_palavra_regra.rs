@@ -15,8 +15,8 @@
 use crate::e4b_regra::{argmax, mediana};
 use crate::leitura_regra::{contadores_validos, Contadores};
 use crate::motor::backend::Backend;
-use crate::motor::engine::Engine;
-use crate::motor::leitura::{le_ids, PreparaPasso};
+use crate::motor::engine::{Engine, Published};
+use crate::motor::leitura::{le_ids_com_pendente, PreparaPasso};
 use crate::tokenizador::{formata_data, renderiza_chat, Mensagem, Papel, Tokenizador};
 use crate::velocidade_regra::{self as vr, Cen, Estado, RegistroFrio, Rotulo};
 use serde_json::{json, Value};
@@ -244,6 +244,60 @@ where
     P::Error: Debug,
     C: FnOnce() -> Result<Sequencia<B, P>, String>,
 {
+    let mut slot = None;
+    let mut pendente = None;
+    let c = corpo(t_entrada, entrada_ms, texto, data, tok, &mut slot, &mut pendente, |s, _| {
+        *s = Some(cria()?);
+        Ok(())
+    }, saida)?;
+    let mut seq = slot.ok_or("sem sequência")?;
+    let s = seq.eng.next_published().map_err(|e| format!("{e:?}"))?.stats().clone();
+    seq.eng.close().map_err(|e| format!("{e:?}"))?;
+    Ok(c.fecha(Contadores { needed: s.needed, hits: s.hits, cpu: s.cpu }))
+}
+
+/// O que o fluxo produz até a entrega, ainda sem os contadores (a leitura deles e o destino do motor diferem entre o pedido avulso e
+/// o motor reutilizado).
+struct Corpo {
+    crono: Cronometros,
+    produto_ms: f64,
+    ids: Vec<usize>,
+    token: usize,
+    palavra: String,
+    gap: f64,
+    logits: Vec<f32>,
+    t_fim: Instant,
+}
+
+impl Corpo {
+    fn fecha(self, cont: Contadores) -> Resultado {
+        let medida = RepMedida {
+            crono: self.crono,
+            produto_ms: self.produto_ms,
+            ids_n: self.ids.len(),
+            ids_fnv: fnv_ids(&self.ids),
+            token: self.token,
+            visivel: self.palavra.chars().any(|c| !c.is_whitespace()),
+            palavra: self.palavra,
+            gap: self.gap,
+            cont,
+            logits_ok: !self.logits.is_empty() && self.logits.iter().all(|v| v.is_finite()),
+        };
+        Resultado { medida, ids: self.ids, logits: self.logits, t_fim: self.t_fim }
+    }
+}
+
+/// O fluxo comum. `prepara` deixa `slot` com a sequência pronta (motor novo, ou o mesmo com `nova_sequencia`) e pode deixar um `pendente`;
+/// o tempo dele é o `T_sequencia`. Termina com a posição conferida e a sequência em `slot`; contadores e destino do motor são de quem chama.
+#[allow(clippy::too_many_arguments)]
+fn corpo<B, P, F>(t_entrada: Instant, entrada_ms: f64, texto: &str, data: &str, tok: &Tokenizador, slot: &mut Option<Sequencia<B, P>>,
+                  pendente: &mut Option<Published>, prepara: F, saida: &mut dyn Write) -> Result<Corpo, String>
+where
+    B: Backend,
+    P: PreparaPasso,
+    P::Error: Debug,
+    F: FnOnce(&mut Option<Sequencia<B, P>>, &mut Option<Published>) -> Result<(), String>,
+{
     if texto.trim().is_empty() {
         return Err("texto vazio".into());
     }
@@ -256,9 +310,10 @@ where
     let ids: Vec<usize> = tok.codifica(&renderizado).into_iter().map(|x| x as usize).collect();
     let token_ms = ms(t_entrada.elapsed());
     let mut marca = Instant::now();
-    let mut seq = cria()?;
+    prepara(slot, pendente)?;
     let sequencia_ms = passo(&mut marca);
-    le_ids(&mut seq.eng, &seq.prep, &ids).map_err(|e| format!("le_ids: {e:?}"))?;
+    let seq = slot.as_mut().ok_or("sem sequência")?;
+    le_ids_com_pendente(&mut seq.eng, &seq.prep, &ids, pendente).map_err(|e| format!("le_ids: {e:?}"))?;
     let leitura_ms = passo(&mut marca);
     let logits = (seq.le_logits)()?;
     let logits_ms = passo(&mut marca);
@@ -270,7 +325,7 @@ where
     let t_fim = Instant::now();
     let entrega_ms = ms(t_fim.duration_since(marca));
     let produto_ms = ms(t_fim.duration_since(t_entrada));
-    // Fora do indicador: posição, contadores, encerramento.
+    // Fora do indicador: posição.
     let n = ids.len() as u64;
     if seq.eng.position() != n {
         return Err(format!("posição do motor {} depois de ler {n} ids", seq.eng.position()));
@@ -278,21 +333,113 @@ where
     if seq.prep.posicao() != n {
         return Err(format!("posição do backend {} depois de ler {n} ids", seq.prep.posicao()));
     }
-    let s = seq.eng.next_published().map_err(|e| format!("{e:?}"))?.stats().clone();
-    seq.eng.close().map_err(|e| format!("{e:?}"))?;
-    let medida = RepMedida {
+    Ok(Corpo {
         crono: Cronometros { entrada_ms, token_ms, sequencia_ms, leitura_ms, logits_ms, escolha_ms, detok_ms, entrega_ms },
         produto_ms,
-        ids_n: ids.len(),
-        ids_fnv: fnv_ids(&ids),
-        token,
-        visivel: palavra.chars().any(|c| !c.is_whitespace()),
-        palavra,
         gap: dois_maiores(&logits).map(|x| x.2).unwrap_or(f64::NAN),
-        cont: Contadores { needed: s.needed, hits: s.hits, cpu: s.cpu },
-        logits_ok: !logits.is_empty() && logits.iter().all(|v| v.is_finite()),
+        ids,
+        token,
+        palavra,
+        logits,
+        t_fim,
+    })
+}
+
+/// Motor que atravessa vários pedidos: a sequência, o `Published` pendente do próximo token (o motor já publicou a tabela dele e a
+/// linha de serviço espera por ele) e os contadores cumulativos da linha de serviço no fim do pedido anterior (por pedido = diferença).
+pub struct SequenciaReutilizavel<B: Backend, P: PreparaPasso> {
+    seq: Option<Sequencia<B, P>>,
+    pendente: Option<Published>,
+    base: Contadores,
+    /// Quantas vezes o motor foi criado (1 + recriações depois de falha).
+    pub criacoes: usize,
+}
+
+impl<B: Backend, P: PreparaPasso> Default for SequenciaReutilizavel<B, P> {
+    fn default() -> Self {
+        Self { seq: None, pendente: None, base: Contadores { needed: 0, hits: 0, cpu: 0 }, criacoes: 0 }
+    }
+}
+
+impl<B: Backend, P: PreparaPasso> SequenciaReutilizavel<B, P> {
+    pub fn nova() -> Self {
+        Self::default()
+    }
+    /// Se há motor vivo guardado para o próximo pedido.
+    pub fn viva(&self) -> bool {
+        self.seq.as_ref().is_some_and(|s| !s.eng.is_closed())
+    }
+    /// Encerra o motor guardado (se houver), sem esperar nada: o `Published` pendente é solto antes do fechamento.
+    pub fn encerra(&mut self) -> Result<(), String> {
+        self.pendente = None;
+        self.base = Contadores { needed: 0, hits: 0, cpu: 0 };
+        match self.seq.take() {
+            Some(s) => s.eng.close().map_err(|e| format!("{e:?}")),
+            None => Ok(()),
+        }
+    }
+}
+
+/// Como [`primeira_palavra`], mas o motor sobrevive ao pedido: o primeiro pedido (ou o primeiro depois de uma falha) chama `cria`; os
+/// seguintes chamam `Engine::nova_sequencia` no motor guardado. Contadores por pedido pela diferença dos cumulativos. Pedido que falha fecha o
+/// motor (o próximo recria). `T_sequencia` do pedido reutilizado é o custo de `nova_sequencia`.
+pub fn primeira_palavra_reutilizando<B, P, C>(t_entrada: Instant, entrada_ms: f64, texto: &str, data: &str, tok: &Tokenizador,
+                                              r: &mut SequenciaReutilizavel<B, P>, cria: C, saida: &mut dyn Write) -> Result<Resultado, String>
+where
+    B: Backend,
+    P: PreparaPasso,
+    P::Error: Debug,
+    C: FnOnce() -> Result<Sequencia<B, P>, String>,
+{
+    if texto.trim().is_empty() {
+        // Recusa de entrada: o motor guardado não foi tocado e segue vivo.
+        return Err("texto vazio".into());
+    }
+    let SequenciaReutilizavel { seq, pendente, base, criacoes } = r;
+    let resultado = corpo(t_entrada, entrada_ms, texto, data, tok, seq, pendente, |s, pend| {
+        if s.as_ref().is_some_and(|x| !x.eng.is_closed()) && pend.is_some() {
+            s.as_mut().ok_or("sem sequência")?.eng.nova_sequencia().map_err(|e| format!("nova_sequencia: {e:?}"))?;
+        } else {
+            // Primeiro pedido, ou motor fechado/sem pendente: recria do zero.
+            if let Some(velho) = s.take() {
+                let _ = velho.eng.close();
+            }
+            *pend = None;
+            *base = Contadores { needed: 0, hits: 0, cpu: 0 };
+            *s = Some(cria()?);
+            *criacoes += 1;
+        }
+        Ok(())
+    }, saida);
+    let c = match resultado {
+        Ok(c) => c,
+        Err(e) => {
+            // Falha: fecha o motor e solta o pendente; o próximo pedido recria.
+            r.encerra().ok();
+            return Err(e);
+        }
     };
-    Ok(Resultado { medida, ids, logits, t_fim })
+    let fim = (|| -> Result<Contadores, String> {
+        let seq = r.seq.as_mut().ok_or("sem sequência")?;
+        let p = match r.pendente.take() {
+            Some(p) => p,
+            None => seq.eng.next_published().map_err(|e| format!("{e:?}"))?,
+        };
+        let s = p.stats().clone();
+        r.pendente = Some(p);
+        Ok(Contadores { needed: s.needed, hits: s.hits, cpu: s.cpu })
+    })();
+    match fim {
+        Ok(cum) => {
+            let cont = Contadores { needed: cum.needed - r.base.needed, hits: cum.hits - r.base.hits, cpu: cum.cpu - r.base.cpu };
+            r.base = cum;
+            Ok(c.fecha(cont))
+        }
+        Err(e) => {
+            r.encerra().ok();
+            Err(e)
+        }
+    }
 }
 
 // ---- Correção --------------------------------------------------------------------------------------------------------------------------
@@ -1174,5 +1321,135 @@ mod tests {
         let p = PrepCompartilhado(prep(2048));
         let r = primeira_palavra(Instant::now(), 0.0, "pergunta", &data_fixa_texto(), &t, move || Ok(Sequencia { eng, prep: p, le_logits: Box::new(|| Ok(logits_com_pico(9))) }), &mut Quebrada);
         assert!(r.err().is_some_and(|e| e.contains("entrega")));
+    }
+
+    /// Preparo que zera a posição quando o backend falso recebe um `reset_sequence` novo (como o modelo real).
+    struct PrepRe {
+        gpu: Arc<FakeGpu>,
+        visto: Mutex<usize>,
+        pos: Mutex<u64>,
+    }
+    impl PrepRe {
+        fn novo(gpu: &Arc<FakeGpu>) -> Self {
+            Self { gpu: gpu.clone(), visto: Mutex::new(0), pos: Mutex::new(0) }
+        }
+        fn sincroniza(&self) {
+            let n = self.gpu.resets().len();
+            let mut v = self.visto.lock().unwrap();
+            if n > *v {
+                *v = n;
+                *self.pos.lock().unwrap() = 0;
+            }
+        }
+    }
+    impl PreparaPasso for PrepRe {
+        type Error = &'static str;
+        fn vocab(&self) -> usize {
+            VOCAB
+        }
+        fn max_positions(&self) -> usize {
+            8
+        }
+        fn max_len(&self) -> usize {
+            2048
+        }
+        fn posicao(&self) -> u64 {
+            self.sincroniza();
+            *self.pos.lock().unwrap()
+        }
+        fn prepara(&self, ids: &[usize]) -> Result<(), &'static str> {
+            self.sincroniza();
+            *self.pos.lock().unwrap() += ids.len() as u64;
+            Ok(())
+        }
+    }
+
+    /// Uma sequência nova (motor falso novo) cujos logits falham na `falha_na`-ésima chamada (1-based; 0 = nunca). Devolve também a GPU.
+    fn seq_re(falha_na: usize, gpus: &Mutex<Vec<Arc<FakeGpu>>>) -> Result<Sequencia<FakeGpu, PrepRe>, String> {
+        let (gpu, eng) = motor_falso(2100);
+        gpus.lock().unwrap().push(gpu.clone());
+        let n = Arc::new(Mutex::new(0usize));
+        let logits = Box::new(move || {
+            let mut c = n.lock().unwrap();
+            *c += 1;
+            if *c == falha_na {
+                Err("logits falharam".to_string())
+            } else {
+                Ok(logits_com_pico(10921))
+            }
+        });
+        Ok(Sequencia { eng, prep: PrepRe::novo(&gpu), le_logits: logits })
+    }
+
+    fn pedido_re(r: &mut SequenciaReutilizavel<FakeGpu, PrepRe>, texto: &str, falha_na: usize, gpus: &Mutex<Vec<Arc<FakeGpu>>>) -> Result<Resultado, String> {
+        let t = tok();
+        let mut saida: Vec<u8> = Vec::new();
+        primeira_palavra_reutilizando(Instant::now(), 0.0, texto, &data_fixa_texto(), &t, r, || seq_re(falha_na, gpus), &mut saida)
+    }
+
+    /// Dois pedidos no mesmo motor: um só motor criado, um reset entre eles, ids e posições idênticos aos de um pedido avulso, e os
+    /// contadores de cada pedido são a diferença dos cumulativos (sem slots, tudo vai para a CPU: `needed = ids * camadas * topk`).
+    #[test]
+    fn motor_reutilizado_entre_pedidos_zera_posicao_e_conta_por_pedido() {
+        let gpus = Mutex::new(vec![]);
+        let mut r = SequenciaReutilizavel::nova();
+        let (t1, t2) = ("Explain how TCP congestion control works.", "Hi");
+        let a = pedido_re(&mut r, t1, 0, &gpus).expect("pedido 1");
+        assert!(r.viva());
+        let b = pedido_re(&mut r, t2, 0, &gpus).expect("pedido 2");
+        let c = pedido_re(&mut r, t1, 0, &gpus).expect("pedido 3");
+        assert_eq!(r.criacoes, 1, "um motor só");
+        assert_eq!(gpus.lock().unwrap().len(), 1);
+        assert_eq!(gpus.lock().unwrap()[0].resets().len(), 2, "um reset por pedido depois do primeiro");
+        // O pedido avulso (motor novo) dá os mesmos ids, token e contadores.
+        let t = tok();
+        let (_g, eng) = motor_falso(2100);
+        let p = PrepCompartilhado(prep(2048));
+        let mut saida: Vec<u8> = Vec::new();
+        let avulso = primeira_palavra(Instant::now(), 0.0, t1, &data_fixa_texto(), &t, move || Ok(Sequencia { eng, prep: p, le_logits: Box::new(|| Ok(logits_com_pico(10921))) }), &mut saida).unwrap();
+        for (x, y) in [(&a, &avulso), (&c, &avulso)] {
+            assert_eq!((x.medida.ids_fnv, x.medida.ids_n, x.medida.token), (y.medida.ids_fnv, y.medida.ids_n, y.medida.token));
+            assert_eq!(x.logits, y.logits);
+            assert_eq!(x.medida.cont, y.medida.cont, "contadores por pedido = diferença");
+        }
+        assert_eq!(b.medida.cont.needed, b.medida.ids_n as u64 * 4);
+        assert_eq!(a.medida.cont.needed, a.medida.ids_n as u64 * 4);
+        assert_ne!(a.medida.ids_n, b.medida.ids_n);
+        r.encerra().unwrap();
+        assert!(!r.viva());
+    }
+
+    fn gpu_unused(g: &Mutex<Vec<Arc<FakeGpu>>>) -> &Mutex<Vec<Arc<FakeGpu>>> {
+        g
+    }
+
+    /// Pedido que falha fecha o motor; o seguinte recria (e funciona), sem herdar contadores nem pendente.
+    #[test]
+    fn pedido_que_falha_fecha_o_motor_e_o_proximo_recria() {
+        let gpus = Mutex::new(vec![]);
+        let mut r = SequenciaReutilizavel::nova();
+        pedido_re(&mut r, "um", 2, &gpus).expect("pedido 1 (logits na 1ª chamada)");
+        let e = pedido_re(&mut r, "dois", 2, &gpus).err().expect("pedido 2 falha nos logits");
+        assert!(e.contains("logits falharam"), "{e}");
+        assert!(!r.viva(), "falha fecha e solta o motor");
+        let c = pedido_re(&mut r, "tres", 0, &gpus).expect("pedido 3 recria");
+        assert_eq!(r.criacoes, 2);
+        assert_eq!(gpus.lock().unwrap().len(), 2);
+        assert_eq!(c.medida.cont.needed, c.medida.ids_n as u64 * 4, "contadores do motor recriado começam do zero");
+        r.encerra().unwrap();
+    }
+
+    /// Texto vazio não toca no motor guardado.
+    #[test]
+    fn texto_vazio_recusa_sem_fechar_o_motor_reutilizado() {
+        let gpus = Mutex::new(vec![]);
+        let mut r = SequenciaReutilizavel::nova();
+        pedido_re(&mut r, "um", 0, &gpus).unwrap();
+        let e = pedido_re(&mut r, "   ", 0, &gpus).err().unwrap();
+        assert_eq!(e, "texto vazio");
+        assert!(r.viva(), "entrada recusada não derruba o motor");
+        pedido_re(&mut r, "tres", 0, &gpus).unwrap();
+        assert_eq!(r.criacoes, 1);
+        r.encerra().unwrap();
     }
 }

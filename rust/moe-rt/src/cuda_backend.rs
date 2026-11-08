@@ -708,6 +708,11 @@ impl Backend for CudaBackend {
         self.max_pos
     }
 
+    /// Sequência nova: delega ao método próprio (que zera a posição do modelo; o KV velho fica mascarado por `lens`).
+    fn reset_sequence(&self) -> Result<(), CudaError> {
+        CudaBackend::reset_sequence(self)
+    }
+
     /// O descritor do passo: o `m` desta enfileirada. Com a parte densa, tem de bater com os tokens que `begin_step_tokens` preparou.
     /// O `m` vai para a GPU por operação da stream (`route` grava a palavra `m` da área da camada antes de `seq[l]`).
     fn begin_step(&self, _s: &CudaStream, _t: u32, _pos: u64, m: usize) -> Result<(), CudaError> {
