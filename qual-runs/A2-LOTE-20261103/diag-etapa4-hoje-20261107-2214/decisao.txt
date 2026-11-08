@@ -1,0 +1,6 @@
+decisão da velocidade da leitura em blocos de 8, estado quente (regra de rótulos do critério):
+  1b C quente: ATINGE: mediana modo 8 4.18 s (meta 5 s), ganho 60.1%
+  1b A quente: NÃO ATINGE: mediana modo 8 16.27 s (meta 15 s), ganho 61.6% [meta]
+conjunto: NÃO ATINGE
+integridade: binário, critério e arquivos de ids IGUAIS aos gravados
+carga externa (nvidia-smi, loadavg, timers): registrada pelo script da janela, fora deste programa; não decide rótulo

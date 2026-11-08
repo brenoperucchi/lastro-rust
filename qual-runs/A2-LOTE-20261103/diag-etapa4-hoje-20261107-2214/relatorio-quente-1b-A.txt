@@ -1,0 +1,10 @@
+== célula 1b A quente (2003 ids)
+meta: 15000.0 ms (15.00 s)
+mediana do modo 1: 42382.7 ms (42.38 s)
+mediana do modo 8 (indicador = leitura + logits; DECIDE contra a meta): 16268.9 ms (16.27 s)
+ganho = 1 - med8/med1 (piso 15%; DECIDE): 61.6%
+deriva do modo 1 (limite 10%): 0.4%
+só descrição, não decide: pior repetição do modo 8 16336.7 ms (16.34 s); desvio entre repetições do modo 8 37.1 ms (0.04 s); T_sequencia mediana 1713.2 ms (1.71 s)
+motivo(s) (nível 2): meta
+rótulo da célula: NÃO ATINGE
+integridade do conjunto: íntegra

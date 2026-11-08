@@ -1,0 +1,2 @@
+Diagnostico (descritivo, nao altera nenhum rotulo): binario da etapa 4 (sha256 1fa13846a20b1bc3cccf99f0fcd0a1745654615a32979e00f31c65010f35aa2b) rodado de novo, quente, so celula 1B (C e A), na RTX 4090 GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 07/11 22:14, para separar hardware de codigo na lentidao do 5b. Hipotese do Breno: memoria/XMP/DDR mudou apos os reboots de 07/11.
+Autorizacao: coordenador 07/11 22:14 ("Sim: pode rodar a janela ... A 4090 tem autorizacao permanente do Breno"). Limite 30 min, 5090 fora, sem repeticao.
