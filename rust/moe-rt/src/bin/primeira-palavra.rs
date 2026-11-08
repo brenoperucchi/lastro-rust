@@ -17,12 +17,18 @@
 //!  - `--prova-reset --celula 1b:<dir> [--celula 3b:<dir>] --saida <dir nova> [--criterio-reset arquivo]`: PROVA 2 do reset de sequência
 //!    (`criterio-reset-sequencia-20261108.md`): ordem A longo, C curto, A longo, C curto nos braços A (motor novo por pedido) e B (um motor
 //!    reutilizado com `nova_sequencia`); ids, token e cada logit por `to_bits` idênticos ou REPROVA. Mesmos portões dos outros modos.
+//!  - `--gera --celula 1b:<dir> [--celula 3b:<dir>] --saida <dir nova> [--criterio-5c arquivo] [--textos-5c dir] [--referencia-5c dir]`: ETAPA 5c, geração
+//!    livre curta (`criterio-5c-geracao-livre-20261108.md`): 3 textos crus fixos (curto, médio, longo), template com data fixa, 64 tokens gulosos
+//!    por pedido (a prova NUNCA para no EOS), um motor reutilizado entre os 3 pedidos (`nova_sequencia`), comparação com a referência do HF
+//!    (`tools/ref_geracao_5c.py`; empate 1e-3). `--gera --celula nome:<dir> --texto T [--novos N] [--data AAAA-MM-DD]` é o uso normal: gera até N
+//!    tokens, PARA no primeiro EOS e imprime o texto; não decide rótulo. Mesmos portões dos outros modos; `--ensaio` não abre a GPU.
 //!  - `--consolida <dir> --modo correcao|velocidade [--estado quente|frio] [--modelos 1b,3b]`: relê os brutos, aplica as regras de
 //!    `moe_rt::primeira_palavra_regra` e escreve `decisao.txt` e os relatórios.
 //! Códigos de saída: 0 gravado e válido, 1 gravado com falha (a célula fica SEM PROVA), 2 recusa antes de qualquer trabalho. Nada repete sozinho.
 use cuda_core::Device;
 use moe_rt::cpu::Cpu;
 use moe_rt::cuda_backend::{CpuServe, CudaBackend, CudaStream, LeitorCuda};
+use moe_rt::geracao_regra as gr;
 use moe_rt::leitura_regra::{fontes_de_ids, BLOCO, MAX_LEN};
 use moe_rt::model::{Config as ModelConfig, HostModel};
 use moe_rt::motor::{AdmitMode, Config, Engine};
@@ -52,6 +58,13 @@ const REFERENCIA_PADRAO: &str = "/home/brenoperucchi/Devs/lastro-rust/qual-runs/
 const TEXTOS_PADRAO: &str = "/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5b-textos";
 const CRITERIO_RESET_PADRAO: &str = "/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/criterio-reset-sequencia-20261108.md";
 /// Os cenários distintos da prova de reset (os textos congelados do 5b).
+const CRITERIO_5C_PADRAO: &str = "/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/criterio-5c-geracao-livre-20261108.md";
+const TEXTOS_5C_PADRAO: &str = "/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5c-textos";
+const REFERENCIA_5C_PADRAO: &str = "/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5c-referencia";
+/// sha256 das referências da 5c (`ref5c-<modelo>.json`): congelados DEPOIS de rodar `tools/ref_geracao_5c.py` e antes da janela. Com `None` a prova
+/// recusa (sem sha congelado não há referência confiável); o ensaio mostra o sha atual.
+const REF5C_SHA_1B: Option<&str> = Some("9584fcabe7d8b2a1821207267651504c72d317ce9b566cd967d390a1dbbad259");
+const REF5C_SHA_3B: Option<&str> = Some("968d9b391324a99fbaf5c772a351018b90105f572b32ee2db3140f79da123124");
 const ORDEM_RESET_CENARIOS: [Cen; 2] = [Cen::C, Cen::A];
 const CENARIOS: [Cen; 2] = [Cen::C, Cen::A];
 
@@ -62,6 +75,11 @@ fn sha_esperado(nome: &str) -> Option<&'static str> {
         "prompts-traco.json" => Some("e5e53c33edaa9c5c972a88ddab44f7de0b5bfef0d5be204c97527191b770ac3c"),
         "pedido-C.txt" => Some("e80bce7b40f94aa2c86cb5f2e8345f7230982711e7ec0441654df8c273157b25"),
         "pedido-A.txt" => Some("4ab72d751f8f7e67c6c93513f235ad239f0cb54c21e391dc664bc71d62a54d44"),
+        "texto-curto.txt" => Some("5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d"),
+        "texto-medio.txt" => Some("bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a"),
+        "texto-longo.txt" => Some("821e0f15139b58173b5c17f5e9428527bb27b03dc10b35e38cbeed044defbaea"),
+        "ref5c-1b.json" => REF5C_SHA_1B,
+        "ref5c-3b.json" => REF5C_SHA_3B,
         "ref-1b.json" => Some("787675e72f135dc8d6072b0c60971fbcdce6ff8616698596f1fb3c26d568d59b"),
         "ref-3b.json" => Some("7425c1d8e21be1c37f66a0f950bdc46a48737321e959a3f081a20c9534d8e35f"),
         _ => None,
@@ -75,6 +93,8 @@ enum Modo {
     Velocidade,
     /// `--prova-reset`: a PROVA 2 do critério de reset de sequência (braço A x braço B).
     ProvaReset,
+    /// `--gera`: a etapa 5c (geração livre curta); com `--texto` é o uso normal, sem rótulo.
+    Gera,
 }
 
 struct Args {
@@ -98,6 +118,11 @@ struct Args {
     /// `--reutiliza`: a lista de pedidos da correção roda num único motor, com `nova_sequencia` entre os pedidos (padrão: um motor novo por pedido).
     reutiliza: bool,
     criterio_reset: PathBuf,
+    criterio_5c: PathBuf,
+    textos_5c: PathBuf,
+    referencia_5c: PathBuf,
+    /// `--novos` (uso normal do `--gera`): tokens novos no máximo.
+    novos: Option<usize>,
 }
 
 fn nome_valido(s: &str) -> bool {
@@ -132,9 +157,11 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
         referencia: PathBuf::from(REFERENCIA_PADRAO), textos: PathBuf::from(TEXTOS_PADRAO), threads: 8, ensaio: false, cenario: None, rep: None, consolida: None,
         modelos: vec!["1b".into(), "3b".into()], texto: None, pedido: None, data: None, reutiliza: false,
         criterio_reset: PathBuf::from(CRITERIO_RESET_PADRAO),
+        criterio_5c: PathBuf::from(CRITERIO_5C_PADRAO), textos_5c: PathBuf::from(TEXTOS_5C_PADRAO), referencia_5c: PathBuf::from(REFERENCIA_5C_PADRAO), novos: None,
     };
     let mut modelos_dados = false;
     let mut prova_reset = false;
+    let mut gera = false;
     while let Some(k) = a.next() {
         let mut val = || a.next().ok_or_else(|| format!("{k} pede um valor"));
         match k.as_str() {
@@ -188,13 +215,33 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
             "--reutiliza" => r.reutiliza = true,
             "--prova-reset" => prova_reset = true,
             "--criterio-reset" => r.criterio_reset = PathBuf::from(val()?),
+            "--gera" => gera = true,
+            "--criterio-5c" => r.criterio_5c = PathBuf::from(val()?),
+            "--textos-5c" => r.textos_5c = PathBuf::from(val()?),
+            "--referencia-5c" => r.referencia_5c = PathBuf::from(val()?),
+            "--novos" => {
+                let n: usize = val()?.parse().map_err(|_| "--novos".to_string())?;
+                if !(1..=1024).contains(&n) {
+                    return Err("--novos de 1 a 1024".into());
+                }
+                r.novos = Some(n);
+            }
             _ => return Err(format!("opção desconhecida: {k}")),
         }
     }
     if r.modelos.is_empty() || r.modelos.iter().any(|m| fontes_de_ids(m).is_none()) || r.modelos.iter().collect::<BTreeSet<_>>().len() != r.modelos.len() {
         return Err("--modelos: lista de 1b e 3b, sem repetir".into());
     }
-    let modo = if prova_reset {
+    if gera && prova_reset {
+        return Err("--gera e --prova-reset são modos diferentes".into());
+    }
+    let modo = if gera {
+        if r.modo.is_some() {
+            return Err("--gera já é um modo: não combina com --modo".into());
+        }
+        r.modo = Some(Modo::Gera);
+        Modo::Gera
+    } else if prova_reset {
         if r.modo.is_some() {
             return Err("--prova-reset já é um modo: não combina com --modo".into());
         }
@@ -205,6 +252,12 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
     };
     if modo == Modo::ProvaReset && r.consolida.is_some() {
         return Err("--prova-reset não tem --consolida".into());
+    }
+    if modo == Modo::Gera && r.consolida.is_some() {
+        return Err("--gera não tem --consolida".into());
+    }
+    if modo != Modo::Gera && r.novos.is_some() {
+        return Err("--novos é só do --gera".into());
     }
     if r.consolida.is_some() {
         if modo == Modo::Livre {
@@ -245,6 +298,24 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
             }
             if r.texto.is_some() && r.pedido.is_some() {
                 return Err("--texto e --pedido juntos".into());
+            }
+        }
+        Modo::Gera => {
+            if r.estado.is_some() || r.cenario.is_some() || r.rep.is_some() || r.reutiliza || r.pedido.is_some() {
+                return Err("--gera não tem --estado, --cenario, --rep, --reutiliza nem --pedido".into());
+            }
+            if r.texto.is_some() {
+                // Uso normal: um texto, uma célula, sem rótulo e sem saída gravada.
+                if r.celulas.len() != 1 || !r.saida.as_os_str().is_empty() || r.ensaio {
+                    return Err("--gera --texto (uso normal) aceita uma --celula, sem --saida nem --ensaio".into());
+                }
+            } else {
+                if r.data.is_some() || r.novos.is_some() {
+                    return Err("a prova --gera tem data e 64 tokens fixos pelo critério (--data e --novos são do uso normal, com --texto)".into());
+                }
+                if r.saida.as_os_str().is_empty() && !r.ensaio {
+                    return Err("--saida é obrigatória".into());
+                }
             }
         }
         Modo::ProvaReset => {
@@ -375,6 +446,12 @@ fn arquivos_de_entrada(args: &Args, modo: Modo) -> Vec<PathBuf> {
         Modo::Livre => {}
         Modo::ProvaReset => {
             v.extend(ORDEM_RESET_CENARIOS.iter().map(|c| arquivo_pedido(&args.textos, *c)));
+        }
+        Modo::Gera => {
+            if args.texto.is_none() {
+                v.extend(gr::PEDIDOS.iter().map(|n| args.textos_5c.join(format!("texto-{n}.txt"))));
+                v.extend(args.celulas.iter().map(|c| args.referencia_5c.join(format!("ref5c-{}.json", c.0))));
+            }
         }
         Modo::Correcao => {
             v.push(args.prompts.clone());
@@ -688,6 +765,176 @@ fn prova_reset(args: &Args, exe: &Path) -> Result<i32, String> {
     std::fs::write(args.saida.join("decisao.txt"), &dec).map_err(|e| e.to_string())?;
     println!("{dec}");
     Ok(0)
+}
+
+// ---- Etapa 5c: geração livre curta --------------------------------------------------------------------------------------------------
+
+type MotorG = gr::MotorGeracao<CudaBackend, LeitorCuda>;
+
+/// Um pedido da 5c: texto cru -> template -> ids -> laço guloso no motor guardado (criado no primeiro pedido, `nova_sequencia` nos outros).
+fn pedido_gera(c: &Cenario, tok: &Tokenizador, texto: &str, t_entrada: Instant, data: &str, r: &mut MotorG, cfg: gr::CfgGera) -> Result<gr::Geracao, String> {
+    gr::gera(t_entrada, texto, data, tok, r, || sequencia_real(c), cfg, &mut std::io::stdout())
+}
+
+/// Os 3 pedidos de um modelo num único motor. Falha antes dos pedidos (config, pesos, texto que não cabe) deixa o registro sem pedidos; o
+/// primeiro erro de pedido para o laço e os seguintes ficam como erro ("não executado").
+fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> gr::RegistroGeracao {
+    let mut rec = gr::RegistroGeracao { modelo: nome.into(), integro: true, falha: None, pedidos: vec![], criacoes: 0, extras: vec![] };
+    let r: Result<(), String> = (|| {
+        let cfg = carrega_config(mdir)?;
+        let tok = carrega_tokenizador(mdir)?;
+        let data = pp::data_fixa_texto();
+        let refs = std::fs::read(args.referencia_5c.join(format!("ref5c-{nome}.json")))
+            .map_err(|e| e.to_string())
+            .and_then(|b| serde_json::from_slice::<Value>(&b).map_err(|e| e.to_string()))
+            .and_then(|v| gr::le_referencia(&v));
+        if let Err(e) = &refs {
+            rec.extras.push(("referencia_ilegivel".into(), e.clone()));
+        }
+        let refs = refs.unwrap_or_default();
+        let mut textos = vec![];
+        for n in gr::PEDIDOS {
+            let arq = args.textos_5c.join(format!("texto-{n}.txt"));
+            let (t, _, _) = le_texto_de_arquivo(&arq)?;
+            let ids = conta_ids(&tok, &t, &data)?;
+            if ids + gr::N_NOVOS > MAX_LEN {
+                return Err(format!("texto {n}: {ids} ids mais {} novos não cabem em {MAX_LEN}", gr::N_NOVOS));
+            }
+            textos.push((n, t, sha256(&arq)?));
+        }
+        let host = carrega_host(mdir, &cfg)?;
+        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads };
+        let mut guardado: MotorG = gr::MotorGeracao::novo();
+        let mut parou: Option<String> = None;
+        for (i, (n, t, sha)) in textos.into_iter().enumerate() {
+            let geracao = match &parou {
+                Some(e) => Err(format!("não executado: {e}")),
+                None => {
+                    let r = pedido_gera(&c, &tok, &t, Instant::now(), &data, &mut guardado, gr::CfgGera::prova());
+                    match &r {
+                        Ok(g) => println!("{nome} pedido {i} ({n}): {} ids, {} novos, prefill {:.1} ms, {:.2} ms por token (mediana), total {:.1} ms, T_sequencia {:.3} ms", g.ids.len(), g.gerados.len(), g.prefill_ms, g.ms_por_token_mediana(), g.total_ms, g.sequencia_ms),
+                        Err(e) => {
+                            println!("{nome} pedido {i} ({n}): ERRO {e}");
+                            parou = Some(format!("erro no pedido {i}: {e}"));
+                        }
+                    }
+                    r
+                }
+            };
+            rec.pedidos.push(gr::PedidoGeracao { indice: i, nome: n.to_string(), texto_sha256: sha, geracao, referencia: refs.get(i).cloned() });
+        }
+        rec.criacoes = guardado.criacoes;
+        guardado.encerra().map_err(|e| format!("encerramento do motor reutilizado: {e}"))
+    })();
+    if let Err(e) = r {
+        rec.falha = Some(e);
+    }
+    rec
+}
+
+fn gera_prova(args: &Args, exe: &Path) -> Result<i32, String> {
+    portoes()?;
+    let (h_bin0, h_crit0, h_5b0) = (sha256(exe)?, sha256(&args.criterio_5c)?, sha256(&args.criterio)?);
+    if h_crit0 != gr::CRITERIO_5C_SHA {
+        return Err(format!("o critério 5c {} tem sha256 {h_crit0}, não o congelado {}", args.criterio_5c.display(), gr::CRITERIO_5C_SHA));
+    }
+    if h_5b0 != CRITERIO_SHA {
+        return Err(format!("o critério {} tem sha256 {h_5b0}, não o congelado {CRITERIO_SHA}", args.criterio.display()));
+    }
+    let arq0 = hashes_conferidos(&arquivos_de_entrada(args, Modo::Gera))?;
+    prepara_saida(&args.saida)?;
+    std::fs::write(args.saida.join("decisao.txt"), "em execução: sem decisão\n").map_err(|e| e.to_string())?;
+    println!("integridade antes: binário {h_bin0}; critério 5c {h_crit0}; critério 5b {h_5b0}; {} arquivos de entrada", arq0.len());
+    moe_rt::affinity::set_compute_plan(moe_rt::affinity::Afin::A0.compute_plan(args.threads));
+    let device = Device::new(0).map_err(|e| format!("{e:?}"))?;
+    let mut extras = extras_de_integridade(&h_bin0, &h_crit0, &arq0);
+    extras.push(("hash_criterio_5b".into(), h_5b0.clone()));
+    let agora = |antes: bool| antes && integro_agora(exe, &args.criterio_5c, &h_bin0, &h_crit0, &arq0) && sha256(&args.criterio).ok().as_deref() == Some(h_5b0.as_str());
+    let mut integro = true;
+    let mut rotulos = vec![];
+    let mut linhas = vec![];
+    for (nome, mdir) in &args.celulas {
+        let mut rec = gera_modelo(nome, mdir, args, &device);
+        integro = agora(integro);
+        rec.integro = integro;
+        rec.extras.extend(extras.iter().cloned());
+        let a = gr::avalia(&rec);
+        let final_ = gr::rotulo_final(a.rotulo, integro);
+        let txt = format!("{}integridade conferida no fim do modelo: {}\n", gr::texto(&rec, final_), if integro { "íntegra" } else { "QUEBRADA" });
+        println!("{txt}");
+        grava_json(&args.saida.join(format!("gera-{nome}.json")), &rec.para_json())?;
+        std::fs::write(args.saida.join(format!("gera-{nome}-parcial.txt")), &txt).map_err(|e| e.to_string())?;
+        rotulos.push(a.rotulo);
+        linhas.push((nome.to_string(), final_));
+    }
+    integro = agora(integro);
+    std::fs::write(args.saida.join("gera-final.txt"), format!("tipo=gera-final\nintegro={}\n", integro as u8)).map_err(|e| e.to_string())?;
+    let (dec, _conj) = gr::decisao_conjunto(&linhas, &rotulos, integro);
+    std::fs::write(args.saida.join("decisao.txt"), &dec).map_err(|e| e.to_string())?;
+    println!("{dec}");
+    Ok(0)
+}
+
+/// Uso normal: um texto, até `--novos` tokens (padrão 64), para no primeiro EOS e imprime o texto. Não decide rótulo nem vale como prova.
+fn gera_livre(args: &Args) -> Result<i32, String> {
+    portoes()?;
+    let (_, mdir) = &args.celulas[0];
+    let texto = args.texto.clone().ok_or("sem --texto")?;
+    if texto.trim().is_empty() {
+        return Err("texto vazio".into());
+    }
+    let tok_sha = sha256(&mdir.join("tokenizer.json"))?;
+    if sha_esperado("tokenizer.json") != Some(tok_sha.as_str()) {
+        return Err(format!("tokenizer.json com sha256 {tok_sha}, não o do Granite 3.1 congelado"));
+    }
+    let (a, m, d) = args.data.unwrap_or_else(pp::data_de_hoje_utc);
+    let data = formata_data(a, m, d).map_err(|e| e.to_string())?;
+    moe_rt::affinity::set_compute_plan(moe_rt::affinity::Afin::A0.compute_plan(args.threads));
+    let cfg = carrega_config(mdir)?;
+    let tok = carrega_tokenizador(mdir)?;
+    let device = Device::new(0).d()?;
+    let host = carrega_host(mdir, &cfg)?;
+    let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads };
+    let mut m: MotorG = gr::MotorGeracao::novo();
+    let g = pedido_gera(&c, &tok, &texto, Instant::now(), &data, &mut m, gr::CfgGera { novos: args.novos.unwrap_or(gr::N_NOVOS), para_no_eos: true });
+    m.encerra().ok();
+    let g = g?;
+    eprintln!("({} ids, {} novos, prefill {:.1} ms, {:.2} ms por token (mediana), total {:.1} ms; sem valor de prova)", g.ids.len(), g.gerados.len(), g.prefill_ms, g.ms_por_token_mediana(), g.total_ms);
+    Ok(0)
+}
+
+/// Ensaio da 5c (sem GPU, sem a variável): hashes (a referência sem sha congelado só mostra o atual), ids do Rust contra os da referência, critérios.
+fn ensaio_gera(args: &Args, exe: &Path) -> Result<(), String> {
+    for p in arquivos_de_entrada(args, Modo::Gera) {
+        let h = sha256(&p).unwrap_or_else(|e| e);
+        let nome = nome_do_arquivo(&p);
+        let estado = match sha_esperado(&nome) {
+            Some(e) if e == h => "CONFERE com o congelado",
+            Some(_) => "DIFERE do congelado",
+            None => "SEM sha congelado (a prova recusa até congelar)",
+        };
+        println!("hash {estado}: {} {h}", p.display());
+    }
+    let data = pp::data_fixa_texto();
+    for (nome, mdir) in &args.celulas {
+        let tok = carrega_tokenizador(mdir)?;
+        let refs: Result<Vec<gr::RefGeracao>, String> = std::fs::read(args.referencia_5c.join(format!("ref5c-{nome}.json"))).map_err(|e| e.to_string()).and_then(|b| serde_json::from_slice::<Value>(&b).map_err(|e| e.to_string())).and_then(|v| gr::le_referencia(&v));
+        for (i, n) in gr::PEDIDOS.iter().enumerate() {
+            let arq = args.textos_5c.join(format!("texto-{n}.txt"));
+            let t = std::fs::read_to_string(&arq).map_err(|e| format!("{}: {e}", arq.display()))?;
+            let ids: Vec<usize> = tok.codifica(&renderiza_chat(&[Mensagem { papel: Papel::Usuario, conteudo: t }], true, &data).map_err(|e| e.to_string())?).into_iter().map(|x| x as usize).collect();
+            let cabe = ids.len() + gr::N_NOVOS <= MAX_LEN;
+            let vs_ref = match &refs {
+                Ok(r) => r.get(i).map(|r| if r.ids == ids { "IGUAIS à referência" } else { "DIFERENTES da referência" }).unwrap_or("referência sem este pedido"),
+                Err(_) => "referência ausente ou ilegível",
+            };
+            println!("ensaio {nome} pedido {i} ({n}): {} ids pelo Rust ({} com {} novos em {MAX_LEN}), {vs_ref}", ids.len(), if cabe { "CABE" } else { "NÃO CABE" }, gr::N_NOVOS);
+        }
+    }
+    println!("ensaio: ordem {}, {} tokens novos, motor reutilizado (nova_sequencia), a prova não para no EOS", gr::PEDIDOS.join(", "), gr::N_NOVOS);
+    let hc = sha256(&args.criterio_5c).unwrap_or_else(|e| e);
+    println!("critério 5c {} ({hc}; {} o congelado); binário {} ({})", args.criterio_5c.display(), if hc == gr::CRITERIO_5C_SHA { "CONFERE com" } else { "DIFERE d" }, exe.display(), sha256(exe).unwrap_or_else(|e| e));
+    Ok(())
 }
 
 fn grava_json(p: &Path, v: &Value) -> Result<(), String> {
@@ -1194,6 +1441,9 @@ fn ensaio(args: &Args, exe: &Path, modo: Modo) -> Result<(), String> {
         let estado = args.estado.ok_or("sem --estado")?;
         println!("metas em segundos (1b / 3b): C {}/{}, A {}/{}", vr::meta_ms(estado, "1b", Cen::C).unwrap() / 1000.0, vr::meta_ms(estado, "3b", Cen::C).unwrap() / 1000.0, vr::meta_ms(estado, "1b", Cen::A).unwrap() / 1000.0, vr::meta_ms(estado, "3b", Cen::A).unwrap() / 1000.0);
     }
+    if modo == Modo::Gera {
+        return ensaio_gera(args, exe);
+    }
     let arqs = arquivos_de_entrada(args, modo);
     let hs = hashes_conferidos(&arqs)?;
     for (p, h) in &hs {
@@ -1227,7 +1477,7 @@ fn ensaio(args: &Args, exe: &Path, modo: Modo) -> Result<(), String> {
                 }
                 println!("ensaio {nome}: ordem {}", rr::ORDEM.iter().map(|c| c.nome()).collect::<Vec<_>>().join(", "));
             }
-            Modo::Livre => {}
+            Modo::Livre | Modo::Gera => {}
         }
     }
     let hc = sha256(&args.criterio).unwrap_or_else(|e| e);
@@ -1245,6 +1495,7 @@ fn principal(t0: Instant) -> Result<i32, String> {
         let dec = match modo {
             Modo::Correcao => consolida_correcao(dir, &args.modelos, &ctx)?.0,
             Modo::ProvaReset => return Err("--prova-reset não tem --consolida".into()),
+            Modo::Gera => return Err("--gera não tem --consolida".into()),
             _ => consolida_velocidade(dir, args.estado.ok_or("sem --estado")?, &args.modelos, &ctx)?.0,
         };
         println!("{dec}");
@@ -1258,6 +1509,8 @@ fn principal(t0: Instant) -> Result<i32, String> {
         (Modo::Livre, _) => livre(&args),
         (Modo::Correcao, _) => correcao(&args, &exe),
         (Modo::ProvaReset, _) => prova_reset(&args, &exe),
+        (Modo::Gera, _) if args.texto.is_some() => gera_livre(&args),
+        (Modo::Gera, _) => gera_prova(&args, &exe),
         (Modo::Velocidade, Some(Estado::Quente)) => quente(&args, &exe),
         (Modo::Velocidade, _) => frio(t0, &args, &exe),
     }
@@ -1670,5 +1923,49 @@ mod tests {
         // Os portões são os dos outros modos (a recusa vem antes de qualquer acesso ao device).
         assert!(exige_autorizacao(None).is_err() && exige_uuid(Some("outra")).is_err());
         assert_eq!(rr::CRITERIO_RESET_SHA.len(), 64);
+    }
+
+    #[test]
+    fn gera_argumentos_e_arquivos() {
+        let base = ["--gera", "--celula", "1b:/m", "--saida", "/o"];
+        let a = parse_args(v(&base)).unwrap();
+        assert_eq!(a.modo, Some(Modo::Gera));
+        assert_eq!(a.criterio_5c, PathBuf::from(CRITERIO_5C_PADRAO));
+        assert!(parse_args(v(&["--gera", "--celula", "1b:/m", "--ensaio"])).is_ok(), "ensaio não precisa de saída");
+        assert!(parse_args(v(&["--gera", "--celula", "1b:/m"])).is_err(), "sem saída");
+        assert!(parse_args(v(&["--gera", "--saida", "/o"])).is_err(), "sem célula");
+        assert!(parse_args(v(&["--gera", "--prova-reset", "--celula", "1b:/m", "--saida", "/o"])).is_err());
+        assert!(parse_args(v(&["--gera", "--modo", "livre", "--celula", "1b:/m", "--saida", "/o"])).is_err());
+        for extra in [vec!["--data", "2026-11-08"], vec!["--novos", "8"], vec!["--reutiliza"], vec!["--estado", "quente"], vec!["--cenario", "A"], vec!["--rep", "1"], vec!["--consolida", "/d"], vec!["--pedido", "/p.json:0"]] {
+            let mut x = base.to_vec();
+            x.extend(extra);
+            assert!(parse_args(v(&x)).is_err(), "{x:?}");
+        }
+        assert!(parse_args(v(&["--modo", "correcao", "--celula", "1b:/m", "--saida", "/o", "--novos", "8"])).is_err(), "--novos é só do --gera");
+        // Uso normal.
+        let l = parse_args(v(&["--gera", "--celula", "1b:/m", "--texto", "oi", "--novos", "8", "--data", "2026-11-08"])).unwrap();
+        assert_eq!((l.novos, l.texto.as_deref()), (Some(8), Some("oi")));
+        assert!(parse_args(v(&["--gera", "--celula", "1b:/m", "--texto", "oi", "--saida", "/o"])).is_err());
+        assert!(parse_args(v(&["--gera", "--celula", "1b:/m", "--celula", "3b:/m3", "--texto", "oi"])).is_err());
+        assert!(parse_args(v(&["--gera", "--celula", "1b:/m", "--texto", "oi", "--ensaio"])).is_err());
+        assert!(parse_args(v(&["--gera", "--celula", "1b:/m", "--texto", "oi", "--novos", "0"])).is_err());
+        let c = parse_args(v(&["--gera", "--celula", "1b:/m1", "--celula", "3b:/m3", "--saida", "/o", "--criterio-5c", "/c.md"])).unwrap();
+        assert_eq!((c.celulas.len(), c.criterio_5c.clone()), (2, PathBuf::from("/c.md")));
+        assert!(parse_args(v(&["--gera", "--celula", "3b:/m", "--celula", "1b:/m2", "--saida", "/o"])).is_err(), "1b antes de 3b");
+        let nomes: Vec<String> = arquivos_de_entrada(&c, Modo::Gera).iter().map(|p| nome_do_arquivo(p)).collect();
+        for n in ["texto-curto.txt", "texto-medio.txt", "texto-longo.txt", "ref5c-1b.json", "ref5c-3b.json"] {
+            assert!(nomes.contains(&n.to_string()), "{n}");
+        }
+        assert!(!nomes.contains(&"pedido-A.txt".into()) && !nomes.contains(&"prompts-traco.json".into()));
+        assert_eq!(nomes.iter().filter(|n| *n == "tokenizer.json").count(), 2);
+        // Hashes: textos congelados; as referências só valem com sha congelado (recusa enquanto `None`).
+        for n in ["texto-curto.txt", "texto-medio.txt", "texto-longo.txt"] {
+            assert_eq!(sha_esperado(n).map(str::len), Some(64), "{n}");
+        }
+        assert_eq!(sha_esperado("ref5c-1b.json"), REF5C_SHA_1B);
+        assert_eq!(sha_esperado("ref5c-3b.json"), REF5C_SHA_3B);
+        assert_eq!(gr::CRITERIO_5C_SHA.len(), 64);
+        // Os portões são os dos outros modos (a recusa vem antes de qualquer acesso ao device).
+        assert!(exige_autorizacao(None).is_err() && exige_uuid(Some("outra")).is_err());
     }
 }

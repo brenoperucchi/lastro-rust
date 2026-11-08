@@ -17,6 +17,7 @@ pub mod cuda_backend;
 #[cfg(not(motor_loom))]
 pub(crate) mod cuda_dense;
 pub mod gpu;
+pub mod geracao_regra;
 pub mod gpu_model;
 pub mod hits;
 pub mod model;

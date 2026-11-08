@@ -1,0 +1,35 @@
+{
+ "data_template": "November 07, 2026",
+ "textos": [
+  {
+   "nome": "curto",
+   "arquivo": "texto-curto.txt",
+   "palavras": 22,
+   "sha256": "5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d",
+   "ids_com_template": {
+    "1b": 89,
+    "3b": 89
+   }
+  },
+  {
+   "nome": "medio",
+   "arquivo": "texto-medio.txt",
+   "palavras": 84,
+   "sha256": "bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a",
+   "ids_com_template": {
+    "1b": 170,
+    "3b": 170
+   }
+  },
+  {
+   "nome": "longo",
+   "arquivo": "texto-longo.txt",
+   "palavras": 245,
+   "sha256": "821e0f15139b58173b5c17f5e9428527bb27b03dc10b35e38cbeed044defbaea",
+   "ids_com_template": {
+    "1b": 364,
+    "3b": 364
+   }
+  }
+ ]
+}
