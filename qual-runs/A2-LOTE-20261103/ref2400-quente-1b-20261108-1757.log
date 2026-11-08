@@ -1,0 +1,58 @@
+integridade antes: binário 1fa13846a20b1bc3cccf99f0fcd0a1745654615a32979e00f31c65010f35aa2b; critério 6e0fbaadc15d5f8f9ba2b7d6bb7e1e6956226720ea5dcbf311424b017dd1c859; 3 arquivos de ids
+1b C aquecimento descartado, modo 8: sequência 2890.3 ms, leitura 6622.0 ms, logits 0.2 ms, indicador 6622.2 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+1b C aquecimento descartado, modo 1: sequência 1730.0 ms, leitura 10557.3 ms, logits 0.3 ms, indicador 10557.6 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+1b C par 1/5 modo 1: sequência 1726.0 ms, leitura 10489.9 ms, logits 0.1 ms, indicador 10490.0 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+1b C par 1/5 modo 8: sequência 1729.2 ms, leitura 4174.5 ms, logits 0.2 ms, indicador 4174.7 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+1b C par 2/5 modo 8: sequência 1714.8 ms, leitura 4176.2 ms, logits 0.1 ms, indicador 4176.3 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+1b C par 2/5 modo 1: sequência 1734.8 ms, leitura 10683.4 ms, logits 0.2 ms, indicador 10683.6 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+1b C par 3/5 modo 1: sequência 1777.7 ms, leitura 10918.6 ms, logits 0.1 ms, indicador 10918.7 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+1b C par 3/5 modo 8: sequência 1737.8 ms, leitura 4254.0 ms, logits 0.2 ms, indicador 4254.2 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+1b C par 4/5 modo 8: sequência 1820.4 ms, leitura 4399.4 ms, logits 0.3 ms, indicador 4399.7 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+1b C par 4/5 modo 1: sequência 1786.2 ms, leitura 10977.1 ms, logits 0.2 ms, indicador 10977.3 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+1b C par 5/5 modo 1: sequência 1726.7 ms, leitura 10535.7 ms, logits 0.1 ms, indicador 10535.8 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+1b C par 5/5 modo 8: sequência 1762.4 ms, leitura 4222.9 ms, logits 0.1 ms, indicador 4223.1 ms, contadores Contadores { needed: 96000, hits: 9719, cpu: 86281 }
+== célula 1b C quente (500 ids)
+meta: 5000.0 ms (5.00 s)
+mediana do modo 1: 10683.6 ms (10.68 s)
+mediana do modo 8 (indicador = leitura + logits; DECIDE contra a meta): 4223.1 ms (4.22 s)
+ganho = 1 - med8/med1 (piso 15%; DECIDE): 60.5%
+deriva do modo 1 (limite 10%): 1.6%
+só descrição, não decide: pior repetição do modo 8 4399.7 ms (4.40 s); desvio entre repetições do modo 8 92.4 ms (0.09 s); T_sequencia mediana 1736.3 ms (1.74 s)
+rótulo da célula: ATINGE
+integridade conferida no fim da célula: íntegra
+
+1b A aquecimento descartado, modo 8: sequência 1756.3 ms, leitura 16532.5 ms, logits 0.2 ms, indicador 16532.7 ms, contadores Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+1b A par 1/5 modo 1: sequência 1775.4 ms, leitura 43159.0 ms, logits 0.1 ms, indicador 43159.1 ms, contadores Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+1b A par 1/5 modo 8: sequência 1824.8 ms, leitura 16905.0 ms, logits 0.3 ms, indicador 16905.3 ms, contadores Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+1b A par 2/5 modo 8: sequência 1828.3 ms, leitura 16701.7 ms, logits 0.2 ms, indicador 16701.9 ms, contadores Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+1b A par 2/5 modo 1: sequência 1817.8 ms, leitura 42950.0 ms, logits 0.1 ms, indicador 42950.1 ms, contadores Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+1b A par 3/5 modo 1: sequência 1742.5 ms, leitura 43526.0 ms, logits 0.1 ms, indicador 43526.1 ms, contadores Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+1b A par 3/5 modo 8: sequência 1752.9 ms, leitura 16336.4 ms, logits 0.1 ms, indicador 16336.5 ms, contadores Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+1b A par 4/5 modo 8: sequência 1767.2 ms, leitura 17432.3 ms, logits 0.2 ms, indicador 17432.5 ms, contadores Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+1b A par 4/5 modo 1: sequência 1804.5 ms, leitura 47152.8 ms, logits 0.1 ms, indicador 47152.9 ms, contadores Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+1b A par 5/5 modo 1: sequência 1749.9 ms, leitura 43208.0 ms, logits 0.1 ms, indicador 43208.2 ms, contadores Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+1b A par 5/5 modo 8: sequência 1759.6 ms, leitura 16266.7 ms, logits 0.2 ms, indicador 16266.9 ms, contadores Contadores { needed: 384576, hits: 38279, cpu: 346297 }
+== célula 1b A quente (2003 ids)
+meta: 15000.0 ms (15.00 s)
+mediana do modo 1: 43208.2 ms (43.21 s)
+mediana do modo 8 (indicador = leitura + logits; DECIDE contra a meta): 16701.9 ms (16.70 s)
+ganho = 1 - med8/med1 (piso 15%; DECIDE): 61.3%
+deriva do modo 1 (limite 10%): 4.9%
+só descrição, não decide: pior repetição do modo 8 17432.5 ms (17.43 s); desvio entre repetições do modo 8 472.8 ms (0.47 s); T_sequencia mediana 1771.3 ms (1.77 s)
+motivo(s) (nível 2): meta
+rótulo da célula: NÃO ATINGE
+integridade conferida no fim da célula: íntegra
+
+decisão da velocidade da leitura em blocos de 8, estado quente (regra de rótulos do critério):
+  1b C quente: ATINGE: mediana modo 8 4.22 s (meta 5 s), ganho 60.5%
+  1b A quente: NÃO ATINGE: mediana modo 8 16.70 s (meta 15 s), ganho 61.3% [meta]
+conjunto: NÃO ATINGE
+integridade: binário, critério e arquivos de ids IGUAIS aos gravados
+carga externa (nvidia-smi, loadavg, timers): registrada pelo script da janela, fora deste programa; não decide rótulo
+
+Running as unit: lastro-limite-2234426-1794171457520208416.service
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 7min 44.880s
+             CPU time consumed: 1h 1min 55.072s
+                   Memory peak: 9.9G (swap: 0B)

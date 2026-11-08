@@ -1,0 +1,2 @@
+comando: ./roda-com-limite.sh --limite 1800 -- env CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd LEITURA_VELOCIDADE_AUTORIZADA=1 /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/roda-frio.sh --saida /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/ref2400-frio-20261108-1821
+ganchos_de_teste: atraso_lancamento= reserva= vigia=

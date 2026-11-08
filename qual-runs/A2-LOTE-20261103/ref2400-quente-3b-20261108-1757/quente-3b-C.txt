@@ -1,0 +1,18 @@
+tipo=quente
+modelo=3b
+cenario=C
+integro=1
+x.cont_m1=Contadores { needed: 128000, hits: 12164, cpu: 115836 }
+x.cont_m8=Contadores { needed: 128000, hits: 12164, cpu: 115836 }
+x.hash_bin=1fa13846a20b1bc3cccf99f0fcd0a1745654615a32979e00f31c65010f35aa2b
+x.hash_criterio=6e0fbaadc15d5f8f9ba2b7d6bb7e1e6956226720ea5dcbf311424b017dd1c859
+x.ids:/home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-0/tokens.npy=5164abf37ac91eed1187e1c16ee1e5af5dc83fd4a54b32b22cca990233f4dc47
+x.ids:/home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-1/tokens.npy=269d4745a8a9101f8c626b28a43e3811c14172f13810047311707bfae7fbf0cb
+x.ids:/home/brenoperucchi/Devs/lastro-rust/qual-runs/TRACOS-20261029/granite-3.1-3b-a800m-instruct/conversa-2/tokens.npy=6b3772b6de1b82e3be378db5b4f6cff8384b1ca9307b5737f13c12c13f1ab8bf
+# aquecimento descartado, modo 8: sequência 5719.3 ms, leitura 11180.6 ms, logits 0.2 ms, indicador 11180.8 ms, contadores Contadores { needed: 128000, hits: 12164, cpu: 115836 }
+# aquecimento descartado, modo 1: sequência 4122.4 ms, leitura 20125.2 ms, logits 0.2 ms, indicador 20125.4 ms, contadores Contadores { needed: 128000, hits: 12164, cpu: 115836 }
+par ind=1 m1_primeiro=1 m1_seq=4096.281142999999 m1_leit=20114.804036999998 m1_log=0.162075 m8_seq=4229.459623000001 m8_leit=8416.273679 m8_log=0.11638 erro=3.6726047256011783e-7 nao_finito=0 argmax_ok=1 cont_ok=1
+par ind=2 m1_primeiro=0 m1_seq=4140.909679 m1_leit=22571.287562999998 m1_log=0.169549 m8_seq=4108.782117 m8_leit=8116.502174000001 m8_log=0.161264 erro=3.6726047256011783e-7 nao_finito=0 argmax_ok=1 cont_ok=1
+par ind=3 m1_primeiro=1 m1_seq=4164.245318 m1_leit=20181.021863 m1_log=0.123933 m8_seq=4139.145745000001 m8_leit=8163.923949000001 m8_log=0.13233999999999999 erro=3.6726047256011783e-7 nao_finito=0 argmax_ok=1 cont_ok=1
+par ind=4 m1_primeiro=0 m1_seq=4124.104872 m1_leit=19907.687864 m1_log=0.148109 m8_seq=4113.261263 m8_leit=8192.224099000001 m8_log=0.130586 erro=3.6726047256011783e-7 nao_finito=0 argmax_ok=1 cont_ok=1
+par ind=5 m1_primeiro=1 m1_seq=4126.92482 m1_leit=19814.177305 m1_log=0.1272 m8_seq=4104.272057 m8_leit=8313.893393 m8_log=0.173637 erro=3.6726047256011783e-7 nao_finito=0 argmax_ok=1 cont_ok=1

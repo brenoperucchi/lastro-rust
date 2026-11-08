@@ -1,0 +1,9 @@
+== célula 1b C quente (500 ids)
+meta: 5000.0 ms (5.00 s)
+mediana do modo 1: 10683.6 ms (10.68 s)
+mediana do modo 8 (indicador = leitura + logits; DECIDE contra a meta): 4223.1 ms (4.22 s)
+ganho = 1 - med8/med1 (piso 15%; DECIDE): 60.5%
+deriva do modo 1 (limite 10%): 1.6%
+só descrição, não decide: pior repetição do modo 8 4399.7 ms (4.40 s); desvio entre repetições do modo 8 92.4 ms (0.09 s); T_sequencia mediana 1736.3 ms (1.74 s)
+rótulo da célula: ATINGE
+integridade conferida no fim da célula: íntegra

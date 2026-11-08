@@ -1,0 +1,8 @@
+decisão da velocidade da leitura em blocos de 8, estado frio (regra de rótulos do critério):
+  1b C frio: ATINGE: mediana 11.78 s (meta 20 s)
+  1b A frio: ATINGE: mediana 24.46 s (meta 30 s)
+  3b C frio: ATINGE: mediana 21.99 s (meta 30 s)
+  3b A frio: NÃO ATINGE: mediana 46.92 s (meta 45 s) [meta]
+conjunto: NÃO ATINGE
+integridade: binário, critério e arquivos de ids IGUAIS aos gravados
+carga externa (nvidia-smi, loadavg, timers): registrada pelo script da janela, fora deste programa; não decide rótulo
