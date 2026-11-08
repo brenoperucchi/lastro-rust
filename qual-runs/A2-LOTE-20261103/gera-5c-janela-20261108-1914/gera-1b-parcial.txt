@@ -1,0 +1,12 @@
+== geração livre 5c 1b
+pedido 0 (curto): 64/64 ids iguais -> PASSA
+  descritivo: prefill 3262.7 ms (89 ids), ms por token (mediana) 21.48, total 7337.0 ms, T_sequencia 2692.163 ms
+pedido 1 (medio): 64/64 ids iguais -> PASSA
+  descritivo: prefill 1458.7 ms (170 ids), ms por token (mediana) 20.86, total 2793.5 ms, T_sequencia 0.000 ms
+pedido 2 (longo): 64/64 ids iguais -> PASSA
+  descritivo: prefill 3160.2 ms (364 ids), ms por token (mediana) 21.47, total 4526.3 ms, T_sequencia 0.000 ms
+empates usados: nenhum
+ms por token do modelo (mediana de todos os passos): 21.35
+criações do motor: 1 (esperado 1)
+rótulo: PASSA
+integridade conferida no fim do modelo: íntegra
