@@ -1,0 +1,59 @@
+{
+  "cenario": "C",
+  "extras": {
+    "argmax": "51",
+    "arq:/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5b-textos/pedido-C.txt": "e80bce7b40f94aa2c86cb5f2e8345f7230982711e7ec0441654df8c273157b25",
+    "arq:/home/brenoperucchi/models/granite-3.1-3b-a800m-instruct/tokenizer.json": "ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654",
+    "contadores": "Contadores { needed: 127744, hits: 12308, cpu: 115436 }",
+    "hash_bin": "c04af9514895d9c5e06d6361184309cf39e38edb2f9ac2cc1a680c4a4cfa1eff",
+    "hash_criterio": "4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b",
+    "palavra": "\"A\""
+  },
+  "falha": null,
+  "ids_n": 499,
+  "integro": true,
+  "medida": {
+    "cpu": 115436,
+    "crono": {
+      "T_detok": 0.001102,
+      "T_entrada": 0.024596,
+      "T_entrega": 0.007784999999999999,
+      "T_escolha": 0.02149,
+      "T_leitura": 11277.730306000001,
+      "T_logits": 0.11955600000000001,
+      "T_sequencia": 5840.5762030000005,
+      "T_token": 0.515965
+    },
+    "gap": 0.517669677734375,
+    "hits": 12308,
+    "ids_fnv": "4e864c74b098dc52",
+    "ids_n": 499,
+    "logits_ok": true,
+    "needed": 127744,
+    "palavra": "A",
+    "produto_ms": 17118.972778,
+    "token": 51,
+    "visivel": true
+  },
+  "modelo": "3b",
+  "ok": true,
+  "partes": {
+    "T_detok": 0.001102,
+    "T_entrada": 0.024596,
+    "T_entrega": 0.007784999999999999,
+    "T_escolha": 0.02149,
+    "T_leitura": 11277.730306000001,
+    "T_logits": 0.11955600000000001,
+    "T_sequencia": 5840.5762030000005,
+    "T_token": 0.515965,
+    "config": 0.028624,
+    "device": 140.370605,
+    "integridade_e_preparo": 14.392158,
+    "pesos_na_ram": 4543.0294140000005,
+    "texto_e_contagem": 0.39770099999999997,
+    "tokenizador": 49.235686
+  },
+  "rep": 2,
+  "tipo": "frio",
+  "total_ms": 21866.065372
+}

@@ -1,0 +1,3 @@
+Repeticao da janela (quente) do 5b com a maquina quieta, RTX 4090 GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd, 07/11 21:15.
+Decisao do Breno via coordenador, 07/11 21:12: "SIM: repetir J2 (quente) e J3 (fria) do 5b com a maquina quieta", sob a autorizacao permanente de 01:42. Coordenador pediu aos outros agents para nao rodarem nada pesado por ~25 min. Mesmo criterio congelado sha256 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b; limite 30 min; 5090 fora; sem repeticao automatica alem desta decisao.
+Carga: loadavg amostrado a cada 10 s em 5b-quieta-20261107-2115.loadavg.txt (antes, durante e depois).
