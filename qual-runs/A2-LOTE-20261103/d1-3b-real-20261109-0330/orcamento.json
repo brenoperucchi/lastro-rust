@@ -1,0 +1,1 @@
+{"modelos": ["3b"], "limite_s": 1800, "folga_s": 180, "decorrido_s": 382, "cortes": [], "degrau1": true, "reps": {"quente_nominal": 5, "frio_nominal": 3}, "reps_finais": {"quente": 5, "frio": 3}, "s3_ativa_no_fim": false, "nao_rodou": [], "estimativas_sao_palpites": true}

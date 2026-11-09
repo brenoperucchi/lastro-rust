@@ -1,0 +1,1 @@
+p1: /home/brenoperucchi/Devs/lastro-rust/rust/moe-rt/target/release/primeira-palavra --gera --celula 1b:/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct --so-texto curto --fracao-slots 1.0 --repete 5 --saida /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/d1-1b-real-20261109-0326/celulas/lastro-1b-L100-curto-quente/p1/saida 

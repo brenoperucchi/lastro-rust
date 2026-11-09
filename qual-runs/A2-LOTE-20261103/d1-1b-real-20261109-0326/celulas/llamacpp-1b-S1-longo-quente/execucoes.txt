@@ -1,0 +1,1 @@
+servidor 0 pid=2261306 porta=39149

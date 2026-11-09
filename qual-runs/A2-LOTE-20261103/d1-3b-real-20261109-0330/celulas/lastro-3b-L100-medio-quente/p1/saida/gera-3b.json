@@ -1,0 +1,55 @@
+{
+  "criacoes_do_motor": 1,
+  "criterio": "criterio-5c-geracao-livre-20261108.md",
+  "criterio_sha256": "9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731",
+  "descritivo": {
+    "empates": [],
+    "ms_por_token_mediana": null
+  },
+  "extras": [
+    [
+      "hash_bin",
+      "936d0c146d750f4849b7724ba5ae7ddd099618629a4e12bd2984758b801c3551"
+    ],
+    [
+      "hash_criterio",
+      "9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731"
+    ],
+    [
+      "arq:/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5c-referencia/ref5c-3b.json",
+      "968d9b391324a99fbaf5c772a351018b90105f572b32ee2db3140f79da123124"
+    ],
+    [
+      "arq:/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5c-textos/texto-curto.txt",
+      "5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d"
+    ],
+    [
+      "arq:/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5c-textos/texto-longo.txt",
+      "821e0f15139b58173b5c17f5e9428527bb27b03dc10b35e38cbeed044defbaea"
+    ],
+    [
+      "arq:/home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/5c-textos/texto-medio.txt",
+      "bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a"
+    ],
+    [
+      "arq:/home/brenoperucchi/models/granite-3.1-3b-a800m-instruct/tokenizer.json",
+      "ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654"
+    ],
+    [
+      "hash_criterio_5b",
+      "4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b"
+    ]
+  ],
+  "falha": null,
+  "gap_empate": 0.001,
+  "integro": true,
+  "modelo": "3b",
+  "motivos": [
+    "0 pedidos (ou fora da ordem curto, medio, longo); esperados 3"
+  ],
+  "novos": 64,
+  "pedidos": [],
+  "rotulo": "SEM PROVA",
+  "rotulo_sem_integridade": "SEM PROVA",
+  "tipo": "geracao-livre-5c"
+}

@@ -1,0 +1,1 @@
+servidor 0 pid=2310305 porta=37815

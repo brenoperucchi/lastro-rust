@@ -1,0 +1,11 @@
+veredito=OK
+modelo=3b
+gpu_pico_pct=35.9
+gpu_leituras_no_intervalo=32
+gpu_lacuna_max_s=0.5
+gpu_falhas_coleta=0
+gpu_pos_saida_descritiva=1794205869853, 1856, 24564
+cpu_needed=0.0
+ids=IGUAIS
+slots_impressos=slots 1280 de 1280
+cmdline=/home/brenoperucchi/Devs/lastro-rust/rust/moe-rt/target/release/primeira-palavra --gera --celula 3b:/home/brenoperucchi/models/granite-3.1-3b-a800m-instruct --so-texto curto --fracao-slots 1.0 --saida /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/d1-3b-real-20261109-0330/smoke/p1/saida

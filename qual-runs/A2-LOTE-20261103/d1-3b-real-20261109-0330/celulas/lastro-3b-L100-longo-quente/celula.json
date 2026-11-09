@@ -1,0 +1,1 @@
+{"lado": "lastro", "serie": "L100", "fracao_slots": "1.0", "modelo": "3b", "texto": "longo", "estado": "quente", "n_medidas": 5, "portao_ok": true, "portao_motivo": "", "rc": 0, "inicio_epoch": 1794206192, "inicio_coleta_epoch": 1794206197, "fim_epoch": 1794206220, "monitor_falha": "", "desktop_g_sm_antes": 0, "desktop_g_sm_depois": 7, "dmon_sm_antes": 20}
