@@ -744,5 +744,217 @@ class TestPortaoPmon(Base):
         self.assertEqual((c["desktop_g_sm_antes"], c["desktop_g_sm_depois"], c["dmon_sm_antes"]), (25, None, 4))
 
 
+class BaseD1(Base):
+    """Degrau 1: L100 contra S1 (criterio-degrau1-100pct-20261109.md)."""
+
+    def smoke_ok(self, ids_iguais=True, **kw):
+        sd = os.path.join(self.saida, "smoke")
+        os.makedirs(sd, exist_ok=True)
+        grava(os.path.join(sd, "rc.txt"), "0\n")
+        grava(os.path.join(sd, "p1", "rc.txt"), "0\n")
+        grava(os.path.join(sd, "cmdline.txt"), "pp --gera --celula 1b:/m --so-texto curto --fracao-slots 1.0 --saida /s/p1/saida\n")
+        grava(os.path.join(sd, "gpumem.csv"), kw.get("mem", "1000, 24000\n9000, 24000\n"))
+        g = list(GERADOS) if ids_iguais else [x + 1 for x in GERADOS]
+        grava(os.path.join(sd, "p1", "saida", "medidas-1b.json"), {"medidas": [{"descartada": False, "falha": None, "gerados": g, "cont": {"needed": kw.get("needed", 100), "cpu": kw.get("cpu", 0), "hits": 100}}]})
+        grava(os.path.join(sd, "p1", "stdout.txt"), kw.get("stdout", "slots 1792\n"))
+        grava(os.path.join(sd, "p1", "stderr.txt"), kw.get("stderr", ""))
+        return sd
+
+    def avalia(self, sd, m="1b"):
+        return X.avalia_smoke(sd, m, self.ids, self.refs, self.textos)
+
+    def lastro100(self, m="1b", t="curto", estado="frio", n=3, cmdline=True, fracao="1.0", **kw):
+        kw.setdefault("cpu", 0)
+        d = self.lastro(m=m, t=t, estado=estado, n=n, **kw)
+        novo = d.replace("-L-", "-L100-")
+        os.rename(d, novo)
+        arq = os.path.join(novo, "celula.json")
+        meta = json.load(open(arq, encoding="utf-8"))
+        meta["serie"] = "L100"
+        meta["fracao_slots"] = fracao
+        grava(arq, meta)
+        if cmdline:
+            procs = sorted(x for x in os.listdir(novo) if x.startswith("p") and x[1:].isdigit())
+            grava(os.path.join(novo, "cmdline.txt"), "".join("%s: pp --gera --celula %s:/m --so-texto %s --fracao-slots 1.0 --saida x\n" % (p, m, t) for p in procs))
+        return novo
+
+    def roda1(self):
+        return X.processa(self.saida, self.ids, self.refs, self.textos, degrau1=True)
+
+    def razao1(self, res, m="1b", t="curto", estado="frio"):
+        return self.razao(res, m, t, estado, "S1")
+
+
+class TestDegrau1Smoke(BaseD1):
+    def test_smoke_ok(self):
+        ok, lin = self.avalia(self.smoke_ok())
+        self.assertTrue(ok, lin)
+        self.assertIn("veredito=OK", lin)
+        self.assertIn("ids=IGUAIS", lin)
+        self.assertIn("gpu_pico_pct=37.5", lin)
+        self.assertTrue(any(x.startswith("slots_impressos=slots 1792") for x in lin))
+
+    def test_smoke_rc_diferente_de_zero_falha(self):
+        sd = self.smoke_ok()
+        grava(os.path.join(sd, "rc.txt"), "1\n")
+        ok, lin = self.avalia(sd)
+        self.assertFalse(ok)
+        self.assertTrue(any("código 0" in x for x in lin))
+
+    def test_smoke_memoria_acima_de_90_falha(self):
+        ok, lin = self.avalia(self.smoke_ok(mem="22000, 24000\n"))
+        self.assertFalse(ok)
+        self.assertTrue(any("90%" in x for x in lin))
+        ok2, _ = self.avalia(self.smoke_ok(mem="21600, 24000\n"))     # exatamente 90%: passa
+        self.assertTrue(ok2)
+
+    def test_smoke_sem_leitura_de_memoria_falha_fechada(self):
+        ok, lin = self.avalia(self.smoke_ok(mem="lixo\n"))
+        self.assertFalse(ok)
+
+    def test_smoke_erro_de_alocacao_falha(self):
+        ok, lin = self.avalia(self.smoke_ok(stderr="CUDA error: out of memory\n"))
+        self.assertFalse(ok)
+        self.assertTrue(any("alocação" in x for x in lin))
+
+    def test_smoke_cpu_needed_diferente_de_zero_falha(self):
+        ok, lin = self.avalia(self.smoke_ok(cpu=3))
+        self.assertFalse(ok)
+        self.assertTrue(any("cpu/needed" in x for x in lin))
+        ok2, _ = self.avalia(self.smoke_ok(needed=0))
+        self.assertFalse(ok2)
+
+    def test_smoke_ids_divergentes_so_reporta(self):
+        ok, lin = self.avalia(self.smoke_ok(ids_iguais=False))
+        self.assertTrue(ok, lin)
+        self.assertTrue(any(x.startswith("ids=DIVERGEM no passo 0") for x in lin))
+
+    def test_smoke_sem_flag_na_linha_de_comando_falha(self):
+        sd = self.smoke_ok()
+        grava(os.path.join(sd, "cmdline.txt"), "pp --gera --celula 1b:/m --so-texto curto\n")
+        ok, _ = self.avalia(sd)
+        self.assertFalse(ok)
+
+    def test_cli_smoke_grava_veredito_e_codigo(self):
+        sd = self.smoke_ok(cpu=1)
+        rc = X.main(["--smoke", sd, "--modelo", "1b", "--ids", self.ids, "--refs", self.refs, "--textos", self.textos])
+        self.assertEqual(rc, 1)
+        self.assertIn("veredito=FALHA", open(os.path.join(sd, "veredito.txt"), encoding="utf-8").read())
+
+
+class TestDegrau1Extrator(BaseD1):
+    def veredito(self, ok=True, motivo=""):
+        grava(os.path.join(self.saida, "smoke", "veredito.txt"), "veredito=%s\n%s" % ("OK" if ok else "FALHA", ("motivo=%s\n" % motivo) if motivo else ""))
+
+    def test_razao_l100_contra_s1_com_rotulo_exato_e_so_s1(self):
+        self.veredito()
+        self.lastro100(estado="frio", n=3, prefill=100.0, passo=18.0)
+        self.llama(estado="frio", serie="S1", n=3, prefill=50.0, per_token=2.0)
+        res = self.roda1()
+        self.assertEqual({r["serie"] for r in res["razoes"]}, {"S1"})
+        self.assertFalse(any(c["serie"] in ("S2", "S3", "L") for c in res["celulas"].values()))
+        r = self.razao1(res)
+        self.assertEqual(r["status"], "OK", r.get("motivos"))
+        self.assertEqual(r["rotulo"], "Lastro 100% experts GPU contra llama.cpp S1; KV f32 no Lastro contra f16 no llama.cpp")
+        self.assertAlmostEqual(r["prefill"]["razao_lastro_sobre_llama_cpp"], 2.0)
+        self.assertAlmostEqual(r["decode"]["razao_lastro_sobre_llama_cpp"], 9.0)
+        self.assertEqual(r["fracao_cpu_needed"]["mediana"], 0.0)
+        self.assertTrue(res["degrau1"])
+
+    def test_relatorio_cita_faixas_e_onde_o_dado_caiu(self):
+        self.veredito()
+        self.lastro100(estado="frio", n=3, passo=18.0)
+        self.llama(estado="frio", serie="S1", n=3, per_token=2.0)
+        md = X.relatorio(self.roda1())
+        self.assertIn("Lastro 100% experts GPU contra llama.cpp S1; KV f32 no Lastro contra f16 no llama.cpp", md)
+        self.assertIn("decode L100/S1 <= 2", md)
+        self.assertIn("decode L100/S1 entre 2 e 6", md)
+        self.assertIn("decode L100/S1 > 6", md)
+        self.assertIn("razão de decode 9.000 cai em 'decode L100/S1 > 6", md)
+        self.assertIn("Prefill: a razão será provavelmente maior", md)
+        self.assertNotIn("Lastro 10% experts GPU contra", md)
+        self.assertNotIn("PASSA", md.replace("PASSA/REPROVA", ""))
+
+    def test_faixas_nos_limites(self):
+        self.assertIn("<= 2", X.faixa_d1(2.0))
+        self.assertIn("entre 2 e 6", X.faixa_d1(2.0001))
+        self.assertIn("entre 2 e 6", X.faixa_d1(6.0))
+        self.assertIn("> 6", X.faixa_d1(6.0001))
+
+    def test_sem_smoke_nenhuma_razao(self):
+        self.lastro100(estado="frio", n=3)
+        self.llama(estado="frio", serie="S1", n=3)
+        r = self.razao1(self.roda1())
+        self.assertEqual(r["status"], "SEM PROVA")
+        self.assertIn("smoke", " ".join(r["motivos"]))
+
+    def test_smoke_falho_vira_l100_nao_sustenta_100(self):
+        self.veredito(ok=False, motivo="cpu/needed = 0.1000, não 0")
+        self.lastro100(estado="frio", n=3)
+        self.llama(estado="frio", serie="S1", n=3)
+        res = self.roda1()
+        r = self.razao1(res)
+        self.assertNotEqual(r["status"], "OK")
+        self.assertIsNone(r.get("decode"))
+        self.assertEqual(res["resultado_smoke"], "L100 NÃO SUSTENTA 100%: cpu/needed = 0.1000, não 0")
+        md = X.relatorio(res)
+        self.assertIn("L100 NÃO SUSTENTA 100%: cpu/needed = 0.1000, não 0", md)
+        self.assertNotIn("Integridade QUEBRADA", md)
+
+    def test_cpu_needed_diferente_de_zero_na_celula_e_sem_prova(self):
+        self.veredito()
+        self.lastro100(estado="frio", n=3, cpu=5)
+        self.llama(estado="frio", serie="S1", n=3)
+        r = self.razao1(self.roda1())
+        self.assertEqual(r["status"], "SEM PROVA")
+        self.assertTrue(any("não é 100%" in x for x in r["motivos"]))
+
+    def test_celula_sem_cmdline_ou_sem_flag_e_sem_prova(self):
+        self.veredito()
+        self.lastro100(estado="frio", n=3, cmdline=False)
+        self.llama(estado="frio", serie="S1", n=3)
+        r = self.razao1(self.roda1())
+        self.assertEqual(r["status"], "SEM PROVA")
+        self.assertTrue(any("cmdline.txt" in x for x in r["motivos"]))
+
+    def test_sequencias_diferentes_marcadas_mas_razao_publicada(self):
+        self.veredito()
+        outro = [x + 1 for x in GERADOS]
+        self.lastro100(estado="frio", n=3, gerados=outro)
+        self.llama(estado="frio", serie="S1", n=3)
+        r = self.razao1(self.roda1())
+        self.assertEqual(r["status"], "OK")
+        self.assertEqual(r["marca_sequencia"], "sequências diferentes")
+
+    def test_ruidosa_e_nao_rodou_e_tudo_ok_nas_12_celulas_do_modelo(self):
+        self.veredito()
+        for est, n in (("frio", 3), ("quente", 5)):
+            for t in IDS:
+                self.lastro100(t=t, estado=est, n=n)
+                self.llama(t=t, estado=est, serie="S1", n=n)
+        res = self.roda1()
+        self.assertEqual(len(res["razoes"]), 12)
+        self.assertTrue(all(r["status"] == "OK" for r in res["razoes"] if r["modelo"] == "1b"), [r.get("motivos") for r in res["razoes"]])
+        # a janela é do 1B só quando orcamento.json o declara; sem declaração, o 3B aparece como NÃO RODOU
+        self.assertTrue(all(r["status"] == "NÃO RODOU" for r in res["razoes"] if r["modelo"] == "3b"))
+
+    def test_main_degrau1_grava_resultado(self):
+        self.veredito()
+        self.lastro100(estado="frio", n=3)
+        self.llama(estado="frio", serie="S1", n=3)
+        rc = X.main(["--saida", self.saida, "--ids", self.ids, "--refs", self.refs, "--textos", self.textos, "--degrau1"])
+        self.assertEqual(rc, 0)
+        res = json.load(open(os.path.join(self.saida, "cmp-resultado.json"), encoding="utf-8"))
+        self.assertTrue(res["degrau1"])
+        self.assertIn("Degrau 1", open(os.path.join(self.saida, "cmp-resultado.md"), encoding="utf-8").read())
+
+    def test_modo_antigo_continua_com_l_e_rotulo_10(self):
+        self.lastro(estado="frio", n=3)
+        self.llama(estado="frio", serie="S1", n=3)
+        res = self.roda()
+        self.assertFalse(res.get("degrau1"))
+        self.assertTrue(self.razao(res)["rotulo"].startswith("Lastro 10% experts GPU contra llama.cpp S1"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

@@ -15,6 +15,12 @@
 #
 # Falha FECHADA (código 2) sem PRIMEIRA_PALAVRA_AUTORIZADA=1 e sem CUDA_VISIBLE_DEVICES igual ao UUID da 4090 (a 5090 nunca), ou com DIR já existente.
 # Variáveis só para teste: MODELO_1B, MODELO_3B, MONITOR_SH, NVIDIA_SMI.
+# Degrau 1 (criterio-degrau1-100pct-20261109.md): CMP_FRACAO_SLOTS=1.0 repassa `--fracao-slots 1.0` ao binário (única fração aceita além de "não definida" = padrão 0,10 do binário,
+# sem a flag); a célula passa a ser da série L100 (celula.json: "serie": "L100", "fracao_slots": "1.0") e a linha de comando de cada processo fica em DIR/cmdline.txt (uma linha por
+# processo; o stdout/stderr de cada pK guarda os `slots` impressos pelo binário, se houver). Sem a variável o comportamento é o de antes (série "L", sem flag).
+#   roda-cmp-lastro.sh --smoke --modelo 1b|3b --saida DIR [--bin BINARIO]   (seção 3 do critério do degrau 1; exige CMP_FRACAO_SLOTS=1.0)
+# smoke = UMA geração curta (texto curto, 64 tokens, processo novo), sem portão nem monitor de célula e sem medida; amostra a memória da 4090 a ~2 Hz em DIR/gpumem.csv
+# ("usada, total" em MiB) e grava DIR/{cmdline.txt,rc.txt,p1/...}; quem julga (código 0, GPU <= 90%, cpu/needed == 0, ids) é `cmp-extrai.py --smoke`.
 # Códigos: 0 a célula rodou até o fim (a validade fica em celula.json e no extrator), 1 algum processo saiu com erro, 2 recusa de uso/ambiente, inclusive recusa (código 2)
 # do binário (emenda 5, item 11: o envelope interrompe a janela e não inicia células posteriores); celula.json é gravado mesmo assim.
 set -u
@@ -24,9 +30,9 @@ BIN=$AQUI/../../rust/moe-rt/target/release/primeira-palavra
 MONITOR=${MONITOR_SH:-$AQUI/roda-cmp-monitor.sh}
 M1=${MODELO_1B:-/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct}
 M3=${MODELO_3B:-/home/brenoperucchi/models/granite-3.1-3b-a800m-instruct}
-uso() { echo "uso: roda-cmp-lastro.sh --modelo 1b|3b --texto curto|medio|longo --estado frio|quente --n N --saida DIR [--bin BINARIO]" >&2; exit 2; }
+uso() { echo "uso: roda-cmp-lastro.sh --modelo 1b|3b --texto curto|medio|longo --estado frio|quente --n N --saida DIR [--bin BINARIO] | --smoke --modelo 1b|3b --saida DIR [--bin BINARIO]" >&2; exit 2; }
 recusa() { echo "roda-cmp-lastro: $*" >&2; exit 2; }
-MODELO=; TEXTO=; ESTADO=; N=; SAIDA=
+MODELO=; TEXTO=; ESTADO=; N=; SAIDA=; SMOKE=0
 while [ $# -gt 0 ]; do
   case $1 in
     --modelo) [ $# -ge 2 ] || uso; MODELO=$2; shift 2;;
@@ -35,9 +41,21 @@ while [ $# -gt 0 ]; do
     --n) [ $# -ge 2 ] || uso; N=$2; shift 2;;
     --saida) [ $# -ge 2 ] || uso; SAIDA=$2; shift 2;;
     --bin) [ $# -ge 2 ] || uso; BIN=$2; shift 2;;
+    --smoke) SMOKE=1; shift;;
     *) uso;;
   esac
 done
+# degrau 1: fração de slots (única aceita: 1.0)
+FRACAO_ARGS=(); SERIE=L; FRACAO_REG=
+if [ "${CMP_FRACAO_SLOTS+x}" = x ]; then
+  [ "$CMP_FRACAO_SLOTS" = 1.0 ] || recusa "CMP_FRACAO_SLOTS só aceita 1.0 (degrau 1); veio '$CMP_FRACAO_SLOTS'"
+  FRACAO_ARGS=(--fracao-slots 1.0); SERIE=L100; FRACAO_REG=1.0
+fi
+if [ $SMOKE = 1 ]; then
+  [ "$SERIE" = L100 ] || recusa "--smoke exige CMP_FRACAO_SLOTS=1.0"
+  [ -z "$TEXTO$ESTADO$N" ] || uso
+  TEXTO=curto; ESTADO=frio; N=1
+fi
 case $MODELO in 1b) MDIR=$M1;; 3b) MDIR=$M3;; *) uso;; esac
 case $TEXTO in curto|medio|longo) ;; *) uso;; esac
 case $ESTADO in frio|quente) ;; *) uso;; esac
@@ -52,6 +70,27 @@ if [ -e "$SAIDA" ]; then recusa "$SAIDA já existe: pasta de saída nova"; fi
 mkdir -p "$SAIDA" || recusa "não consegui criar $SAIDA"
 SAIDA=$(cd "$SAIDA" && pwd -P)
 ms_agora() { echo $(( $(date +%s%N) / 1000000 )); }
+
+if [ $SMOKE = 1 ]; then
+  # smoke do degrau 1: uma geração curta com --fracao-slots 1.0; sem portão, sem monitor de célula, sem medida publicada
+  SMI=${NVIDIA_SMI:-nvidia-smi}
+  mkdir -p "$SAIDA/p1"
+  CMD=("$BIN" --gera --celula "$MODELO:$MDIR" --so-texto curto "${FRACAO_ARGS[@]}" --saida "$SAIDA/p1/saida")
+  printf '%q ' "${CMD[@]}" > "$SAIDA/cmdline.txt"; echo >> "$SAIDA/cmdline.txt"
+  : > "$SAIDA/gpumem.csv"
+  ( while :; do "$SMI" -i "$UUID" --query-gpu=memory.used,memory.total --format=csv,noheader,nounits >> "$SAIDA/gpumem.csv" 2> /dev/null; sleep 0.5; done ) &
+  AMOSTRA=$!
+  t0=$(ms_agora)
+  "${CMD[@]}" > "$SAIDA/p1/stdout.txt" 2> "$SAIDA/p1/stderr.txt" < /dev/null; rc=$?
+  t1=$(ms_agora)
+  "$SMI" -i "$UUID" --query-gpu=memory.used,memory.total --format=csv,noheader,nounits >> "$SAIDA/gpumem.csv" 2> /dev/null
+  kill "$AMOSTRA" 2> /dev/null; wait "$AMOSTRA" 2> /dev/null
+  echo $((t1 - t0)) > "$SAIDA/p1/wall_ms.txt"; echo "$rc" > "$SAIDA/p1/rc.txt"; echo "$rc" > "$SAIDA/rc.txt"
+  printf '{"lado": "lastro", "serie": "L100", "smoke": true, "modelo": "%s", "fracao_slots": "1.0", "rc": %s}\n' "$MODELO" "$rc" > "$SAIDA/smoke.json"
+  [ "$rc" != 2 ] || exit 2
+  [ "$rc" = 0 ] || exit 1
+  exit 0
+fi
 
 # portão antes da célula (não adia, não repete)
 INI=$(date +%s)
@@ -72,7 +111,8 @@ roda_processo() { # K [--repete N]  (K = nome da pasta pK)
   local pd="$SAIDA/p$k" t0 t1 rc
   mkdir -p "$pd"
   t0=$(ms_agora)
-  "$BIN" --gera --celula "$MODELO:$MDIR" --so-texto "$TEXTO" "$@" --saida "$pd/saida" > "$pd/stdout.txt" 2> "$pd/stderr.txt" < /dev/null
+  { printf 'p%s: ' "$k"; printf '%q ' "$BIN" --gera --celula "$MODELO:$MDIR" --so-texto "$TEXTO" "${FRACAO_ARGS[@]}" "$@" --saida "$pd/saida"; echo; } >> "$SAIDA/cmdline.txt"
+  "$BIN" --gera --celula "$MODELO:$MDIR" --so-texto "$TEXTO" "${FRACAO_ARGS[@]}" "$@" --saida "$pd/saida" > "$pd/stdout.txt" 2> "$pd/stderr.txt" < /dev/null
   rc=$?
   t1=$(ms_agora)
   echo $((t1 - t0)) > "$pd/wall_ms.txt"
@@ -100,8 +140,8 @@ cleanup
 if [ $r -gt 1 ] || grep -q '^sem amostras' "$SAIDA/monitor-resumo.txt" 2> /dev/null; then MON_FALHAS+=("avalia rc=$r"); fi
 MON_FALHA=$(printf '%s; ' "${MON_FALHAS[@]:-}" | tr -d '"\\' | sed -e 's/; $//')
 {
-  printf '{"lado": "lastro", "serie": "L", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "inicio_coleta_epoch": %s, "fim_epoch": %s, "monitor_falha": "%s"}\n' \
-    "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$SAI_RC" "$INI" "$INI_COLETA" "$FIM" "$MON_FALHA"
+  printf '{"lado": "lastro", "serie": "%s", "fracao_slots": "%s", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "inicio_coleta_epoch": %s, "fim_epoch": %s, "monitor_falha": "%s"}\n' \
+    "$SERIE" "$FRACAO_REG" "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$SAI_RC" "$INI" "$INI_COLETA" "$FIM" "$MON_FALHA"
 } > "$SAIDA/celula.json"
 # emenda 8/9: pico do pmon (soma de sm% dos PIDs de tipo G, desktop) antes e depois, mais o sm máximo do dmon antes (só informação), para o relatório (null = sem leitura)
 desk_n() { local v; v=$(grep -h "^$3_$2_$4=" "$SAIDA/$1" 2> /dev/null | head -n 1 | cut -d= -f2); case $v in ''|*[!0-9]*) echo null;; *) echo "$v";; esac; }

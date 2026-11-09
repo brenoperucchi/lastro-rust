@@ -151,4 +151,33 @@ echo "amostras=3 temp_max=85" > "$D/mon.avalia.txt"; echo 1 > "$D/mon.avalia.rc"
 roda mon-quente --modelo 1b --texto curto --estado frio --n 1
 rm -f "$D/mon.avalia.txt" "$D/mon.avalia.rc"
 confere "avalia com > 80 C (código 1, com amostras) NÃO é falha de coleta" "vazio $D/s-mon-quente/celula.json"
+# 8. degrau 1: CMP_FRACAO_SLOTS=1.0 repassa --fracao-slots 1.0, grava a linha de comando e muda a série para L100; sem a variável nada muda
+printf '#!/usr/bin/env bash\necho "2000, 24000"\n' > "$D/smi"; chmod +x "$D/smi"; export NVIDIA_SMI=$D/smi
+CMP_FRACAO_SLOTS=1.0 roda frac --modelo 1b --texto curto --estado frio --n 2
+confere "fração 1.0 (frio): todo processo (p0 a p2) recebe --fracao-slots 1.0 antes do --saida; o resto da linha é o de sempre" "[ $RC = 0 ] && [ \$(grep -c -- '--gera --celula 1b:$D/m1b --so-texto curto --fracao-slots 1.0 --saida $D/s-frac/p' $D/log-frac) = 3 ]"
+confere "fração 1.0: cmdline.txt com uma linha por processo, cada uma com a flag" "[ \$(wc -l < $D/s-frac/cmdline.txt) = 3 ] && [ \$(grep -c -- '--fracao-slots 1.0' $D/s-frac/cmdline.txt) = 3 ] && grep -q '^p0: ' $D/s-frac/cmdline.txt"
+confere "fração 1.0: celula.json com serie L100 e fracao_slots 1.0 (JSON válido)" "python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert m['serie']=='L100' and m['fracao_slots']=='1.0' and m['lado']=='lastro'\" $D/s-frac/celula.json"
+CMP_FRACAO_SLOTS=1.0 roda frac-q --modelo 3b --texto longo --estado quente --n 2
+confere "fração 1.0 (quente): o processo único leva --fracao-slots 1.0 e --repete" "[ $RC = 0 ] && grep -q -- '--so-texto longo --fracao-slots 1.0 --repete 2 --saida' $D/log-frac-q"
+CMP_FRACAO_SLOTS=0.5 roda frac-ruim --modelo 1b --texto curto --estado frio --n 2
+confere "fração diferente de 1.0 (0.5): recusa 2, nada executado, sem pasta" "[ $RC = 2 ] && [ ! -s $D/log-frac-ruim ] && [ ! -e $D/s-frac-ruim ]"
+roda sem-frac --modelo 1b --texto curto --estado frio --n 1
+confere "sem a variável: sem --fracao-slots na linha, série L, fracao_slots vazio" "! grep -q -- '--fracao-slots' $D/log-sem-frac && python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert m['serie']=='L' and m['fracao_slots']==''\" $D/s-sem-frac/celula.json"
+# 9. smoke do degrau 1
+: > "$D/mon.log"
+CMP_FRACAO_SLOTS=1.0 roda smoke --smoke --modelo 1b
+confere "smoke: sai 0, um processo com --so-texto curto --fracao-slots 1.0, sem monitor nem portão" "[ $RC = 0 ] && [ \$(wc -l < $D/log-smoke) = 1 ] && grep -q -- '--gera --celula 1b:$D/m1b --so-texto curto --fracao-slots 1.0 --saida $D/s-smoke/p1/saida' $D/log-smoke && [ ! -s $D/mon.log ] && [ ! -e $D/s-smoke/celula.json ]"
+confere "smoke: grava rc.txt 0, cmdline.txt, gpumem.csv (usada, total) e smoke.json" "[ \"\$(cat $D/s-smoke/rc.txt)\" = 0 ] && grep -q -- '--fracao-slots 1.0' $D/s-smoke/cmdline.txt && grep -q '^2000, 24000' $D/s-smoke/gpumem.csv && grep -q '\"smoke\": true' $D/s-smoke/smoke.json && [ -s $D/s-smoke/p1/saida/medidas-1b.json ]"
+roda smoke-sem-var --smoke --modelo 1b
+confere "smoke sem CMP_FRACAO_SLOTS=1.0: recusa 2" "[ $RC = 2 ] && [ ! -s $D/log-smoke-sem-var ]"
+CMP_FRACAO_SLOTS=1.0 roda smoke-uso --smoke --modelo 1b --texto longo
+confere "smoke com --texto: recusa de uso (2)" "[ $RC = 2 ] && [ ! -s $D/log-smoke-uso ]"
+export FAKE_FALHA_NA_CHAMADA=1
+CMP_FRACAO_SLOTS=1.0 roda smoke-erro --smoke --modelo 1b
+unset FAKE_FALHA_NA_CHAMADA
+confere "smoke com erro do binário: sai 1 e rc.txt = 1 (quem julga é o extrator)" "[ $RC = 1 ] && [ \"\$(cat $D/s-smoke-erro/rc.txt)\" = 1 ]"
+export FAKE_RECUSA_NA_CHAMADA=1
+CMP_FRACAO_SLOTS=1.0 roda smoke-recusa --smoke --modelo 1b
+unset FAKE_RECUSA_NA_CHAMADA
+confere "smoke com recusa 2 do binário: sai 2" "[ $RC = 2 ]"
 if [ "$falhas" = 0 ]; then echo "TODOS OS TESTES PASSARAM"; exit 0; else echo "$falhas FALHA(S)"; exit 1; fi
