@@ -301,22 +301,29 @@ def analisa_monitor(d, meta):
 
 
 def confere_portao_pmon(d):
-    """Emenda 8: se a célula tem portao.txt, ele precisa trazer `pmon_antes_veredito=OK` (amostra pmon de 3 s antes da célula, falha fechada).
-    Sem a linha (portão de formato antigo) ou com outro valor, SEM PROVA. Sem portao.txt na pasta, vale só o portao_ok do celula.json."""
+    """Emenda 9 (sobre a 8): o portao.txt da célula é OBRIGATÓRIO e precisa trazer `pmon_antes_veredito=OK` (3 voltas do pmon, só PIDs G isentos) e
+    `compute_apps_veredito=OK` (nenhum PID de compute fora da árvore). Arquivo ausente, ilegível, sem uma das linhas ou com outro valor = SEM PROVA (falha fechada);
+    o portao_ok do celula.json sozinho não prova nada. O motivo gravado não publica razão."""
     arq = os.path.join(d, "portao.txt")
     if not os.path.exists(arq):
-        return []
+        return ["portao.txt ausente: sem prova do portão da GPU (emenda 9)"]
     try:
         with open(arq, encoding="utf-8", errors="replace") as fh:
             linhas = fh.read().splitlines()
     except OSError:
         return ["portao.txt ilegível: sem prova do portão da GPU"]
+    mot = []
     ver = [l.split("=", 1)[1] for l in linhas if l.startswith("pmon_antes_veredito=")]
     if not ver:
-        return ["portao.txt sem a amostra pmon (emenda 8): sem prova do portão da GPU"]
-    if ver[-1] != "OK":
-        return ["portão pmon antes da célula: %s" % ver[-1]]
-    return []
+        mot.append("portao.txt sem a amostra pmon (emenda 8/9): sem prova do portão da GPU")
+    elif ver[-1] != "OK":
+        mot.append("portão pmon antes da célula: %s" % ver[-1])
+    apps = [l.split("=", 1)[1] for l in linhas if l.startswith("compute_apps_veredito=")]
+    if not apps:
+        mot.append("portao.txt sem o veredito de compute-apps (emenda 9): sem prova do portão da GPU")
+    elif apps[-1] != "OK":
+        mot.append("portão compute-apps antes da célula: %s" % apps[-1])
+    return mot
 
 
 def base_celula(d, meta):
@@ -524,7 +531,7 @@ def resume_celula(meta, dados, mot):
         "n_medidas_previstas": esp, "n_medidas": len(meds), "status": "SEM PROVA" if mot else "OK", "motivos": sorted(set(mot)),
         "prefill": estat([x["prefill_ms"] for x in meds]), "decode": estat([x["decode_ms_passo"] for x in meds]),
         "temp_max": dados.get("temp_max"), "observacoes": dados.get("observacoes", []),
-        "desktop_g_sm_antes": num_ou_none(meta.get("desktop_g_sm_antes")), "desktop_g_sm_depois": num_ou_none(meta.get("desktop_g_sm_depois")),
+        "dmon_sm_antes": num_ou_none(meta.get("dmon_sm_antes")), "desktop_g_sm_antes": num_ou_none(meta.get("desktop_g_sm_antes")), "desktop_g_sm_depois": num_ou_none(meta.get("desktop_g_sm_depois")),
     }
     if meta["lado"] == "lastro":
         r["fracao_cpu_needed"] = estat([x["fracao_cpu_needed"] for x in meds if x["fracao_cpu_needed"] is not None])
@@ -828,17 +835,20 @@ def relatorio(res):
     sp = [(k, c) for k, c in res["celulas"].items() if c["status"] == "SEM PROVA"]
     nr = [k for k, c in res["celulas"].items() if c["status"] == "NÃO RODOU"]
     L.append("")
-    L.append("## Condição do desktop (emenda 8)")
-    L.append("O desktop (compositor Hyprland, etc.) divide a 4090 nos DOIS lados em todas as células: é condição constante declarada, fora do SEM PROVA. "
-             "Soma de sm% dos PIDs de tipo G, medida por `nvidia-smi pmon -c 3 -s um` antes e depois de cada célula (maior valor das 3 voltas; `-` = sem leitura). "
-             "Só decide SEM PROVA: PID fora da árvore medida de tipo C ou C+G com sm > 5%, ou soma G > 60% (palpites declarados antes dos dados).")
+    L.append("## Condição do desktop (emendas 8 e 9)")
+    L.append("O desktop gráfico (PIDs de tipo G: compositor Hyprland, quickshell, Xwayland...) divide a 4090 nos DOIS lados em todas as células: é condição COMUM dos dois lados, "
+             "fora do SEM PROVA; o efeito pode não ser igual entre eles (o Lastro serve os experts na CPU, a S1 do llama.cpp roda tudo na GPU, a S2 tem parte na CPU). "
+             "Processos de compute (tipo C ou C+G, como voxtype e o processo de GPU do Chrome) fora da árvore medida NÃO são isentos: qualquer um, ocioso ou não, é SEM PROVA. "
+             "A coluna do pico do pmon é a soma de sm% dos PIDs de tipo G entre as 3 capturas de uma volta (`nvidia-smi pmon -c 1 -s um`, antes e depois de cada célula): "
+             "é PICO DE AMOSTRA ESPARSA, não a fração da placa usada pelo desktop; `-` = sem leitura. A coluna do dmon (`dmon -s u -c 3`, só antes da célula, quando nada medido roda) "
+             "é só informação. Salvaguarda decisiva: soma G > 60% (palpite declarado antes dos dados).")
     L.append("")
-    L.append("| célula | desktop sm% antes | desktop sm% depois |")
-    L.append("|---|---|---|")
+    L.append("| célula | pico do pmon (soma G) antes | pico do pmon (soma G) depois | dmon sm% máx antes (informação) |")
+    L.append("|---|---|---|---|")
     for k, c in res["celulas"].items():
         if c.get("status") == "NÃO RODOU":
             continue
-        L.append("| %s | %s | %s |" % (k, f(c.get("desktop_g_sm_antes"), 0), f(c.get("desktop_g_sm_depois"), 0)))
+        L.append("| %s | %s | %s | %s |" % (k, f(c.get("desktop_g_sm_antes"), 0), f(c.get("desktop_g_sm_depois"), 0), f(c.get("dmon_sm_antes"), 0)))
     L.append("")
     L.append("## SEM PROVA (sem razão publicada)")
     if not sp:

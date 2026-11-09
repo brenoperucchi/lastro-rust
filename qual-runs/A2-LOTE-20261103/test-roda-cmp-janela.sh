@@ -23,7 +23,7 @@ echo c > "$D/textos/texto-curto.txt"; echo m > "$D/textos/texto-medio.txt"; echo
 echo r1 > "$D/refs/ref5c-1b.json"; echo r3 > "$D/refs/ref5c-3b.json"
 echo '{"modelos": {}}' > "$D/ids.json"; echo criterio > "$D/crit.md"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$D/pp"; chmod +x "$D/pp"
-printf '#!/usr/bin/env bash\ncase $* in *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%%]"; echo "GPU-falsa, 1 MiB, 0 %%";; *) echo;; esac\n' > "$D/smi"; chmod +x "$D/smi"
+printf '#!/usr/bin/env bash\ncase $* in *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%%]"; echo "GPU-falsa, 1 MiB, 0 %%";; *pmon*) if [ -n "${FAKE_PMON_ARQ:-}" ]; then cat "$FAKE_PMON_ARQ"; else echo "# gpu pid type sm mem enc dec jpg ofa fb ccpm command"; echo "# Idx # C/G %% %% %% %% %% %% MB MB name"; fi;; *) echo;; esac\n' > "$D/smi"; chmod +x "$D/smi"
 # células falsas: avançam o relógio virtual pelo custo (mesma fórmula das estimativas dos testes) e gravam celula.json
 cat > "$D/celula-falsa.sh" <<'F'
 #!/usr/bin/env bash
@@ -50,6 +50,7 @@ if [ -n "${CMP_FAKE_RELOGIO:-}" ]; then echo $(( $(cat "$CMP_FAKE_RELOGIO") + cu
 [ -z "${CMP_FAKE_SLEEP:-}" ] || sleep "$CMP_FAKE_SLEEP"
 mkdir -p "$saida"
 printf '{"lado": "%s", "serie": "%s", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": true, "portao_motivo": "", "rc": 0}\n' "$lado" "$serie" "$modelo" "$texto" "$estado" "$n" > "$saida/celula.json"
+printf 'pmon_antes_veredito=OK\ncompute_apps_veredito=OK\nportao=OK\n' > "$saida/portao.txt"
 exit 0
 F
 chmod +x "$D/celula-falsa.sh"
@@ -189,6 +190,9 @@ roda portao-zero; confere "portão diferente de 1: recusa 2" "[ $RC = 2 ] && [ !
 export PRIMEIRA_PALAVRA_AUTORIZADA=1
 mkdir -p "$D/se-ocupada"; echo x > "$D/se-ocupada/a"
 roda ocupada; confere "--saida não vazia: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-ocupada ]"
+# emenda 9: voxtype e Chrome (C+G) abertos na 4090 = recusa 2 ANTES de tocar em timers, com a lista; só G passa
+printf '# gpu pid type sm mem enc dec jpg ofa fb ccpm command\n    0 1352017   C+G      -      -      -      -      -      -    997      0    voxtype\n    0   42406   C+G      -      -      -      -      -      -    364      0    renderD128 --cr\n    0   41533     G     25     25      -      -      -      -    413      0    Hyprland\n' > "$D/pmon-cg.txt"
+FAKE_PMON_ARQ=$D/pmon-cg.txt roda cg-aberto; confere "voxtype/Chrome C+G abertos: recusa 2 antes de tocar em timers, listando PIDs e comandos e mandando fechar" "[ $RC = 2 ] && grep -q 'FECHADOS' $D/oute-cg-aberto && grep -q '1352017 (voxtype)' $D/oute-cg-aberto && grep -q '42406 (renderD128)' $D/oute-cg-aberto && [ ! -s $D/elog-cg-aberto ] && ! grep -q '^stop' $D/cg-aberto/log && [ ! -e $D/se-cg-aberto ] && [ ! -e $D/se-cg-aberto.timers-antes.txt ]"
 roda limite-alto --limite 1801; confere "limite acima de 1800: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-limite-alto ]"
 roda opcao-ruim --nao-existe; confere "opção desconhecida: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-opcao-ruim ]"
 # emenda 6: --modelos obrigatório no envelope (recusa 2 antes de qualquer coisa)

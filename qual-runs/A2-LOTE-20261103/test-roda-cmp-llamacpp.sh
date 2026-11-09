@@ -58,7 +58,8 @@ cat > "$D/mon" <<F
 #!/usr/bin/env bash
 # comportamentos por arquivo: mon.inicia.rc, mon.morre, mon.para.rc, mon.avalia.rc
 case \$1 in
-  portao) echo "portao=OK" > "\$3"; exit 0;;
+  portao) { [ ! -e $D/desk.antes ] || printf 'pmon_antes_g_soma_sm_max=%s\\ndmon_antes_sm_max=%s\\n' "\$(cat $D/desk.antes)" "\$(cat $D/dmon.antes)"; echo "portao=OK"; } > "\$3"; exit 0;;
+  portao-depois) [ ! -e $D/desk.depois ] || printf 'pmon_depois_g_soma_sm_max=%s\\n' "\$(cat $D/desk.depois)" > "\$3"; exit 0;;
   inicia) [ ! -e $D/mon.inicia.rc ] || exit \$(cat $D/mon.inicia.rc)
           echo "t, 1, 2000, 10000, 60, 100" > "\$3"
           if [ -e $D/mon.morre ]; then true & p=\$!; wait \$p; echo \$p > "\$5"
@@ -105,6 +106,15 @@ confere "S2: --n-cpu-moe 22 (1B) e 29 (3B), com -ngl 99 -fa on e KV f16" "grep -
 roda s3 --modelo 1b --texto curto --estado quente --serie S3 --n 1
 confere "S3: -ngl 99 -fa off, KV f32 (k e v), sem --n-cpu-moe" "grep -q -- '-ngl 99 -fa off --cache-type-k f32 --cache-type-v f32' $D/s-s3/cmdline.txt && ! grep -q 'n-cpu-moe' $D/s-s3/cmdline.txt"
 
+# 4b. emenda 9: caminho NUMÉRICO do sed que grava desktop_g_sm_* e dmon_sm_antes no celula.json (monitor falso com linhas pmon/dmon); sem leitura = null
+confere "sem linhas pmon do monitor: desktop_g_sm_* e dmon_sm_antes = null, JSON válido" "python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert m['desktop_g_sm_antes'] is None and m['desktop_g_sm_depois'] is None and m['dmon_sm_antes'] is None\" $D/s-s1f/celula.json"
+echo 26 > "$D/desk.antes"; echo 9 > "$D/dmon.antes"; echo 31 > "$D/desk.depois"
+roda desk --modelo 1b --texto curto --estado frio --serie S1 --n 2
+confere "com linhas pmon/dmon: celula.json traz desktop_g_sm_antes 26, depois 31 e dmon_sm_antes 9 como números (JSON válido)" "python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert (m['desktop_g_sm_antes'], m['desktop_g_sm_depois'], m['dmon_sm_antes'])==(26,31,9) and m['n_medidas']==2\" $D/s-desk/celula.json"
+echo 'ilegivel' > "$D/dmon.antes"; echo 5x > "$D/desk.depois"
+roda desk2 --modelo 1b --texto curto --estado frio --serie S1 --n 2
+confere "valor não numérico (ilegivel, 5x) vira null, sem quebrar o JSON" "python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert (m['desktop_g_sm_antes'], m['desktop_g_sm_depois'], m['dmon_sm_antes'])==(26,None,None)\" $D/s-desk2/celula.json"
+rm -f "$D/desk.antes" "$D/dmon.antes" "$D/desk.depois"
 # 5. servidor sempre encerrado: pedido com erro HTTP 500
 FAKE_MODO=erro500 roda e500 --modelo 1b --texto curto --estado quente --serie S1 --n 2
 confere "HTTP 500: sai 1, célula marcada, servidor encerrado, sem processo com a porta" "[ $RC = 1 ] && grep -q '\"rc\": 1' $D/s-e500/celula.json && [ \"\$(cat $D/s-e500/resp-0.rc)\" = '0 500' ] && sem_vivos e500"

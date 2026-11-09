@@ -58,6 +58,8 @@ class Base(unittest.TestCase):
         grava(os.path.join(self.saida, "celulas", nome, "celula.json"), kw)
         d = os.path.join(self.saida, "celulas", nome)
         self.monitor(d, [60.0])
+        # emenda 9: portao.txt é obrigatório; a fixture válida traz a evidência explícita do portão (testes específicos sobrescrevem ou removem)
+        grava(os.path.join(d, "portao.txt"), "pmon_antes_veredito=OK\ncompute_apps_veredito=OK\nportao=OK\n")
         return d
 
     def monitor(self, d, temps, ini=EPOCH_INI, fim=EPOCH_FIM, passo=1):
@@ -660,36 +662,74 @@ class TestModelosDaJanela(Base):
 
 
 class TestPortaoPmon(Base):
-    """Emenda 8: portao.txt com a amostra pmon; só `pmon_antes_veredito=OK` vale; seção 'Condição do desktop' no relatório."""
+    """Emendas 8 e 9: portao.txt OBRIGATÓRIO com `pmon_antes_veredito=OK` e `compute_apps_veredito=OK`; seção 'Condição do desktop' no relatório."""
 
     def escreve_portao(self, nome, linhas):
         with open(os.path.join(self.saida, "celulas", nome, "portao.txt"), "w", encoding="utf-8") as fh:
             fh.write("\n".join(linhas) + "\n")
 
+    def celulas(self):
+        return os.listdir(os.path.join(self.saida, "celulas"))
+
     def test_veredito_ok_vale_e_aparece_no_relatorio(self):
-        d = self.lastro(estado="frio", n=3)
+        self.lastro(estado="frio", n=3)
         self.llama(estado="frio", serie="S1", n=3)
-        for k in os.listdir(os.path.join(self.saida, "celulas")):
-            self.escreve_portao(k, ["pmon_antes_veredito=OK", "portao=OK"])
         r = self.razao(self.roda())
         self.assertEqual(r["status"], "OK")
         md = X.relatorio(self.roda())
-        self.assertIn("## Condição do desktop (emenda 8)", md)
-        self.assertIn("divide a 4090 nos DOIS lados", md)
+        self.assertIn("## Condição do desktop (emendas 8 e 9)", md)
+        self.assertIn("COMUM dos dois lados", md)
+        self.assertIn("o efeito pode não ser igual entre eles", md)
+        self.assertIn("pico do pmon (soma G)", md)
+        self.assertIn("PICO DE AMOSTRA ESPARSA, não a fração da placa", md)
+        self.assertIn("dmon", md)
 
     def test_veredito_de_falha_ou_ausente_e_sem_prova(self):
         self.lastro(estado="frio", n=3)
         self.llama(estado="frio", serie="S1", n=3)
-        for k in os.listdir(os.path.join(self.saida, "celulas")):
-            self.escreve_portao(k, ["pmon_antes_veredito=PID fora da árvore medida com tipo C ou C+G usando sm 20%", "portao=OK"])
+        for k in self.celulas():
+            self.escreve_portao(k, ["pmon_antes_veredito=processo(s) de compute (tipo C ou C+G) fora da árvore medida no pmon: 1352017 (voxtype)", "compute_apps_veredito=OK", "portao=OK"])
         r = self.razao(self.roda())
         self.assertEqual(r["status"], "SEM PROVA")
         self.assertTrue(any("pmon" in x for x in r["motivos"]))
-        for k in os.listdir(os.path.join(self.saida, "celulas")):
+        for k in self.celulas():
             self.escreve_portao(k, ["gpu_util_pct=3", "portao=OK"])  # formato antigo, sem amostra pmon: falha fechada
         r = self.razao(self.roda())
         self.assertEqual(r["status"], "SEM PROVA")
         self.assertTrue(any("sem a amostra pmon" in x for x in r["motivos"]))
+
+    def test_compute_apps_com_falha_ou_sem_linha_e_sem_prova(self):
+        self.lastro(estado="frio", n=3)
+        self.llama(estado="frio", serie="S1", n=3)
+        for k in self.celulas():
+            self.escreve_portao(k, ["pmon_antes_veredito=OK", "compute_apps_veredito=processo(s) de compute fora da árvore: 1352017 (voxtype)", "portao=OK"])
+        r = self.razao(self.roda())
+        self.assertEqual(r["status"], "SEM PROVA")
+        self.assertTrue(any("compute-apps" in x for x in r["motivos"]))
+        for k in self.celulas():
+            self.escreve_portao(k, ["pmon_antes_veredito=OK", "portao=OK"])
+        r = self.razao(self.roda())
+        self.assertEqual(r["status"], "SEM PROVA")
+        self.assertTrue(any("sem o veredito de compute-apps" in x for x in r["motivos"]))
+
+    def test_portao_txt_ausente_ou_ilegivel_e_sem_prova_e_sem_razao_publicada(self):
+        """rev-1 (r114): apagar o portao.txt, com o metadata intacto (portao_ok true), NÃO pode publicar razão; vale para os dois lados."""
+        self.lastro(estado="frio", n=3)
+        self.llama(estado="frio", serie="S1", n=3)
+        self.assertEqual(self.razao(self.roda())["status"], "OK")
+        for k in self.celulas():
+            os.remove(os.path.join(self.saida, "celulas", k, "portao.txt"))
+        res = self.roda()
+        r = self.razao(res)
+        self.assertEqual(r["status"], "SEM PROVA")
+        self.assertTrue(any("portao.txt ausente" in x for x in r["motivos"]))
+        self.assertNotIn("razao", {k for k, v in r.items() if v})  # sem razão numérica publicada
+        for c in res["celulas"].values():
+            if c["status"] != "NÃO RODOU":
+                self.assertEqual(c["status"], "SEM PROVA")
+        for k in self.celulas():  # portao.txt ilegível: uma pasta no lugar do arquivo
+            os.makedirs(os.path.join(self.saida, "celulas", k, "portao.txt"))
+        self.assertEqual(self.razao(self.roda())["status"], "SEM PROVA")
 
     def test_desktop_sm_do_celula_json_vai_para_o_resultado(self):
         self.lastro(estado="frio", n=3)
@@ -697,11 +737,11 @@ class TestPortaoPmon(Base):
             arq = os.path.join(self.saida, "celulas", k, "celula.json")
             with open(arq, encoding="utf-8") as fh:
                 m = json.load(fh)
-            m["desktop_g_sm_antes"], m["desktop_g_sm_depois"] = 25, None
+            m["desktop_g_sm_antes"], m["desktop_g_sm_depois"], m["dmon_sm_antes"] = 25, None, 4
             grava(arq, m)
         res = self.roda()
         c = [c for c in res["celulas"].values() if c["lado"] == "lastro" and c["status"] != "NÃO RODOU"][0]
-        self.assertEqual((c["desktop_g_sm_antes"], c["desktop_g_sm_depois"]), (25, None))
+        self.assertEqual((c["desktop_g_sm_antes"], c["desktop_g_sm_depois"], c["dmon_sm_antes"]), (25, None, 4))
 
 
 if __name__ == "__main__":

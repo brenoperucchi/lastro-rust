@@ -182,8 +182,8 @@ MON_FALHA=$(printf '%s; ' "${MON_FALHAS[@]:-}" | tr -d '"\\' | sed -e 's/; $//')
   printf '{"lado": "llamacpp", "serie": "%s", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "inicio_coleta_epoch": %s, "fim_epoch": %s, "falhas": "%s", "monitor_falha": "%s"}\n' \
     "$SERIE" "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$FALHOU" "$INI" "$INI_COLETA" "$FIM" "$(printf '%s; ' "${MOTIVOS[@]:-}" | tr -d '"\\')" "$MON_FALHA"
 } > "$SAIDA/celula.json"
-# emenda 8: soma de sm% dos PIDs de tipo G (desktop) antes e depois, para o relatório (null = sem leitura)
-desk_n() { local v; v=$(grep -h "^pmon_$2_g_soma_sm_max=" "$SAIDA/$1" 2> /dev/null | head -n 1 | cut -d= -f2); case $v in ''|*[!0-9]*) echo null;; *) echo "$v";; esac; }
-sed -i "\$ s/}\$/, \"desktop_g_sm_antes\": $(desk_n portao.txt antes), \"desktop_g_sm_depois\": $(desk_n portao-depois.txt depois)}/" "$SAIDA/celula.json"
+# emenda 8/9: pico do pmon (soma de sm% dos PIDs de tipo G, desktop) antes e depois, mais o sm máximo do dmon antes (só informação), para o relatório (null = sem leitura)
+desk_n() { local v; v=$(grep -h "^$3_$2_$4=" "$SAIDA/$1" 2> /dev/null | head -n 1 | cut -d= -f2); case $v in ''|*[!0-9]*) echo null;; *) echo "$v";; esac; }
+sed -i "\$ s/}\$/, \"desktop_g_sm_antes\": $(desk_n portao.txt antes pmon g_soma_sm_max), \"desktop_g_sm_depois\": $(desk_n portao-depois.txt depois pmon g_soma_sm_max), \"dmon_sm_antes\": $(desk_n portao.txt antes dmon sm_max)}/" "$SAIDA/celula.json"
 [ $FALHOU = 0 ] || exit 1
 exit 0

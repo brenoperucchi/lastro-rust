@@ -43,7 +43,8 @@ cat > "$D/mon" <<F
 #!/usr/bin/env bash
 # comportamentos por arquivo: mon.inicia.rc (falha de inicia), mon.morre (a coleta morre logo), mon.para.rc, mon.avalia.rc e mon.avalia.txt
 case \$1 in
-  portao) echo "portao=\$( [ "\$(cat $D/portao.rc)" = 0 ] && echo OK || echo 'FALHA CPU ocupada' )" > "\$3"; exit \$(cat $D/portao.rc);;
+  portao) { [ ! -e $D/desk.antes ] || printf 'pmon_antes_g_soma_sm_max=%s\\ndmon_antes_sm_max=%s\\n' "\$(cat $D/desk.antes)" "\$(cat $D/dmon.antes)"; echo "portao=\$( [ "\$(cat $D/portao.rc)" = 0 ] && echo OK || echo 'FALHA CPU ocupada' )"; } > "\$3"; exit \$(cat $D/portao.rc);;
+  portao-depois) [ ! -e $D/desk.depois ] || printf 'pmon_depois_g_soma_sm_max=%s\\n' "\$(cat $D/desk.depois)" > "\$3"; exit 0;;
   inicia) [ ! -e $D/mon.inicia.rc ] || exit \$(cat $D/mon.inicia.rc)
           echo "t, 1, 2000, 10000, 60, 100" > "\$3"
           if [ -e $D/mon.morre ]; then true & p=\$!; wait \$p; echo \$p > "\$5"
@@ -94,6 +95,15 @@ echo 1 > "$D/portao.rc"
 roda portao-falho --modelo 1b --texto curto --estado frio --n 2
 confere "portão falho: a célula roda (sem adiar nem repetir) e fica marcada" "[ $RC = 0 ] && [ \$(wc -l < $D/log-portao-falho) = 3 ] && grep -q '\"portao_ok\": false' $D/s-portao-falho/celula.json && grep -q 'CPU ocupada' $D/s-portao-falho/celula.json"
 echo 0 > "$D/portao.rc"
+# 4b. emenda 9: caminho NUMÉRICO do sed que grava desktop_g_sm_* e dmon_sm_antes no celula.json (monitor falso com linhas pmon/dmon); sem leitura = null
+confere "sem linhas pmon do monitor: desktop_g_sm_* e dmon_sm_antes = null, JSON válido" "python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert m['desktop_g_sm_antes'] is None and m['desktop_g_sm_depois'] is None and m['dmon_sm_antes'] is None\" $D/s-portao-falho/celula.json"
+echo 26 > "$D/desk.antes"; echo 9 > "$D/dmon.antes"; echo 31 > "$D/desk.depois"
+roda desk --modelo 1b --texto curto --estado frio --n 2
+confere "com linhas pmon/dmon: celula.json traz desktop_g_sm_antes 26, depois 31 e dmon_sm_antes 9 como números (JSON válido)" "python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert (m['desktop_g_sm_antes'], m['desktop_g_sm_depois'], m['dmon_sm_antes'])==(26,31,9) and m['n_medidas']==2\" $D/s-desk/celula.json"
+echo 'ilegivel' > "$D/dmon.antes"; echo 5x > "$D/desk.depois"
+roda desk2 --modelo 1b --texto curto --estado frio --n 2
+confere "valor não numérico (ilegivel, 5x) vira null, sem quebrar o JSON" "python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert (m['desktop_g_sm_antes'], m['desktop_g_sm_depois'], m['dmon_sm_antes'])==(26,None,None)\" $D/s-desk2/celula.json"
+rm -f "$D/desk.antes" "$D/dmon.antes" "$D/desk.depois"
 # 5. processo com erro encerra a célula: sem repetição automática
 export FAKE_FALHA_NA_CHAMADA=2
 roda erro --modelo 1b --texto curto --estado frio --n 3

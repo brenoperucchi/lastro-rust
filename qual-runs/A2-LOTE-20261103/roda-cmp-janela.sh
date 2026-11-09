@@ -21,7 +21,7 @@
 # (nunca vira razão, PASSA nem estimativa). Os blocos da S3 usam as mesmas repetições do Lastro correspondente e só rodam se couberem. Cortes só mudam repetições e
 # quais células rodam. orcamento.json e decisao.txt declaram o que foi cortado. As estimativas (CMP_EST_*, em segundos) são PALPITES de ordem de grandeza.
 #
-# Falha FECHADA antes de tocar em timers ou na GPU: PRIMEIRA_PALAVRA_AUTORIZADA=1 e CUDA_VISIBLE_DEVICES igual ao UUID da 4090 (a 5090 NUNCA entra, nem no llama-server)
+# Falha FECHADA antes de tocar em timers ou na GPU (emenda 9: também se houver PID C ou C+G na 4090; durante a janela o voxtype e o processo de GPU do Chrome ficam FECHADOS): PRIMEIRA_PALAVRA_AUTORIZADA=1 e CUDA_VISIBLE_DEVICES igual ao UUID da 4090 (a 5090 NUNCA entra, nem no llama-server)
 # têm de estar no ambiente de quem chama (o "autorizo" do Breno); --saida e --estado-janela têm de ser pastas novas ou vazias. Rede só em 127.0.0.1. Limite padrão 1800 s
 # (máx. 1800); o de fora é o de dentro mais 120 s. Fim da janela: aviso (notify-send se houver, ou CMP_AVISO_CMD) e DIR.aviso.txt. Este roteiro NÃO é rodado na entrega.
 # Variáveis só para teste (r111, rev-2): JANELA_SH, LIMITE_SH, JANELA_TIMERS, LASTRO_SH_CMP, LLAMA_SH_CMP, EXTRAI_PY, CMP_RELOGIO_ARQ (relógio virtual em segundos), CMP_FOLGA,
@@ -67,7 +67,7 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados (valem onde o critério já os fixa; binários, GGUF e safetensors só precisam ser iguais antes e depois).
 declare -A FIXO=(
-  [criterio-cmp]=beb2a93fb18393d6cc42350eefac5217a2ebf996506bd69cfaf28e15b788b551
+  [criterio-cmp]=f1bd1e0f35378f5efe16ea156546d8b96370b754f986c4dca56e2ecd191a5932
   [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
   [texto-curto]=5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d
   [texto-medio]=bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a
@@ -338,6 +338,9 @@ for d in "$SAIDA" "$ESTADO"; do
   fi
 done
 SAIDA=$(realpath -m "$SAIDA"); BIN=$(realpath "$BIN")
+# emenda 9 (r114): falha FECHADA antes de tocar em timers ou na GPU. Só PIDs de tipo G (desktop gráfico) são isentos; QUALQUER PID C ou C+G na 4090 (pmon ou --query-compute-apps:
+# voxtype, processo de GPU do Chrome...) recusa a janela com a lista de PIDs e comandos: feche-os (ou abra o Chrome sem GPU) e peça de novo. Isso faz parte do "autorizo" do Breno.
+PREFLIGHT=$("$AQUI/roda-cmp-monitor.sh" preflight 2>&1) || recusa "emenda 9: processo(s) de compute na 4090 que precisam ser FECHADOS antes da janela (voxtype, processo de GPU do Chrome...): $PREFLIGHT"
 TIMERS=()
 [ -z "${JANELA_TIMERS:-}" ] || TIMERS=(--timers "$JANELA_TIMERS")
 coleta() {
