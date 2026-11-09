@@ -1077,5 +1077,239 @@ class TestDegrau1Extrator(BaseD1):
         self.assertTrue(self.razao(res)["rotulo"].startswith("Lastro 10% experts GPU contra llama.cpp S1"))
 
 
+class BaseD2(BaseD1):
+    """Degrau 2: LC (Lastro --camadas-cpu N) contra S2 (criterio-degrau2-camadas-20261109.md)."""
+    LINHA = {"1b": "camadas-cpu 22 de 24; slots 64 de 768\n", "3b": "camadas-cpu 29 de 32; slots 120 de 1280\n"}
+    NN = {"1b": 22, "3b": 29}
+
+    def smoke2(self, m="1b", cmdline=None, **kw):
+        kw.setdefault("cpu", 60)
+        kw.setdefault("stderr", self.LINHA[m])
+        sd = self.smoke_ok(**kw)
+        grava(os.path.join(sd, "cmdline.txt"), cmdline if cmdline is not None else "pp --gera --celula %s:/m --so-texto curto --camadas-cpu %d --saida /s/p1/saida\n" % (m, self.NN[m]))
+        if m != "1b":
+            os.rename(os.path.join(sd, "p1", "saida", "medidas-1b.json"), os.path.join(sd, "p1", "saida", "medidas-%s.json" % m))
+        return sd
+
+    def avalia2(self, sd, m="1b"):
+        return X.avalia_smoke(sd, m, self.ids, self.refs, self.textos, d2=True)
+
+    def lastroLC(self, m="1b", t="curto", estado="frio", n=3, cmdline=True, camadas=None, linha=None, **kw):
+        kw.setdefault("cpu", 60)
+        d = self.lastro(m=m, t=t, estado=estado, n=n, **kw)
+        novo = d.replace("-L-", "-LC-")
+        os.rename(d, novo)
+        arq = os.path.join(novo, "celula.json")
+        meta = json.load(open(arq, encoding="utf-8"))
+        meta["serie"] = "LC"
+        meta["camadas_cpu"] = camadas if camadas is not None else str(self.NN[m])
+        grava(arq, meta)
+        procs = sorted(x for x in os.listdir(novo) if x.startswith("p") and x[1:].isdigit())
+        if cmdline:
+            grava(os.path.join(novo, "cmdline.txt"), "".join("%s: pp --gera --celula %s:/m --so-texto %s --camadas-cpu %d --saida x\n" % (p, m, t, self.NN[m]) for p in procs))
+        for p in procs:
+            grava(os.path.join(novo, p, "stderr.txt"), linha if linha is not None else self.LINHA[m])
+        return novo
+
+    def roda2(self):
+        return X.processa(self.saida, self.ids, self.refs, self.textos, degrau2=True)
+
+
+class TestDegrau2Smoke(BaseD2):
+    def test_smoke_ok_com_cpu_needed_alto(self):
+        ok, lin = self.avalia2(self.smoke2())
+        self.assertTrue(ok, lin)
+        self.assertIn("veredito=OK", lin)
+        self.assertIn("cpu_needed=0.6", lin)
+        self.assertIn("camadas_cpu=22", lin)
+        self.assertIn("ids=IGUAIS", lin)
+
+    def test_smoke_3b_ok(self):
+        ok, lin = self.avalia2(self.smoke2(m="3b"), m="3b")
+        self.assertTrue(ok, lin)
+
+    def test_smoke_cpu_zero_tambem_passa(self):
+        ok, lin = self.avalia2(self.smoke2(cpu=0))
+        self.assertTrue(ok, lin)
+
+    def test_smoke_linha_ausente_errada_ou_antiga_falha(self):
+        for erro in ("", "slots 768 de 768\n", "camadas-cpu 21 de 24; slots 96 de 768\n", "camadas-cpu 22 de 24; slots 768 de 768\n",
+                     "camadas-cpu 22 de 24; slots 64 de 700\n", "camadas-cpu 29 de 32; slots 120 de 1280\n"):
+            ok, lin = self.avalia2(self.smoke2(stderr=erro))
+            self.assertFalse(ok, erro)
+            self.assertTrue(any(x.startswith("motivo=") and ("camadas-cpu N" in x or "linha de camadas" in x) for x in lin), lin)
+
+    def test_smoke_3b_com_linha_do_1b_falha(self):
+        ok, _ = self.avalia2(self.smoke2(m="3b", stderr=self.LINHA["1b"]), m="3b")
+        self.assertFalse(ok)
+
+    def test_smoke_cmdline_sem_flag_ou_com_fracao_falha(self):
+        for cl in ("pp --gera --so-texto curto --saida x\n", "pp --gera --so-texto curto --fracao-slots 1.0 --saida x\n",
+                   "pp --gera --so-texto curto --camadas-cpu 220 --saida x\n", "pp --gera --camadas-cpu 22 --fracao-slots 1.0 --saida x\n", "pp --gera --camadas-cpu 29 --saida x\n"):
+            ok, lin = self.avalia2(self.smoke2(cmdline=cl))
+            self.assertFalse(ok, cl)
+            self.assertTrue(any("sem --camadas-cpu 22" in x for x in lin), lin)
+
+    def test_smoke_memoria_rc_e_leituras_seguem_as_regras_da_emenda_1(self):
+        self.assertFalse(self.avalia2(self.smoke2(mem=[(1000500, 23000, 24000), (1001500, 23000, 24000), (1002500, 23000, 24000), (1003500, 23000, 24000)]))[0])
+        self.assertFalse(self.avalia2(self.smoke2(mem=""))[0])
+        self.assertFalse(self.avalia2(self.smoke2(mem=[(1000500, 1000, 24000), (1001500, 1000, 24000)]))[0])
+        sd = self.smoke2()
+        grava(os.path.join(sd, "rc.txt"), "1\n")
+        self.assertFalse(self.avalia2(sd)[0])
+        self.setUp()
+        self.assertFalse(self.avalia2(self.smoke2(tempos=False))[0])
+
+    def test_smoke_cont_ausente_null_ou_needed_zero_falha(self):
+        sd = self.smoke2()
+        arq = os.path.join(sd, "p1", "saida", "medidas-1b.json")
+        for cont in ({"needed": 100, "hits": 1}, {"needed": 100, "cpu": None}, {"cpu": 5}, {"needed": 0, "cpu": 0}):
+            grava(arq, {"medidas": [{"descartada": False, "falha": None, "gerados": list(GERADOS), "cont": cont}]})
+            ok, lin = self.avalia2(sd)
+            self.assertFalse(ok, cont)
+
+    def test_smoke_ids_divergentes_so_reporta(self):
+        ok, lin = self.avalia2(self.smoke2(ids_iguais=False))
+        self.assertTrue(ok, lin)
+        self.assertTrue(any(x.startswith("ids=DIVERGEM") for x in lin))
+
+    def test_smoke_modo_d1_continua_exigindo_cpu_zero_e_fracao(self):
+        ok, _ = self.avalia(self.smoke_ok(cpu=7))
+        self.assertFalse(ok)
+
+    def test_cli_smoke_degrau2(self):
+        sd = self.smoke2()
+        rc = X.main(["--smoke", sd, "--modelo", "1b", "--degrau2", "--ids", self.ids, "--refs", self.refs, "--textos", self.textos])
+        self.assertEqual(rc, 0)
+        self.assertIn("veredito=OK", open(os.path.join(sd, "veredito.txt"), encoding="utf-8").read())
+        sd2 = self.smoke2(stderr="")
+        self.assertEqual(X.main(["--smoke", sd2, "--modelo", "1b", "--degrau2", "--ids", self.ids, "--refs", self.refs, "--textos", self.textos]), 1)
+        self.assertEqual(X.main(["--smoke", sd2, "--modelo", "1b", "--degrau1", "--degrau2", "--ids", self.ids, "--refs", self.refs, "--textos", self.textos]), 2)
+
+
+class TestDegrau2Extrator(BaseD2):
+    def veredito(self, ok=True, motivo=""):
+        grava(os.path.join(self.saida, "smoke", "veredito.txt"), "veredito=%s\n%s" % ("OK" if ok else "FALHA", ("motivo=%s\n" % motivo) if motivo else ""))
+
+    def test_razao_lc_contra_s2_com_rotulo_exato_e_so_s2(self):
+        self.veredito()
+        self.lastroLC(estado="frio", n=3, prefill=100.0, passo=18.0)
+        self.llama(estado="frio", serie="S2", n=3, prefill=50.0, per_token=2.0)
+        res = self.roda2()
+        self.assertEqual({r["serie"] for r in res["razoes"]}, {"S2"})
+        self.assertFalse(any(c["serie"] in ("S1", "S3", "L", "L100") for c in res["celulas"].values()))
+        r = self.razao(res, "1b", "curto", "frio", "S2")
+        self.assertEqual(r["status"], "OK", r.get("motivos"))
+        self.assertEqual(r["rotulo"], "Lastro camadas inteiras (22 na CPU) contra llama.cpp S2 (--n-cpu-moe 22); KV f32 no Lastro contra f16 no llama.cpp; "
+                                      "op offload ligado no llama.cpp, prefill da S2 não é leitura de experts na CPU")
+        self.assertAlmostEqual(r["prefill"]["razao_lastro_sobre_llama_cpp"], 2.0)
+        self.assertAlmostEqual(r["decode"]["razao_lastro_sobre_llama_cpp"], 9.0)
+        self.assertGreater(r["fracao_cpu_needed"]["mediana"], 0.5, "cpu/needed alto é reportado, não reprovado")
+        self.assertTrue(res["degrau2"])
+
+    def test_rotulo_do_3b_leva_29(self):
+        self.veredito()
+        self.lastroLC(m="3b", estado="frio", n=3)
+        self.llama(m="3b", estado="frio", serie="S2", n=3)
+        r = self.razao(self.roda2(), "3b", "curto", "frio", "S2")
+        self.assertEqual(r["status"], "OK", r.get("motivos"))
+        self.assertIn("(29 na CPU) contra llama.cpp S2 (--n-cpu-moe 29)", r["rotulo"])
+
+    def test_faixas_nos_limites(self):
+        self.assertTrue(X.faixa_d2(1.25).endswith("equivale"))
+        self.assertTrue(X.faixa_d2(1.2500001).endswith("diferença moderada"))
+        self.assertTrue(X.faixa_d2(2.0).endswith("diferença moderada"))
+        self.assertTrue(X.faixa_d2(2.0000001).endswith("diferença grande"))
+        self.assertTrue(X.faixa_d2(0.5).endswith("equivale"))
+
+    def test_relatorio_cita_faixas_onde_o_dado_caiu_e_nao_decide(self):
+        self.veredito()
+        self.lastroLC(estado="frio", n=3, passo=18.0)
+        self.llama(estado="frio", serie="S2", n=3, per_token=2.0)
+        res = self.roda2()
+        md = X.relatorio(res)
+        for t in ("decode LC/S2 <= 1,25: equivale", "entre 1,25 e 2: diferença moderada", "decode LC/S2 > 2: diferença grande", "Onde o dado caiu", "Degrau 2"):
+            self.assertIn(t, md) if t != "Onde o dado caiu" else None
+        self.assertIn("1b curto frio: razão de decode 9.000 cai em 'decode LC/S2 > 2: diferença grande'", md)
+        self.assertNotIn("PASSA", md.replace("sem PASSA/REPROVA", ""))
+        self.assertNotIn("L100", md)
+
+    def test_sem_smoke_ou_smoke_falho_nenhuma_razao(self):
+        self.lastroLC(estado="frio", n=3)
+        self.llama(estado="frio", serie="S2", n=3)
+        res = self.roda2()
+        self.assertTrue(all(r["status"] != "OK" for r in res["razoes"]))
+        self.assertTrue(any("smoke do degrau 2 ausente" in x for x in res["integridade_problemas"]))
+        self.veredito(ok=False, motivo="linha de camadas/slots diferente")
+        res = self.roda2()
+        self.assertTrue(all(r["status"] != "OK" for r in res["razoes"]))
+        self.assertEqual(res["resultado_smoke"], "SMOKE DO DEGRAU 2 FALHOU: linha de camadas/slots diferente")
+        self.assertIn("SMOKE DO DEGRAU 2 FALHOU", X.relatorio(res))
+
+    def test_celula_lc_com_cpu_zero_ou_alto_vale_mas_needed_ausente_e_sem_prova(self):
+        self.veredito()
+        self.lastroLC(estado="frio", n=3, cpu=0)
+        self.llama(estado="frio", serie="S2", n=3)
+        self.assertEqual(self.razao(self.roda2(), "1b", "curto", "frio", "S2")["status"], "OK")
+
+    def test_celula_lc_sem_linha_ou_linha_errada_e_sem_prova(self):
+        self.veredito()
+        for linha in ("", "slots 768 de 768\n", "camadas-cpu 22 de 24; slots 768 de 768\n", "camadas-cpu 29 de 32; slots 120 de 1280\n"):
+            self.lastroLC(estado="frio", n=3, linha=linha)
+            self.llama(estado="frio", serie="S2", n=3)
+            r = self.razao(self.roda2(), "1b", "curto", "frio", "S2")
+            self.assertEqual(r["status"], "SEM PROVA", linha)
+            self.assertTrue(any("camadas-cpu N" in x or "linha de camadas" in x for x in r["motivos"]), r["motivos"])
+            self.setUp()
+            self.veredito()
+
+    def test_celula_lc_sem_cmdline_ou_com_camadas_erradas_e_sem_prova(self):
+        self.veredito()
+        self.lastroLC(estado="frio", n=3, cmdline=False)
+        self.llama(estado="frio", serie="S2", n=3)
+        self.assertEqual(self.razao(self.roda2(), "1b", "curto", "frio", "S2")["status"], "SEM PROVA")
+        self.setUp()
+        self.veredito()
+        self.lastroLC(estado="frio", n=3, camadas="29")
+        self.llama(estado="frio", serie="S2", n=3)
+        self.assertEqual(self.razao(self.roda2(), "1b", "curto", "frio", "S2")["status"], "SEM PROVA")
+
+    def test_cont_ausente_ou_null_na_celula_lc_e_sem_prova(self):
+        self.veredito()
+        d = self.lastroLC(estado="frio", n=3)
+        self.llama(estado="frio", serie="S2", n=3)
+        for p in ("p1",):
+            arq = os.path.join(d, p, "saida", "medidas-1b.json")
+            j = json.load(open(arq, encoding="utf-8"))
+            for e in j["medidas"]:
+                e["cont"] = {"needed": 100, "cpu": None}
+            grava(arq, j)
+        self.assertEqual(self.razao(self.roda2(), "1b", "curto", "frio", "S2")["status"], "SEM PROVA")
+
+    def test_nao_rodou_s1_s3_nao_aparecem_e_main_degrau2_grava_resultado(self):
+        self.veredito()
+        self.lastroLC(estado="frio", n=3)
+        self.llama(estado="frio", serie="S2", n=3)
+        rc = X.main(["--saida", self.saida, "--ids", self.ids, "--refs", self.refs, "--textos", self.textos, "--degrau2"])
+        self.assertEqual(rc, 0)
+        res = json.load(open(os.path.join(self.saida, "cmp-resultado.json"), encoding="utf-8"))
+        self.assertTrue(res["degrau2"])
+        self.assertFalse(any(k.startswith("llamacpp") and ("-S1-" in k or "-S3-" in k) for k in res["celulas"]))
+        self.assertIn("Degrau 2", open(os.path.join(self.saida, "cmp-resultado.md"), encoding="utf-8").read())
+        self.assertEqual(X.main(["--saida", self.saida, "--degrau1", "--degrau2"]), 2)
+
+    def test_modos_antigo_e_degrau1_intactos_depois_do_degrau2(self):
+        self.veredito()
+        self.lastroLC(estado="frio", n=3)
+        self.llama(estado="frio", serie="S2", n=3)
+        self.roda2()
+        self.setUp()
+        self.lastro(estado="frio", n=3)
+        self.llama(estado="frio", serie="S1", n=3)
+        res = self.roda()
+        self.assertFalse(res.get("degrau2"))
+        self.assertTrue(self.razao(res)["rotulo"].startswith("Lastro 10% experts GPU contra llama.cpp S1"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

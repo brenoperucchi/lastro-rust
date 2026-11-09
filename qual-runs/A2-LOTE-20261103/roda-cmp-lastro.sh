@@ -21,6 +21,10 @@
 #   roda-cmp-lastro.sh --smoke --modelo 1b|3b --saida DIR [--bin BINARIO]   (seção 3 do critério do degrau 1; exige CMP_FRACAO_SLOTS=1.0)
 # smoke = UMA geração curta (texto curto, 64 tokens, processo novo), sem portão nem monitor de célula e sem medida; amostra a memória da 4090 a ~2 Hz em DIR/gpumem.csv
 # ("epoch_ms, usada, total", MiB; só leituras ok), com falhas em gpumem-falhas.txt, tempos em smoke-tempos.txt e amostra pós-saída (só descritiva) em gpumem-pos-saida.csv; grava DIR/{cmdline.txt,rc.txt,p1/...}; quem julga (código 0, GPU <= 90%, cpu/needed == 0, ids) é `cmp-extrai.py --smoke`.
+# Degrau 2 (criterio-degrau2-camadas-20261109.md): CMP_CAMADAS_CPU=N repassa `--camadas-cpu N` ao binário (experts das N primeiras camadas só na CPU, os das demais todos na GPU); aceita só o valor
+# FIXO do modelo (22 no 1B, 29 no 3B = o --n-cpu-moe da S2), é exclusiva com CMP_FRACAO_SLOTS e a célula passa a ser da série LC (celula.json: "serie": "LC", "camadas_cpu": "N").
+#   roda-cmp-lastro.sh --smoke ... com CMP_CAMADAS_CPU (smoke do degrau 2, seção 3 do critério; julgado por `cmp-extrai.py --smoke --degrau2`).
+# O roda-cmp-janela.sh recusa CMP_CAMADAS_CPU no ambiente do modo real e só a define por dentro, no --degrau2.
 # Códigos: 0 a célula rodou até o fim (a validade fica em celula.json e no extrator), 1 algum processo saiu com erro, 2 recusa de uso/ambiente, inclusive recusa (código 2)
 # do binário (emenda 5, item 11: o envelope interrompe a janela e não inicia células posteriores); celula.json é gravado mesmo assim.
 set -u
@@ -51,12 +55,22 @@ if [ "${CMP_FRACAO_SLOTS+x}" = x ]; then
   [ "$CMP_FRACAO_SLOTS" = 1.0 ] || recusa "CMP_FRACAO_SLOTS só aceita 1.0 (degrau 1); veio '$CMP_FRACAO_SLOTS'"
   FRACAO_ARGS=(--fracao-slots 1.0); SERIE=L100; FRACAO_REG=1.0
 fi
+if [ "${CMP_CAMADAS_CPU+x}" = x ]; then
+  [ -z "$FRACAO_REG" ] || recusa "CMP_CAMADAS_CPU e CMP_FRACAO_SLOTS são exclusivas"
+fi
 if [ $SMOKE = 1 ]; then
-  [ "$SERIE" = L100 ] || recusa "--smoke exige CMP_FRACAO_SLOTS=1.0"
+  [ "$SERIE" = L100 ] || [ "${CMP_CAMADAS_CPU+x}" = x ] || recusa "--smoke exige CMP_FRACAO_SLOTS=1.0 (degrau 1) ou CMP_CAMADAS_CPU (degrau 2)"
   [ -z "$TEXTO$ESTADO$N" ] || uso
   TEXTO=curto; ESTADO=frio; N=1
 fi
 case $MODELO in 1b) MDIR=$M1;; 3b) MDIR=$M3;; *) uso;; esac
+# degrau 2: camadas na CPU (valor fixo por modelo)
+CAMADAS_REG=
+if [ "${CMP_CAMADAS_CPU+x}" = x ]; then
+  case $MODELO in 1b) NFIXO=22;; 3b) NFIXO=29;; esac
+  [ "$CMP_CAMADAS_CPU" = "$NFIXO" ] || recusa "CMP_CAMADAS_CPU só aceita $NFIXO no modelo $MODELO (degrau 2); veio '$CMP_CAMADAS_CPU'"
+  FRACAO_ARGS=(--camadas-cpu "$NFIXO"); SERIE=LC; CAMADAS_REG=$NFIXO
+fi
 case $TEXTO in curto|medio|longo) ;; *) uso;; esac
 case $ESTADO in frio|quente) ;; *) uso;; esac
 case $N in ''|*[!0-9]*) uso;; esac
@@ -98,7 +112,8 @@ if [ $SMOKE = 1 ]; then
   para_coletor
   { echo "$(ms_agora), $("$SMI" -i "$UUID" --query-gpu=memory.used,memory.total --format=csv,noheader,nounits 2> /dev/null)"; } > "$SAIDA/gpumem-pos-saida.csv"
   echo $((t1 - t0)) > "$SAIDA/p1/wall_ms.txt"; echo "$rc" > "$SAIDA/p1/rc.txt"; echo "$rc" > "$SAIDA/rc.txt"
-  printf '{"lado": "lastro", "serie": "L100", "smoke": true, "modelo": "%s", "fracao_slots": "1.0", "rc": %s}\n' "$MODELO" "$rc" > "$SAIDA/smoke.json"
+  if [ -n "$CAMADAS_REG" ]; then printf '{"lado": "lastro", "serie": "LC", "smoke": true, "modelo": "%s", "camadas_cpu": "%s", "rc": %s}\n' "$MODELO" "$CAMADAS_REG" "$rc" > "$SAIDA/smoke.json"
+  else printf '{"lado": "lastro", "serie": "L100", "smoke": true, "modelo": "%s", "fracao_slots": "1.0", "rc": %s}\n' "$MODELO" "$rc" > "$SAIDA/smoke.json"; fi
   [ "$rc" != 2 ] || exit 2
   [ "$rc" = 0 ] || exit 1
   exit 0
@@ -152,8 +167,8 @@ cleanup
 if [ $r -gt 1 ] || grep -q '^sem amostras' "$SAIDA/monitor-resumo.txt" 2> /dev/null; then MON_FALHAS+=("avalia rc=$r"); fi
 MON_FALHA=$(printf '%s; ' "${MON_FALHAS[@]:-}" | tr -d '"\\' | sed -e 's/; $//')
 {
-  printf '{"lado": "lastro", "serie": "%s", "fracao_slots": "%s", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "inicio_coleta_epoch": %s, "fim_epoch": %s, "monitor_falha": "%s"}\n' \
-    "$SERIE" "$FRACAO_REG" "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$SAI_RC" "$INI" "$INI_COLETA" "$FIM" "$MON_FALHA"
+  printf '{"lado": "lastro", "serie": "%s", "fracao_slots": "%s", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "inicio_coleta_epoch": %s, "fim_epoch": %s, "monitor_falha": "%s"%s}\n' \
+    "$SERIE" "$FRACAO_REG" "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$SAI_RC" "$INI" "$INI_COLETA" "$FIM" "$MON_FALHA" "$([ -z "$CAMADAS_REG" ] || printf ', "camadas_cpu": "%s"' "$CAMADAS_REG")"
 } > "$SAIDA/celula.json"
 # emenda 8/9: pico do pmon (soma de sm% dos PIDs de tipo G, desktop) antes e depois, mais o sm máximo do dmon antes (só informação), para o relatório (null = sem leitura)
 desk_n() { local v; v=$(grep -h "^$3_$2_$4=" "$SAIDA/$1" 2> /dev/null | head -n 1 | cut -d= -f2); case $v in ''|*[!0-9]*) echo null;; *) echo "$v";; esac; }

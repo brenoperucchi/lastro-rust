@@ -185,4 +185,25 @@ export FAKE_RECUSA_NA_CHAMADA=1
 CMP_FRACAO_SLOTS=1.0 roda smoke-recusa --smoke --modelo 1b
 unset FAKE_RECUSA_NA_CHAMADA
 confere "smoke com recusa 2 do binário: sai 2" "[ $RC = 2 ]"
+# 10. degrau 2: CMP_CAMADAS_CPU = valor FIXO do modelo (22 no 1B, 29 no 3B) repassa --camadas-cpu N, série LC, camadas_cpu em celula.json; exclusiva com CMP_FRACAO_SLOTS
+CMP_CAMADAS_CPU=22 roda cam --modelo 1b --texto curto --estado frio --n 2
+confere "camadas 22 (1B, frio): todo processo (p0 a p2) recebe --camadas-cpu 22 antes do --saida; sem --fracao-slots" "[ $RC = 0 ] && [ \$(grep -c -- '--gera --celula 1b:$D/m1b --so-texto curto --camadas-cpu 22 --saida $D/s-cam/p' $D/log-cam) = 3 ] && ! grep -q -- '--fracao-slots' $D/log-cam"
+confere "camadas 22: cmdline.txt com uma linha por processo, cada uma com a flag; celula.json serie LC e camadas_cpu 22" "[ \$(wc -l < $D/s-cam/cmdline.txt) = 3 ] && [ \$(grep -c -- '--camadas-cpu 22' $D/s-cam/cmdline.txt) = 3 ] && python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert m['serie']=='LC' and m['camadas_cpu']=='22' and m['fracao_slots']=='' and m['lado']=='lastro'\" $D/s-cam/celula.json"
+CMP_CAMADAS_CPU=29 roda cam-q --modelo 3b --texto longo --estado quente --n 2
+confere "camadas 29 (3B, quente): o processo único leva --camadas-cpu 29 e --repete" "[ $RC = 0 ] && grep -q -- '--so-texto longo --camadas-cpu 29 --repete 2 --saida' $D/log-cam-q"
+CMP_CAMADAS_CPU=29 roda cam-errado --modelo 1b --texto curto --estado frio --n 1
+confere "valor de outro modelo (29 no 1B): recusa 2, nada executado, sem pasta" "[ $RC = 2 ] && [ ! -s $D/log-cam-errado ] && [ ! -e $D/s-cam-errado ]"
+CMP_CAMADAS_CPU=22 roda cam-errado3 --modelo 3b --texto curto --estado frio --n 1
+confere "valor do 1B no 3B (22): recusa 2" "[ $RC = 2 ] && [ ! -s $D/log-cam-errado3 ] && [ ! -e $D/s-cam-errado3 ]"
+for v in 0 21 '' x; do
+  CMP_CAMADAS_CPU=$v roda cam-ruim --modelo 1b --texto curto --estado frio --n 1
+  confere "CMP_CAMADAS_CPU='$v': recusa 2, nada executado" "[ $RC = 2 ] && [ ! -s $D/log-cam-ruim ] && [ ! -e $D/s-cam-ruim ]"
+done
+CMP_CAMADAS_CPU=22 CMP_FRACAO_SLOTS=1.0 roda cam-excl --modelo 1b --texto curto --estado frio --n 1
+confere "CMP_CAMADAS_CPU junto com CMP_FRACAO_SLOTS: recusa 2" "[ $RC = 2 ] && [ ! -s $D/log-cam-excl ] && [ ! -e $D/s-cam-excl ]"
+: > "$D/mon.log"
+CMP_CAMADAS_CPU=22 roda smoke-cam --smoke --modelo 1b
+confere "smoke do degrau 2: um processo com --so-texto curto --camadas-cpu 22, sem monitor, sem celula.json; smoke.json serie LC" "[ $RC = 0 ] && [ \$(wc -l < $D/log-smoke-cam) = 1 ] && grep -q -- '--gera --celula 1b:$D/m1b --so-texto curto --camadas-cpu 22 --saida $D/s-smoke-cam/p1/saida' $D/log-smoke-cam && [ ! -s $D/mon.log ] && [ ! -e $D/s-smoke-cam/celula.json ] && grep -q -- '--camadas-cpu 22' $D/s-smoke-cam/cmdline.txt && grep -q '\"serie\": \"LC\"' $D/s-smoke-cam/smoke.json && grep -q '\"camadas_cpu\": \"22\"' $D/s-smoke-cam/smoke.json"
+CMP_CAMADAS_CPU=29 roda smoke-cam3 --smoke --modelo 3b
+confere "smoke do degrau 2 no 3B leva --camadas-cpu 29" "[ $RC = 0 ] && grep -q -- '--camadas-cpu 29' $D/s-smoke-cam3/cmdline.txt"
 if [ "$falhas" = 0 ]; then echo "TODOS OS TESTES PASSARAM"; exit 0; else echo "$falhas FALHA(S)"; exit 1; fi

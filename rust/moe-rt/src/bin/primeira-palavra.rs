@@ -129,6 +129,8 @@ struct Args {
     repete: Option<usize>,
     /// `--fracao-slots F` (só `--gera`): fração dos experts (camadas x experts) residentes na GPU; padrão 0,10 (comportamento atual).
     fracao: f64,
+    /// `--camadas-cpu N` (só `--gera`, exclusiva com `--fracao-slots`; degrau 2): os experts das primeiras N camadas ficam só na CPU e os das camadas N.. todos na GPU.
+    camadas_cpu: Option<usize>,
 }
 
 /// Limite de `--repete` (é medida de velocidade, não laço aberto).
@@ -166,7 +168,7 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
         referencia: PathBuf::from(REFERENCIA_PADRAO), textos: PathBuf::from(TEXTOS_PADRAO), threads: 8, ensaio: false, cenario: None, rep: None, consolida: None,
         modelos: vec!["1b".into(), "3b".into()], texto: None, pedido: None, data: None, reutiliza: false,
         criterio_reset: PathBuf::from(CRITERIO_RESET_PADRAO),
-        criterio_5c: PathBuf::from(CRITERIO_5C_PADRAO), textos_5c: PathBuf::from(TEXTOS_5C_PADRAO), referencia_5c: PathBuf::from(REFERENCIA_5C_PADRAO), novos: None, so_texto: None, repete: None, fracao: FRACAO_SLOTS,
+        criterio_5c: PathBuf::from(CRITERIO_5C_PADRAO), textos_5c: PathBuf::from(TEXTOS_5C_PADRAO), referencia_5c: PathBuf::from(REFERENCIA_5C_PADRAO), novos: None, so_texto: None, repete: None, fracao: FRACAO_SLOTS, camadas_cpu: None,
     };
     let mut modelos_dados = false;
     let mut fracao_dada = false;
@@ -251,6 +253,10 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
                 r.fracao = f;
                 fracao_dada = true;
             }
+            "--camadas-cpu" => {
+                let n: usize = val()?.parse().map_err(|_| "--camadas-cpu".to_string())?;
+                r.camadas_cpu = Some(n);
+            }
             "--repete" => {
                 let n: usize = val()?.parse().map_err(|_| "--repete".to_string())?;
                 if !(1..=REPETE_MAX).contains(&n) {
@@ -296,6 +302,12 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
     }
     if modo != Modo::Gera && fracao_dada {
         return Err("--fracao-slots é só do --gera".into());
+    }
+    if modo != Modo::Gera && r.camadas_cpu.is_some() {
+        return Err("--camadas-cpu é só do --gera".into());
+    }
+    if r.camadas_cpu.is_some() && fracao_dada {
+        return Err("--camadas-cpu e --fracao-slots são exclusivas".into());
     }
     if r.repete.is_some() && r.so_texto.is_none() {
         return Err("--repete exige --so-texto".into());
@@ -552,6 +564,7 @@ struct Cenario<'a> {
     cfg: &'a ModelConfig,
     threads: usize,
     fracao: f64,
+    camadas_cpu: Option<usize>,
 }
 
 /// Linha única por processo do `--gera` (stderr): `slots {slots} de {camadas*experts}`; o extrator do degrau 1 lê esta linha (100% = os dois números iguais).
@@ -561,8 +574,36 @@ fn linha_slots(slots: usize, total: usize) -> String {
 
 impl Cenario<'_> {
     fn slots_10(&self) -> usize {
-        ((self.fracao * (self.cfg.layers * self.cfg.experts) as f64) as usize).max(1)
+        match self.camadas_cpu {
+            Some(n) => slots_camadas(self.cfg.layers, self.cfg.experts, n).unwrap_or(0),
+            None => ((self.fracao * (self.cfg.layers * self.cfg.experts) as f64) as usize).max(1),
+        }
     }
+    /// Chaves residentes: padrão = tabela espaçada; `--camadas-cpu N` = todas as chaves das camadas N...
+    fn chaves(&self) -> Vec<u32> {
+        match self.camadas_cpu {
+            Some(n) => chaves_camadas(self.cfg.layers, self.cfg.experts, n),
+            None => chaves_congeladas(self.cfg.layers * self.cfg.experts, self.slots_10()),
+        }
+    }
+}
+
+/// Degrau 2: slots = (camadas - N) x experts; N de 0 a camadas-1 (ao menos uma camada na GPU).
+fn slots_camadas(layers: usize, experts: usize, n: usize) -> Result<usize, String> {
+    if n >= layers {
+        return Err(format!("--camadas-cpu {n}: de 0 a {} (camadas {layers})", layers.saturating_sub(1)));
+    }
+    Ok((layers - n) * experts)
+}
+
+/// Chaves camada*E+expert das camadas N.. (todas residentes na GPU; as N primeiras só na CPU, como `--n-cpu-moe N`).
+fn chaves_camadas(layers: usize, experts: usize, n: usize) -> Vec<u32> {
+    ((n * experts)..(layers * experts)).map(|k| k as u32).collect()
+}
+
+/// Linha única do `--camadas-cpu` (stderr): `camadas-cpu {n} de {camadas}; slots {slots} de {total}`; o extrator do degrau 2 lê esta linha.
+fn linha_camadas(n: usize, layers: usize, slots: usize, total: usize) -> String {
+    format!("camadas-cpu {n} de {layers}; slots {slots} de {total}")
 }
 
 /// Motor e backend NOVOS (tabela congelada de 10%, `backlog = 0`, admissão Event, max_len 2.048, blocos de 8), preparo do leitor e a leitura dos
@@ -572,7 +613,7 @@ fn sequencia_real(c: &Cenario) -> Result<Sequencia<CudaBackend, LeitorCuda>, Str
     let (compute, copy) = (CudaStream(c.device.new_stream().d()?), CudaStream(c.device.new_stream().d()?));
     let (b, ex) = CudaBackend::new_model_positions(c.device.clone(), c.host, slots, MAX_LEN, &compute, BLOCO).d()?;
     let m = c.cfg;
-    let prefill = chaves_congeladas(m.layers * m.experts, slots);
+    let prefill = c.chaves();
     let mcfg = Config { layers: m.layers, experts: m.experts, topk: m.k, width: m.hidden, slots, backlog: 0, admit: AdmitMode::Event, first_token: 1, prefill, max_positions: BLOCO };
     let parts = b.parts(compute.clone(), copy, b.weights(&ex).d()?, mcfg.first_token).d()?;
     let cpu = CpuServe { cpu: Cpu::new(c.threads), hidden: m.hidden, inter: m.inter, experts: m.experts, weights: ex.clone() };
@@ -675,7 +716,7 @@ fn correcao_modelo(nome: &str, mdir: &Path, args: &Args, prompts: &[String], dev
         let refs_json: Value = serde_json::from_slice(&std::fs::read(args.referencia.join(format!("ref-{nome}.json"))).d()?).d()?;
         let refs = pp::le_referencia(&refs_json)?;
         let host = carrega_host(mdir, &cfg)?;
-        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
+        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao, camadas_cpu: args.camadas_cpu };
         let data = pp::data_fixa_texto();
         let mut guardada = pp::SequenciaReutilizavel::nova();
         executa_pedidos(&mut rec, prompts, &refs, |i, p| {
@@ -745,7 +786,7 @@ fn reset_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> r
             }
         }
         let host = carrega_host(mdir, &cfg)?;
-        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
+        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao, camadas_cpu: args.camadas_cpu };
         let mut guardada = pp::SequenciaReutilizavel::nova();
         let criou_a = std::cell::Cell::new(0usize);
         rec.pedidos = rr::executa_prova(
@@ -857,8 +898,14 @@ fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> (g
             textos.push((idx, n, t, sha256(&arq)?));
         }
         let host = carrega_host(mdir, &cfg)?;
-        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
-        eprintln!("{}", linha_slots(c.slots_10(), cfg.layers * cfg.experts));
+        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao, camadas_cpu: args.camadas_cpu };
+        match args.camadas_cpu {
+            Some(n) => {
+                slots_camadas(cfg.layers, cfg.experts, n)?;
+                eprintln!("{}", linha_camadas(n, cfg.layers, c.slots_10(), cfg.layers * cfg.experts));
+            }
+            None => eprintln!("{}", linha_slots(c.slots_10(), cfg.layers * cfg.experts)),
+        }
         let mut guardado: MotorG = gr::MotorGeracao::novo();
         let mut parou: Option<String> = None;
         let t_repete = textos.first().map(|x| x.2.clone());
@@ -982,7 +1029,7 @@ fn gera_livre(args: &Args) -> Result<i32, String> {
     let tok = carrega_tokenizador(mdir)?;
     let device = Device::new(0).d()?;
     let host = carrega_host(mdir, &cfg)?;
-    let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
+    let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao, camadas_cpu: args.camadas_cpu };
     let mut m: MotorG = gr::MotorGeracao::novo();
     let g = pedido_gera(&c, &tok, &texto, Instant::now(), &data, &mut m, gr::CfgGera { novos: args.novos.unwrap_or(gr::N_NOVOS), para_no_eos: true });
     m.encerra().ok();
@@ -1133,7 +1180,7 @@ fn quente(args: &Args, exe: &Path) -> Result<i32, String> {
             let arq = arquivo_pedido(&args.textos, cen);
             let mut rec = match &carregado {
                 Ok((cfg, tok, host)) => {
-                    let c = Cenario { device: &device, host, cfg, threads: args.threads, fracao: args.fracao };
+                    let c = Cenario { device: &device, host, cfg, threads: args.threads, fracao: args.fracao, camadas_cpu: args.camadas_cpu };
                     match le_texto_de_arquivo(&arq).and_then(|(t, _, _)| conta_ids(tok, &t, &data)) {
                         Err(e) => RegistroQuente { modelo: nome.clone(), cen, integro: true, falha: Some(e), ids_n: 0, aquecimento: vec![], reps: vec![], extras: vec![] },
                         Ok(n) if !pp::ids_na_faixa(n, cen) => RegistroQuente { modelo: nome.clone(), cen, integro: true, falha: Some(format!("{n} ids fora da faixa de 2% em torno de {}", cen.n())), ids_n: n, aquecimento: vec![], reps: vec![], extras: vec![] },
@@ -1203,7 +1250,7 @@ fn frio(t0: Instant, args: &Args, exe: &Path) -> Result<i32, String> {
             return Err(format!("{ids_n} ids fora da faixa de 2% em torno de {}", cen.n()));
         }
         passo("texto_e_contagem", &mut partes);
-        let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
+        let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao, camadas_cpu: args.camadas_cpu };
         let r = pedido_real(&c, &tok, &texto, t_entrada, entrada_ms, &data)?;
         let m = r.medida;
         for (k, v) in [("T_entrada", m.crono.entrada_ms), ("T_token", m.crono.token_ms), ("T_sequencia", m.crono.sequencia_ms), ("T_leitura", m.crono.leitura_ms), ("T_logits", m.crono.logits_ms), ("T_escolha", m.crono.escolha_ms), ("T_detok", m.crono.detok_ms), ("T_entrega", m.crono.entrega_ms)] {
@@ -1262,7 +1309,7 @@ fn livre(args: &Args) -> Result<i32, String> {
     let tok = carrega_tokenizador(mdir)?;
     let device = Device::new(0).d()?;
     let host = carrega_host(mdir, &cfg)?;
-    let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
+    let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao, camadas_cpu: args.camadas_cpu };
     // t_entrada depois da carga em todos os modos (stdin incluso): o produto nunca inclui a carga do modelo. entrada_ms é só a leitura da entrada.
     let t_entrada = Instant::now();
     let r = pedido_real(&c, &tok, &texto, t_entrada, entrada_ms, &data)?;
@@ -2035,6 +2082,47 @@ mod tests {
     }
 
     #[test]
+    fn linha_camadas_formato() {
+        assert_eq!(linha_camadas(22, 24, 128, 768), "camadas-cpu 22 de 24; slots 128 de 768");
+        assert_eq!(linha_camadas(0, 24, 768, 768), "camadas-cpu 0 de 24; slots 768 de 768");
+    }
+
+    #[test]
+    fn camadas_cpu_slots_e_chaves() {
+        // 1B: 24 camadas x 32 experts; 3B: 32 x 40
+        assert_eq!(slots_camadas(24, 32, 22), Ok(64));
+        assert_eq!(slots_camadas(32, 40, 29), Ok(120));
+        assert_eq!(slots_camadas(24, 32, 0), Ok(768));
+        assert_eq!(slots_camadas(24, 32, 23), Ok(32));
+        assert!(slots_camadas(24, 32, 24).is_err() && slots_camadas(24, 32, 99).is_err());
+        let ch = chaves_camadas(24, 32, 22);
+        assert_eq!(ch.len(), 64);
+        assert_eq!((ch[0], *ch.last().unwrap()), (22 * 32, 24 * 32 - 1));
+        assert!(ch.windows(2).all(|w| w[1] == w[0] + 1), "chaves distintas e contíguas");
+        assert_eq!(chaves_camadas(24, 32, 0), (0..768).collect::<Vec<u32>>());
+        assert_eq!(chaves_camadas(32, 40, 29).len(), 3 * 40);
+        assert!(chaves_camadas(32, 40, 29).iter().all(|&k| k as usize / 40 >= 29));
+    }
+
+    #[test]
+    fn gera_camadas_cpu_parser() {
+        let v = |a: &[&str]| a.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let base = ["--gera", "--celula", "1b:/m", "--so-texto", "curto", "--saida", "/o/p1/saida"];
+        let com = |x: &[&str]| parse_args(v(&[&base[..], x].concat()));
+        assert_eq!(com(&[]).unwrap().camadas_cpu, None, "padrão inalterado");
+        assert_eq!(com(&["--camadas-cpu", "22"]).unwrap().camadas_cpu, Some(22));
+        assert_eq!(com(&["--camadas-cpu", "0"]).unwrap().camadas_cpu, Some(0));
+        assert_eq!(com(&["--camadas-cpu", "22", "--repete", "5"]).unwrap().repete, Some(5));
+        for ruim in ["-1", "x", "", "1.5"] {
+            assert!(com(&["--camadas-cpu", ruim]).is_err(), "camadas {ruim:?}");
+        }
+        assert!(com(&["--camadas-cpu"]).is_err(), "sem valor");
+        assert!(com(&["--camadas-cpu", "22", "--fracao-slots", "1.0"]).is_err(), "exclusiva");
+        assert!(com(&["--fracao-slots", "1.0", "--camadas-cpu", "22"]).is_err(), "exclusiva");
+        assert!(parse_args(v(&["--modo", "correcao", "--celula", "1b:/m", "--saida", "/o", "--camadas-cpu", "22"])).is_err());
+    }
+
+    #[test]
     fn gera_so_texto_e_repete() {
         let base = ["--gera", "--celula", "1b:/m", "--saida", "/o"];
         let com = |extra: &[&str]| {
@@ -2079,9 +2167,12 @@ mod tests {
         let atrib: Vec<&str> = src.lines().filter(|l| l.contains("FRACAO_ARGS=(") && !l.trim_start().starts_with('#')).collect();
         assert!(atrib.iter().any(|l| l.contains("FRACAO_ARGS=(--fracao-slots 1.0)")), "atribuição de FRACAO_ARGS não achada: {atrib:?}");
         for l in &atrib {
-            let r = l.replace("FRACAO_ARGS=();", "").replace("FRACAO_ARGS=(--fracao-slots 1.0)", "");
-            assert!(!r.contains("FRACAO_ARGS=("), "FRACAO_ARGS recebe algo além de (--fracao-slots 1.0): {l}");
+            let r = l.replace("FRACAO_ARGS=();", "").replace("FRACAO_ARGS=(--fracao-slots 1.0)", "").replace("FRACAO_ARGS=(--camadas-cpu \"$NFIXO\")", "");
+            assert!(!r.contains("FRACAO_ARGS=("), "FRACAO_ARGS recebe algo além de (--fracao-slots 1.0) ou (--camadas-cpu \"$NFIXO\"): {l}");
         }
+        // degrau 2: o roteiro só passa `--camadas-cpu "$NFIXO"` com NFIXO fixo por modelo (22 no 1B, 29 no 3B)
+        assert!(atrib.iter().any(|l| l.contains("FRACAO_ARGS=(--camadas-cpu \"$NFIXO\")")), "atribuição de --camadas-cpu não achada: {atrib:?}");
+        assert!(src.contains("1b) NFIXO=22;; 3b) NFIXO=29;;"), "valores fixos de N por modelo mudaram");
         assert!(linha.starts_with(esperado), "o roteiro mudou a chamada; ajuste este teste junto: {linha}");
         assert!(!linha.contains("--novos") && !linha.contains("--data"), "o harness fixa 64 novos e a data: o roteiro não pode passá-los");
         let n_max = REPETE_MAX.min(50).to_string();
@@ -2095,11 +2186,20 @@ mod tests {
                 let frio1 = ["--gera", "--celula", &format!("{modelo}:/m"), "--so-texto", texto, "--fracao-slots", "1.0", "--saida", "/o/p1/saida"];
                 let a = parse_args(v(&frio1)).unwrap_or_else(|e| panic!("frio L100 {modelo}/{texto} recusado pelo parser real: {e}"));
                 assert_eq!((a.so_texto.as_deref(), a.repete, a.fracao), (Some(texto), None, 1.0));
+                // degrau 2, frio: `--so-texto T --camadas-cpu N --saida …` (N = 22 no 1B, 29 no 3B)
+                let nc = if modelo == "1b" { "22" } else { "29" };
+                let frio2 = ["--gera", "--celula", &format!("{modelo}:/m"), "--so-texto", texto, "--camadas-cpu", nc, "--saida", "/o/p1/saida"];
+                let a = parse_args(v(&frio2)).unwrap_or_else(|e| panic!("frio LC {modelo}/{texto} recusado pelo parser real: {e}"));
+                assert_eq!((a.so_texto.as_deref(), a.repete, a.camadas_cpu), (Some(texto), None, Some(nc.parse().unwrap())));
                 // quente: um processo com --repete N (N de 1 a 50 no roteiro)
                 for n in ["1", "3", "5", n_max.as_str()] {
                     let quente = ["--gera", "--celula", &format!("{modelo}:/m"), "--so-texto", texto, "--repete", n, "--saida", "/o/p1/saida"];
                     let a = parse_args(v(&quente)).unwrap_or_else(|e| panic!("quente {modelo}/{texto}/{n} recusado pelo parser real: {e}"));
                     assert_eq!((a.so_texto.as_deref(), a.repete), (Some(texto), Some(n.parse().unwrap())));
+                    // degrau 2, quente: `--so-texto T --camadas-cpu N --repete N --saida …`
+                    let quente2 = ["--gera", "--celula", &format!("{modelo}:/m"), "--so-texto", texto, "--camadas-cpu", nc, "--repete", n, "--saida", "/o/p1/saida"];
+                    let a = parse_args(v(&quente2)).unwrap_or_else(|e| panic!("quente LC {modelo}/{texto}/{n} recusado pelo parser real: {e}"));
+                    assert_eq!((a.repete, a.camadas_cpu), (Some(n.parse().unwrap()), Some(nc.parse().unwrap())));
                     // degrau 1, quente: `--so-texto T --fracao-slots 1.0 --repete N --saida …`
                     let quente1 = ["--gera", "--celula", &format!("{modelo}:/m"), "--so-texto", texto, "--fracao-slots", "1.0", "--repete", n, "--saida", "/o/p1/saida"];
                     let a = parse_args(v(&quente1)).unwrap_or_else(|e| panic!("quente L100 {modelo}/{texto}/{n} recusado pelo parser real: {e}"));

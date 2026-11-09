@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Extrator da comparação Lastro x llama.cpp (opção d), conforme criterio-comparacao-llamacpp-20261108.md (emendas 1 a 6).
 
-    python3 -I cmp-extrai.py --saida DIR_DA_JANELA [--ids cmp-ids-prompt.json] [--refs 5c-referencia] [--textos 5c-textos/textos.json] [--degrau1]
-    python3 -I cmp-extrai.py --smoke DIR_DO_SMOKE --modelo 1b|3b [--ids ...] [--refs ...] [--textos ...]   (degrau 1, seção 3: grava DIR_DO_SMOKE/veredito.txt)
+    python3 -I cmp-extrai.py --saida DIR_DA_JANELA [--ids cmp-ids-prompt.json] [--refs 5c-referencia] [--textos 5c-textos/textos.json] [--degrau1|--degrau2]
+    python3 -I cmp-extrai.py --smoke DIR_DO_SMOKE --modelo 1b|3b [--degrau2] [--ids ...] [--refs ...] [--textos ...]   (degrau 1, seção 3: grava DIR_DO_SMOKE/veredito.txt)
 
 --degrau1 (criterio-degrau1-100pct-20261109.md): séries L100 (Lastro com --fracao-slots 1.0) contra S1 SÓ (sem S2/S3); o rótulo de toda razão é o da seção 4 do critério;
 a seção 5 (faixas de leitura do decode) é citada e diz onde o dado caiu, sem virar decisão; sem DIR/smoke/veredito.txt com veredito=OK, nenhuma razão é publicada.
@@ -47,6 +47,21 @@ SERIES = ("S1", "S2", "S3")
 SERIE_L = "L"
 D1 = False                # degrau 1: processa() liga; séries L100 contra S1, rótulo da seção 4
 ROTULO_D1 = "Lastro 100% experts GPU contra llama.cpp S1; KV f32 no Lastro contra f16 no llama.cpp"
+D2 = False                # degrau 2 (criterio-degrau2-camadas-20261109.md): séries LC (Lastro --camadas-cpu N) contra S2 SÓ
+N_CPU = {"1b": 22, "3b": 29}                  # valor fixo por modelo (== --n-cpu-moe da S2)
+CAMADAS_EXPERTS = {"1b": (24, 32), "3b": (32, 40)}   # (camadas, experts) do Granite 3.1 1B-A400M e 3B-A800M (config.json)
+def rotulo_d2(m):
+    return ("Lastro camadas inteiras (%d na CPU) contra llama.cpp S2 (--n-cpu-moe %d); KV f32 no Lastro contra f16 no llama.cpp; op offload ligado no llama.cpp, "
+            "prefill da S2 não é leitura de experts na CPU" % (N_CPU[m], N_CPU[m]))
+def linha_camadas_esperada(m):
+    n = N_CPU[m]; L_, E_ = CAMADAS_EXPERTS[m]
+    return "camadas-cpu %d de %d; slots %d de %d" % (n, L_, (L_ - n) * E_, L_ * E_)
+# seção 5 do critério do degrau 2 (palpites pré-registrados, orientação e nunca decisão), razão de decode LC/S2
+FAIXAS_D2 = (
+    (1.25, "decode LC/S2 <= 1,25: equivale"),
+    (2.0, "decode LC/S2 entre 1,25 e 2: diferença moderada"),
+    (math.inf, "decode LC/S2 > 2: diferença grande"),
+)
 SMOKE_MIN_LEITURAS = 3    # smoke (rev-1 P2 da r116): >= 3 leituras válidas de memória DENTRO do intervalo em que o binário rodou
 SMOKE_TOL_MS = 3000       # lacuna máxima entre leituras e folga do início/fim do intervalo (tolerância declarada, como na emenda 7 do critério base)
 GPU_MAX_FRACAO = 0.90     # seção 3: memória usada da 4090 no smoke
@@ -65,10 +80,19 @@ ROTULO_SERIE = {
 }
 
 
-def rotulo_razao(serie):
+def rotulo_razao(serie, m=None):
     if D1:
         return ROTULO_D1
+    if D2:
+        return rotulo_d2(m)
     return "Lastro 10% experts GPU contra " + ROTULO_SERIE[serie]
+
+
+def faixa_d2(rz):
+    for lim, txt in FAIXAS_D2:
+        if rz <= lim:
+            return txt
+    return FAIXAS_D2[-1][1]
 
 
 def faixa_d1(rz):
@@ -376,6 +400,27 @@ def le_linhas_slots(txt):
     return r
 
 
+def le_linhas_camadas(txt):
+    """Linhas reais `camadas-cpu N de L; slots S de T` que o `--gera --camadas-cpu` imprime (stderr, uma por processo): [(n, camadas, slots, total)]."""
+    r = []
+    for x in (txt or "").splitlines():
+        m_ = re.fullmatch(r"camadas-cpu (\d+) de (\d+); slots (\d+) de (\d+)", x.strip())
+        if m_:
+            r.append(tuple(int(g) for g in m_.groups()))
+    return r
+
+
+def confere_linhas_camadas(ls, m):
+    """Motivos (lista) para as linhas impressas contra N, camadas e slots esperados do modelo; vazio = tudo certo."""
+    n = N_CPU[m]; L_, E_ = CAMADAS_EXPERTS[m]
+    esp = (n, L_, (L_ - n) * E_, L_ * E_)
+    if not ls:
+        return ["sem a linha `camadas-cpu N de L; slots S de T` no stderr do binário (N e slots não provados)"]
+    if any(x != esp for x in ls):
+        return ["linha de camadas/slots diferente da esperada (%s): impressa %s" % (linha_camadas_esperada(m), "; ".join("camadas-cpu %d de %d; slots %d de %d" % x for x in ls))]
+    return []
+
+
 def le_cont_l100(cont):
     """(needed, cpu, hits) de um `cont` do L100: objeto com needed e cpu PRESENTES, numéricos, finitos e >= 0 (ausente ou null NÃO vira zero; r116 rev-1 P2)."""
     if not isinstance(cont, dict):
@@ -404,6 +449,15 @@ def le_celula_lastro(d, meta, refs):
             mot.append("linha de comando do Lastro sem --fracao-slots 1.0 em algum processo")
         if meta.get("fracao_slots") != "1.0":
             mot.append("celula.json sem fracao_slots 1.0")
+    if D2:
+        cmdl = le_txt(os.path.join(d, "cmdline.txt")) or ""
+        alvo = "--camadas-cpu %d" % N_CPU[m]
+        if not cmdl.strip():
+            mot.append("sem cmdline.txt (linha de comando do Lastro não gravada)")
+        elif any((alvo + " ") not in (x + " ") or "--fracao-slots" in x for x in cmdl.splitlines() if x.strip()) or cmdl.count(alvo) != len([x for x in cmdl.splitlines() if x.strip()]):
+            mot.append("linha de comando do Lastro sem %s (ou com --fracao-slots) em algum processo" % alvo)
+        if meta.get("camadas_cpu") != str(N_CPU[m]):
+            mot.append("celula.json sem camadas_cpu %d" % N_CPU[m])
     esperado = refs.ids_prompt(m, t)
     nesp = refs.n_esperado(m, t)
     procs = sorted([x for x in os.listdir(d) if x.startswith("p") and x[1:].isdigit()], key=lambda s: int(s[1:]))
@@ -423,6 +477,10 @@ def le_celula_lastro(d, meta, refs):
                 mot.append("%s: sem a linha `slots N de M` no stderr do binário (100%% não provado)" % p)
             elif any(a_ != b_ or b_ <= 0 for a_, b_ in ls):
                 mot.append("%s: slots diferentes de camadas x experts (%s): o 100%% não é 100%%" % (p, "; ".join("%d de %d" % x for x in ls)))
+        if D2:
+            ls2 = le_linhas_camadas(le_txt(os.path.join(pd, "stderr.txt")))
+            slots_imp += ["%s: camadas-cpu %d de %d; slots %d de %d" % ((p,) + x) for x in ls2]
+            mot += ["%s: %s" % (p, x) for x in confere_linhas_camadas(ls2, m)]
         mj = le_json(os.path.join(sd, "medidas-%s.json" % m))
         final = le_chave_valor(os.path.join(sd, "gera-final.txt"))
         gj = le_json(os.path.join(sd, "gera-%s.json" % m))
@@ -478,7 +536,7 @@ def le_celula_lastro(d, meta, refs):
                 cont = e.get("cont") or {}
                 if not isinstance(cont, dict):
                     raise ValueError("cont não é objeto")
-                if D1:
+                if D1 or D2:
                     needed, cpu_ = le_cont_l100(e.get("cont"))
                     hits_ = num(cont.get("hits") or 0, "cont.hits")
                 else:
@@ -517,6 +575,10 @@ def le_celula_lastro(d, meta, refs):
             walls.append((k, wall))
             if (est == "frio" and k >= 1 and len(entradas) == 1) or est == "quente":
                 cargas.append(wall - soma_total + (t_seq_primeira or 0.0))
+    if D2:
+        for x in meds:
+            if x["fracao_cpu_needed"] is None:
+                mot.append("%s/%s: needed = 0, cpu/needed não calculável (LC exige needed > 0)" % (x["processo"], x["rotulo"]))
     if D1:
         for x in meds:
             if x["fracao_cpu_needed"] is None or x["fracao_cpu_needed"] != 0:
@@ -676,7 +738,7 @@ def compara_sequencias(seq_l, seq_c, ref):
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------- smoke do degrau 1
-def avalia_smoke(sdir, modelo, ids_arq, refs_dir, textos_arq):
+def avalia_smoke(sdir, modelo, ids_arq, refs_dir, textos_arq, d2=False):
     """Seção 3 do critério do degrau 1. Devolve (ok, linhas chave=valor). Falha de QUALQUER item exceto ids = FALHA ("L100 NÃO SUSTENTA 100%: motivo");
     ids divergentes da referência 5c são só REPORTADOS (a janela segue, a célula leva a marca 'sequências diferentes'). Sem leitura = falha fechada."""
     falhas, info = [], {}
@@ -692,7 +754,10 @@ def avalia_smoke(sdir, modelo, ids_arq, refs_dir, textos_arq):
             break
     cmdl = le_txt(os.path.join(sdir, "cmdline.txt")) or ""
     info["cmdline"] = cmdl.strip()
-    if "--fracao-slots 1.0" not in cmdl:
+    if d2:
+        if ("--camadas-cpu %d " % N_CPU[modelo]) not in (cmdl.strip() + " ") or "--fracao-slots" in cmdl:
+            falhas.append("linha de comando do smoke sem --camadas-cpu %d (ou com --fracao-slots)" % N_CPU[modelo])
+    elif "--fracao-slots 1.0" not in cmdl:
         falhas.append("linha de comando do smoke sem --fracao-slots 1.0")
     # memória da GPU: só vale leitura carimbada DENTRO do intervalo em que o binário rodou (smoke-tempos.txt); a amostra pós-saída (gpumem-pos-saida.csv) nunca aprova
     tempos = le_chave_valor(os.path.join(sdir, "smoke-tempos.txt")) or {}
@@ -751,7 +816,7 @@ def avalia_smoke(sdir, modelo, ids_arq, refs_dir, textos_arq):
                 falhas.append("needed do motor = 0: cpu/needed não verificável")
             else:
                 info["cpu_needed"] = "%s" % (cpu_ / needed)
-                if cpu_ != 0:
+                if cpu_ != 0 and not d2:
                     falhas.append("cpu/needed = %.4f, não 0: o 100%% não é 100%%" % (cpu_ / needed))
         ref = refs.ref(modelo, "curto")
         g = meds[0].get("gerados") or []
@@ -760,17 +825,27 @@ def avalia_smoke(sdir, modelo, ids_arq, refs_dir, textos_arq):
         else:
             i = primeira_divergencia(list(g), list(ref["gerados"]))
             info["ids"] = "IGUAIS" if i is None else "DIVERGEM no passo %d (reportado; a janela segue e a célula leva a marca 'sequências diferentes')" % i
-    ls = le_linhas_slots(le_txt(os.path.join(sdir, "p1", "stderr.txt")))
-    info["slots_impressos"] = " | ".join("slots %d de %d" % x for x in ls) if ls else "nenhum"
-    if not ls:
+    if d2:
+        lc = le_linhas_camadas(le_txt(os.path.join(sdir, "p1", "stderr.txt")))
+        info["slots_impressos"] = " | ".join("camadas-cpu %d de %d; slots %d de %d" % x for x in lc) if lc else "nenhum"
+        falhas += confere_linhas_camadas(lc, modelo)
+        ls = [(1, 1)]
+    else:
+        ls = le_linhas_slots(le_txt(os.path.join(sdir, "p1", "stderr.txt")))
+        info["slots_impressos"] = " | ".join("slots %d de %d" % x for x in ls) if ls else "nenhum"
+    if d2:
+        pass
+    elif not ls:
         falhas.append("o binário não imprimiu a linha `slots N de M` (stderr): o 100% não está provado")
     elif any(a_ != b_ or b_ <= 0 for a_, b_ in ls):
         falhas.append("slots diferentes de camadas x experts (%s): o 100%% não é 100%%" % "; ".join("%d de %d" % x for x in ls))
     info["modelo"] = modelo
+    if d2:
+        info["camadas_cpu"] = str(N_CPU[modelo])
     lin = ["veredito=%s" % ("FALHA" if falhas else "OK")]
     if falhas:
         lin.append("motivo=%s" % "; ".join(falhas))
-    for k in ("modelo", "gpu_pico_pct", "gpu_leituras_no_intervalo", "gpu_lacuna_max_s", "gpu_falhas_coleta", "gpu_pos_saida_descritiva", "cpu_needed", "ids", "slots_impressos", "cmdline"):
+    for k in ("modelo", "camadas_cpu", "gpu_pico_pct", "gpu_leituras_no_intervalo", "gpu_lacuna_max_s", "gpu_falhas_coleta", "gpu_pos_saida_descritiva", "cpu_needed", "ids", "slots_impressos", "cmdline"):
         if k in info:
             lin.append("%s=%s" % (k, info[k].replace("\n", " ")))
     return not falhas, lin
@@ -800,7 +875,7 @@ def fatias_e_gargalo(cl):
 
 def monta_razao(cl, cc, refs, serie):
     m, t, est = cl["modelo"], cl["texto"], cl["estado"]
-    r = {"modelo": m, "texto": t, "estado": est, "serie": serie, "rotulo": rotulo_razao(serie)}
+    r = {"modelo": m, "texto": t, "estado": est, "serie": serie, "rotulo": rotulo_razao(serie, m)}
     if cl["status"] == "NÃO RODOU" or cc["status"] == "NÃO RODOU":
         r["status"] = "NÃO RODOU"
         r["motivos"] = ["célula do %s não rodou" % ("Lastro" if cl["status"] == "NÃO RODOU" else "llama.cpp")]
@@ -866,11 +941,14 @@ def le_veredito_smoke(saida):
     return None if t is None else le_chave_valor(os.path.join(saida, "smoke", "veredito.txt"))
 
 
-def processa(saida, ids_arq, refs_dir, textos_arq, degrau1=False):
-    global D1, SERIE_L
+def processa(saida, ids_arq, refs_dir, textos_arq, degrau1=False, degrau2=False):
+    global D1, D2, SERIE_L
+    if degrau1 and degrau2:
+        raise ValueError("--degrau1 e --degrau2 são exclusivos")
     D1 = bool(degrau1)
-    SERIE_L = "L100" if D1 else "L"
-    series_uso = ("S1",) if D1 else SERIES
+    D2 = bool(degrau2)
+    SERIE_L = "L100" if D1 else ("LC" if D2 else "L")
+    series_uso = ("S1",) if D1 else (("S2",) if D2 else SERIES)
     refs = Refs(ids_arq, refs_dir, textos_arq)
     integ = integridade(saida)
     smoke = None
@@ -880,6 +958,12 @@ def processa(saida, ids_arq, refs_dir, textos_arq, degrau1=False):
             integ.append("smoke do degrau 1 ausente (smoke/veredito.txt): sem a prova de que o L100 é 100%, nenhuma razão é publicada (seção 3)")
         elif smoke.get("veredito") != "OK":
             integ.append("L100 NÃO SUSTENTA 100%%: %s" % smoke.get("motivo", "sem motivo gravado"))
+    if D2:
+        smoke = le_veredito_smoke(saida)
+        if smoke is None:
+            integ.append("smoke do degrau 2 ausente (smoke/veredito.txt): sem a prova de N e slots corretos, nenhuma razão é publicada (seção 3)")
+        elif smoke.get("veredito") != "OK":
+            integ.append("SMOKE DO DEGRAU 2 FALHOU: %s" % smoke.get("motivo", "sem motivo gravado"))
     amb = le_chave_valor(os.path.join(saida, "ambiente.txt"))
     mem = amb.get("memoria_mts")
     obs_amb = []
@@ -945,6 +1029,14 @@ def processa(saida, ids_arq, refs_dir, textos_arq, degrau1=False):
             "integridade_problemas": integ, "observacoes_ambiente": obs_amb, "orcamento": orc, "ordem": ordem,
             "celulas": celulas, "razoes": razoes,
         }
+    if D2:
+        return {
+            "tipo": "cmp-resultado", "degrau2": True, "criterio": "criterio-degrau2-camadas-20261109.md (herda criterio-degrau1-100pct-20261109.md com a Emenda 1 e criterio-comparacao-llamacpp-20261108.md, emendas 1 a 9)", "descritivo": True,
+            "modelos_da_janela": list(modelos), "aviso_rotulo": "Toda razão leva o rótulo: %s. Sem meta, sem PASSA/REPROVA de velocidade; as faixas da seção 5 são orientação pré-registrada, não decisão." % " | ".join(rotulo_d2(m) for m in modelos),
+            "smoke": smoke, "resultado_smoke": ("SMOKE DO DEGRAU 2 FALHOU: %s" % smoke.get("motivo", "sem motivo gravado")) if (smoke is not None and smoke.get("veredito") != "OK") else None,
+            "integridade_problemas": integ, "observacoes_ambiente": obs_amb, "orcamento": orc, "ordem": ordem,
+            "celulas": celulas, "razoes": razoes,
+        }
     return {
         "tipo": "cmp-resultado", "criterio": "criterio-comparacao-llamacpp-20261108.md (emendas 1 a 6)", "descritivo": True, "modelos_da_janela": list(modelos),
         "aviso_rotulo": "Toda razão é 'Lastro 10% experts GPU contra llama.cpp <série>'. Nenhuma isola o motor; a fração cpu/needed vem ao lado. Sem meta, sem PASSA/REPROVA.",
@@ -967,7 +1059,7 @@ def faixa(e, n=2):
 
 
 def relatorio(res):
-    if res.get("degrau1"):
+    if res.get("degrau1") or res.get("degrau2"):
         return relatorio_d1(res)
     L = []
     L.append("# Comparação Lastro x llama.cpp (opção d): resultado descritivo")
@@ -1075,13 +1167,21 @@ def relatorio(res):
 
 
 def relatorio_d1(res):
+    d2 = bool(res.get("degrau2"))
+    SL_, SC_ = ("LC", "S2") if d2 else ("L100", "S1")
+    rot_ = " | ".join(rotulo_d2(m) for m in res.get("modelos_da_janela") or []) if d2 else ROTULO_D1
+    faixas_ = FAIXAS_D2 if d2 else FAIXAS_D1
+    fx = faixa_d2 if d2 else faixa_d1
     L = []
-    L.append("# Degrau 1: Lastro com 100% dos experts na GPU contra llama.cpp S1 (resultado descritivo)")
+    L.append("# %s (resultado descritivo)" % ("Degrau 2: Lastro com experts por camada inteira contra llama.cpp S2" if d2 else "Degrau 1: Lastro com 100% dos experts na GPU contra llama.cpp S1"))
     L.append("")
-    L.append("Critério: %s. Sem meta e sem PASSA/REPROVA de velocidade. **Todo rótulo: %s.** Razão = mediana L100 / mediana S1 (menor que 1 = Lastro mais rápido); "
-             "prefill e decode ficam SEPARADOS e não são juntados. Dispersão > 15%% = ruidosa; SEM PROVA e NÃO RODOU como no critério base (nunca viram razão)." % (res["criterio"], ROTULO_D1))
+    L.append("Critério: %s. Sem meta e sem PASSA/REPROVA de velocidade. **Todo rótulo: %s.** Razão = mediana %s / mediana %s (menor que 1 = Lastro mais rápido); "
+             "prefill e decode ficam SEPARADOS e não são juntados. Dispersão > 15%% = ruidosa; SEM PROVA e NÃO RODOU como no critério base (nunca viram razão)." % (res["criterio"], rot_, SL_, SC_))
     L.append("")
-    L.append("A coluna 'Lastro 10%' da janela anterior (09/11) só entra como referência declarada; nenhuma razão nova a mistura. O S1 foi remedido NESTA janela.")
+    if d2:
+        L.append("A S2 foi remedida NESTA janela (nenhum número de janela anterior entra em razão nova). S1 e S3 não rodam. cpu/needed do Lastro é ALTO por desenho (os experts das N primeiras camadas só existem na CPU): reportado, nunca exigido como 0.")
+    else:
+        L.append("A coluna 'Lastro 10%' da janela anterior (09/11) só entra como referência declarada; nenhuma razão nova a mistura. O S1 foi remedido NESTA janela.")
     L.append("")
     L.append("## Smoke (seção 3)")
     sm = res.get("smoke")
@@ -1089,14 +1189,14 @@ def relatorio_d1(res):
         L.append("Smoke AUSENTE: nenhuma razão é publicada.")
     else:
         L.append("- veredito: %s%s" % (sm.get("veredito"), ("; motivo: " + sm["motivo"]) if sm.get("motivo") else ""))
-        for k in ("gpu_pico_pct", "gpu_leituras_no_intervalo", "cpu_needed", "ids", "slots_impressos", "cmdline"):
+        for k in ("camadas_cpu", "gpu_pico_pct", "gpu_leituras_no_intervalo", "cpu_needed", "ids", "slots_impressos", "cmdline"):
             if k in sm:
                 L.append("- %s: %s" % (k, sm[k]))
     if res.get("resultado_smoke"):
         L.append("")
         L.append("**Resultado: %s**" % res["resultado_smoke"])
     L.append("")
-    outros = [x for x in res["integridade_problemas"] if not x.startswith("L100 NÃO SUSTENTA") and not x.startswith("smoke do degrau 1 ausente")]
+    outros = [x for x in res["integridade_problemas"] if not x.startswith(("L100 NÃO SUSTENTA", "smoke do degrau 1 ausente", "SMOKE DO DEGRAU 2 FALHOU", "smoke do degrau 2 ausente"))]
     if outros:
         L.append("## Integridade QUEBRADA: tudo SEM PROVA")
         L += ["- " + x for x in outros]
@@ -1116,9 +1216,9 @@ def relatorio_d1(res):
         L.append("## Ordem de execução gravada")
         L += ["    " + x for x in res["ordem"]]
     L.append("")
-    L.append("## %s" % ROTULO_D1)
+    L.append("## %s" % rot_)
     L.append("")
-    L.append("| modelo | texto | estado | n | razão prefill | razão decode | marca | cpu/needed (L100) | L100 prefill ms | S1 prefill ms | L100 decode ms/passo | S1 decode ms/passo | faixa (seção 5, decode) |")
+    L.append("| modelo | texto | estado | n | razão prefill | razão decode | marca | cpu/needed (%s) | %s prefill ms | %s prefill ms | %s decode ms/passo | %s decode ms/passo | faixa (seção 5, decode) |" % (SL_, SL_, SC_, SL_, SC_))
     L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for r in res["razoes"]:
         if r["status"] != "OK":
@@ -1130,18 +1230,19 @@ def relatorio_d1(res):
         L.append("| %s | %s | %s | %d | %s%s | %s%s | %s | %s | %s | %s | %s | %s | %s |" % (
             r["modelo"], r["texto"], r["estado"], p["lastro"]["n"], f(p["razao_lastro_sobre_llama_cpp"], 3), " (ruidosa)" if p["ruidosa"] else "",
             f(rz, 3), " (sequências diferentes)" if d["marca"] else (" (ruidosa)" if d["ruidosa"] else ""), "; ".join(marca),
-            faixa(r["fracao_cpu_needed"], 3), faixa(p["lastro"]), faixa(p["llama_cpp"]), faixa(d["lastro"], 3), faixa(d["llama_cpp"], 3), faixa_d1(rz).split(":")[0]))
+            faixa(r["fracao_cpu_needed"], 3), faixa(p["lastro"]), faixa(p["llama_cpp"]), faixa(d["lastro"], 3), faixa(d["llama_cpp"], 3), fx(rz).split(":")[0]))
     L.append("")
     L.append("## Leitura (seção 5: palpites pré-registrados, orientação e NÃO decisão)")
-    for lim, txt in FAIXAS_D1:
+    for lim, txt in faixas_:
         L.append("- " + txt)
-    L.append("- Prefill: a razão será provavelmente maior que a do decode; o relatório separa as duas e não as junta.")
+    if not d2:
+        L.append("- Prefill: a razão será provavelmente maior que a do decode; o relatório separa as duas e não as junta.")
     L.append("")
     ok = [r for r in res["razoes"] if r["status"] == "OK"]
     if not ok:
         L.append("Onde o dado caiu: nenhuma célula com razão publicada (SEM PROVA ou NÃO RODOU); nenhuma faixa se aplica.")
     for r in ok:
-        L.append("- %s %s %s: razão de decode %s cai em '%s'" % (r["modelo"], r["texto"], r["estado"], f(r["decode"]["razao_lastro_sobre_llama_cpp"], 3), faixa_d1(r["decode"]["razao_lastro_sobre_llama_cpp"])))
+        L.append("- %s %s %s: razão de decode %s cai em '%s'" % (r["modelo"], r["texto"], r["estado"], f(r["decode"]["razao_lastro_sobre_llama_cpp"], 3), fx(r["decode"]["razao_lastro_sobre_llama_cpp"])))
     L.append("")
     L.append("Limites declarados (seção 6): KV f32 contra f16; fronteira do prefill diferente (base); desktop gráfico como condição comum; memória do host declarada à parte; um Granite BF16 só; "
              "sem Strata; não responde sobre outros modelos ou quantizados.")
@@ -1186,7 +1287,7 @@ def relatorio_d1(res):
     lst = [(k, c) for k, c in res["celulas"].items() if c.get("slots_impressos")]
     if lst:
         L.append("")
-        L.append("## `slots` impressos pelo binário (L100)")
+        L.append("## %s impressos pelo binário (%s)" % ("Linhas `camadas-cpu`/`slots`" if d2 else "`slots`", SL_))
         for k, c in lst:
             L.append("- %s: %s" % (k, " | ".join(c["slots_impressos"][:3])))
     obs = [(k, c) for k, c in res["celulas"].items() if c.get("observacoes")]
@@ -1210,25 +1311,29 @@ def main(argv=None):
     ap.add_argument("--smoke")
     ap.add_argument("--modelo", choices=MODELOS)
     ap.add_argument("--degrau1", action="store_true")
+    ap.add_argument("--degrau2", action="store_true")
     ap.add_argument("--ids", default=os.path.join(aqui, "cmp-ids-prompt.json"))
     ap.add_argument("--refs", default=os.path.join(aqui, "5c-referencia"))
     ap.add_argument("--textos", default=os.path.join(aqui, "5c-textos", "textos.json"))
     a = ap.parse_args(argv)
+    if a.degrau1 and a.degrau2:
+        print("--degrau1 e --degrau2 são exclusivos", file=sys.stderr)
+        return 2
     if a.smoke:
         if not a.modelo or not os.path.isdir(a.smoke):
             print("--smoke exige --modelo 1b|3b e uma pasta de smoke existente", file=sys.stderr)
             return 2
-        ok, lin = avalia_smoke(a.smoke, a.modelo, a.ids, a.refs, a.textos)
+        ok, lin = avalia_smoke(a.smoke, a.modelo, a.ids, a.refs, a.textos, d2=a.degrau2)
         with open(os.path.join(a.smoke, "veredito.txt"), "w", encoding="utf-8") as fo:
             fo.write("\n".join(lin) + "\n")
         print("\n".join(lin))
         if not ok:
-            print("L100 NÃO SUSTENTA 100%%: %s" % [x for x in lin if x.startswith("motivo=")][0][7:])
+            print("%s: %s" % ("SMOKE DO DEGRAU 2 FALHOU" if a.degrau2 else "L100 NÃO SUSTENTA 100%", [x for x in lin if x.startswith("motivo=")][0][7:]))
         return 0 if ok else 1
     if not a.saida or not os.path.isdir(a.saida):
         print("pasta de saída inexistente: %s" % a.saida, file=sys.stderr)
         return 2
-    res = processa(a.saida, a.ids, a.refs, a.textos, degrau1=a.degrau1)
+    res = processa(a.saida, a.ids, a.refs, a.textos, degrau1=a.degrau1, degrau2=a.degrau2)
     limpa_nao_finitos(res)     # rede de segurança: o JSON final é estrito (allow_nan=False)
     with open(os.path.join(a.saida, "cmp-resultado.json"), "w", encoding="utf-8") as fo:
         json.dump(res, fo, ensure_ascii=False, indent=1, allow_nan=False)
