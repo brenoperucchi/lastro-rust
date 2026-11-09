@@ -123,7 +123,14 @@ struct Args {
     referencia_5c: PathBuf,
     /// `--novos` (uso normal do `--gera`): tokens novos no máximo.
     novos: Option<usize>,
+    /// `--so-texto` (prova `--gera`): roda só esse texto (curto, medio ou longo), em motor novo (medida FRIA).
+    so_texto: Option<String>,
+    /// `--repete N` (com `--so-texto`): 1 pedido de aquecimento descartado + N medidos no mesmo motor reutilizado (medida QUENTE).
+    repete: Option<usize>,
 }
+
+/// Limite de `--repete` (é medida de velocidade, não laço aberto).
+const REPETE_MAX: usize = 50;
 
 fn nome_valido(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
@@ -157,7 +164,7 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
         referencia: PathBuf::from(REFERENCIA_PADRAO), textos: PathBuf::from(TEXTOS_PADRAO), threads: 8, ensaio: false, cenario: None, rep: None, consolida: None,
         modelos: vec!["1b".into(), "3b".into()], texto: None, pedido: None, data: None, reutiliza: false,
         criterio_reset: PathBuf::from(CRITERIO_RESET_PADRAO),
-        criterio_5c: PathBuf::from(CRITERIO_5C_PADRAO), textos_5c: PathBuf::from(TEXTOS_5C_PADRAO), referencia_5c: PathBuf::from(REFERENCIA_5C_PADRAO), novos: None,
+        criterio_5c: PathBuf::from(CRITERIO_5C_PADRAO), textos_5c: PathBuf::from(TEXTOS_5C_PADRAO), referencia_5c: PathBuf::from(REFERENCIA_5C_PADRAO), novos: None, so_texto: None, repete: None,
     };
     let mut modelos_dados = false;
     let mut prova_reset = false;
@@ -226,6 +233,20 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
                 }
                 r.novos = Some(n);
             }
+            "--so-texto" => {
+                let t = val()?;
+                if !gr::PEDIDOS.contains(&t.as_str()) {
+                    return Err(format!("--so-texto curto, medio ou longo, não {t}"));
+                }
+                r.so_texto = Some(t);
+            }
+            "--repete" => {
+                let n: usize = val()?.parse().map_err(|_| "--repete".to_string())?;
+                if !(1..=REPETE_MAX).contains(&n) {
+                    return Err(format!("--repete de 1 a {REPETE_MAX}"));
+                }
+                r.repete = Some(n);
+            }
             _ => return Err(format!("opção desconhecida: {k}")),
         }
     }
@@ -258,6 +279,15 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
     }
     if modo != Modo::Gera && r.novos.is_some() {
         return Err("--novos é só do --gera".into());
+    }
+    if modo != Modo::Gera && (r.so_texto.is_some() || r.repete.is_some()) {
+        return Err("--so-texto e --repete são só do --gera".into());
+    }
+    if r.repete.is_some() && r.so_texto.is_none() {
+        return Err("--repete exige --so-texto".into());
+    }
+    if r.texto.is_some() && r.so_texto.is_some() {
+        return Err("--so-texto é da prova --gera (com --saida ou --ensaio), não do uso normal com --texto".into());
     }
     if r.consolida.is_some() {
         if modo == Modo::Livre {
@@ -793,20 +823,25 @@ fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> gr
         }
         let refs = refs.unwrap_or_default();
         let mut textos = vec![];
-        for n in gr::PEDIDOS {
+        for (idx, n) in gr::PEDIDOS.into_iter().enumerate() {
+            if args.so_texto.as_deref().is_some_and(|s| s != n) {
+                continue;
+            }
             let arq = args.textos_5c.join(format!("texto-{n}.txt"));
             let (t, _, _) = le_texto_de_arquivo(&arq)?;
             let ids = conta_ids(&tok, &t, &data)?;
             if ids + gr::N_NOVOS > MAX_LEN {
                 return Err(format!("texto {n}: {ids} ids mais {} novos não cabem em {MAX_LEN}", gr::N_NOVOS));
             }
-            textos.push((n, t, sha256(&arq)?));
+            textos.push((idx, n, t, sha256(&arq)?));
         }
         let host = carrega_host(mdir, &cfg)?;
         let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads };
         let mut guardado: MotorG = gr::MotorGeracao::novo();
         let mut parou: Option<String> = None;
-        for (i, (n, t, sha)) in textos.into_iter().enumerate() {
+        let t_repete = textos.first().map(|x| x.2.clone());
+        // Com `--repete` o pedido do laço é só o aquecimento (descartado); as medidas quentes vêm depois, sem entrar no registro de prova.
+        for (i, n, t, sha) in textos.into_iter() {
             let geracao = match &parou {
                 Some(e) => Err(format!("não executado: {e}")),
                 None => {
@@ -821,7 +856,26 @@ fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> gr
                     r
                 }
             };
-            rec.pedidos.push(gr::PedidoGeracao { indice: i, nome: n.to_string(), texto_sha256: sha, geracao, referencia: refs.get(i).cloned() });
+            if args.repete.is_none() {
+                rec.pedidos.push(gr::PedidoGeracao { indice: i, nome: n.to_string(), texto_sha256: sha, geracao, referencia: refs.get(i).cloned() });
+            } else if let Err(e) = geracao {
+                parou = Some(format!("erro no aquecimento: {e}"));
+            }
+        }
+        if let (Some(reps), Some(t), None) = (args.repete, t_repete, &parou) {
+            let n = args.so_texto.as_deref().unwrap_or("");
+            for k in 1..=reps {
+                match pedido_gera(&c, &tok, &t, Instant::now(), &data, &mut guardado, gr::CfgGera::prova()) {
+                    Ok(g) => println!("{nome} quente rep {k} ({n}): {} ids, {} novos, prefill {:.1} ms, {:.2} ms por token (mediana), total {:.1} ms, T_sequencia {:.3} ms", g.ids.len(), g.gerados.len(), g.prefill_ms, g.ms_por_token_mediana(), g.total_ms, g.sequencia_ms),
+                    Err(e) => {
+                        println!("{nome} quente rep {k} ({n}): ERRO {e}");
+                        rec.falha = Some(format!("erro na repetição quente {k}: {e}"));
+                        break;
+                    }
+                }
+            }
+        } else if let (Some(_), Some(e)) = (args.repete, &parou) {
+            rec.falha = Some(e.clone());
         }
         rec.criacoes = guardado.criacoes;
         guardado.encerra().map_err(|e| format!("encerramento do motor reutilizado: {e}"))
@@ -1923,6 +1977,40 @@ mod tests {
         // Os portões são os dos outros modos (a recusa vem antes de qualquer acesso ao device).
         assert!(exige_autorizacao(None).is_err() && exige_uuid(Some("outra")).is_err());
         assert_eq!(rr::CRITERIO_RESET_SHA.len(), 64);
+    }
+
+    #[test]
+    fn gera_so_texto_e_repete() {
+        let base = ["--gera", "--celula", "1b:/m", "--saida", "/o"];
+        let com = |extra: &[&str]| {
+            let mut x = base.to_vec();
+            x.extend_from_slice(extra);
+            parse_args(v(&x))
+        };
+        let p = com(&[]).unwrap();
+        assert_eq!((p.so_texto.clone(), p.repete), (None, None), "padrão = comportamento atual");
+        for t in ["curto", "medio", "longo"] {
+            assert_eq!(com(&["--so-texto", t]).unwrap().so_texto.as_deref(), Some(t));
+        }
+        let q = com(&["--so-texto", "medio", "--repete", "5"]).unwrap();
+        assert_eq!((q.so_texto.as_deref(), q.repete), (Some("medio"), Some(5)));
+        assert_eq!(com(&["--so-texto", "curto", "--repete", &REPETE_MAX.to_string()]).unwrap().repete, Some(REPETE_MAX));
+        assert!(parse_args(v(&["--gera", "--celula", "1b:/m", "--ensaio", "--so-texto", "longo"])).is_ok(), "ensaio aceita");
+        assert!(com(&["--repete", "5"]).is_err(), "--repete exige --so-texto");
+        for ruim in ["0", "-1", "x", "", &(REPETE_MAX + 1).to_string()] {
+            assert!(com(&["--so-texto", "curto", "--repete", ruim]).is_err(), "repete {ruim:?}");
+        }
+        for ruim in ["", "enorme", "Curto", "curto,medio"] {
+            assert!(com(&["--so-texto", ruim]).is_err(), "so-texto {ruim:?}");
+        }
+        assert!(com(&["--so-texto"]).is_err() && com(&["--so-texto", "curto", "--repete"]).is_err(), "sem valor");
+        // Só do --gera.
+        assert!(parse_args(v(&["--modo", "correcao", "--celula", "1b:/m", "--saida", "/o", "--so-texto", "curto"])).is_err());
+        assert!(parse_args(v(&["--modo", "livre", "--celula", "1b:/m", "--so-texto", "curto"])).is_err());
+        assert!(parse_args(v(&["--modo", "velocidade", "--estado", "quente", "--celula", "1b:/m", "--saida", "/o", "--repete", "2"])).is_err());
+        assert!(parse_args(v(&["--prova-reset", "--celula", "1b:/m", "--saida", "/o", "--so-texto", "curto"])).is_err());
+        // Não do uso normal com --texto.
+        assert!(parse_args(v(&["--gera", "--celula", "1b:/m", "--texto", "oi", "--so-texto", "curto"])).is_err());
     }
 
     #[test]
