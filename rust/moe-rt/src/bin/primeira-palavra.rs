@@ -808,7 +808,8 @@ fn pedido_gera(c: &Cenario, tok: &Tokenizador, texto: &str, t_entrada: Instant, 
 
 /// Os 3 pedidos de um modelo num único motor. Falha antes dos pedidos (config, pesos, texto que não cabe) deixa o registro sem pedidos; o
 /// primeiro erro de pedido para o laço e os seguintes ficam como erro ("não executado").
-fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> gr::RegistroGeracao {
+fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> (gr::RegistroGeracao, Vec<gr::MedidaGera>) {
+    let mut medidas: Vec<gr::MedidaGera> = vec![];
     let mut rec = gr::RegistroGeracao { modelo: nome.into(), integro: true, falha: None, pedidos: vec![], criacoes: 0, extras: vec![] };
     let r: Result<(), String> = (|| {
         let cfg = carrega_config(mdir)?;
@@ -841,13 +842,14 @@ fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> gr
         let mut parou: Option<String> = None;
         let t_repete = textos.first().map(|x| x.2.clone());
         // Com `--repete` o pedido do laço é só o aquecimento (descartado); as medidas quentes vêm depois, sem entrar no registro de prova.
-        for (i, n, t, sha) in textos.into_iter() {
+        let textos_laco = if args.repete.is_some() { vec![] } else { textos };
+        for (i, n, t, sha) in textos_laco.into_iter() {
             let geracao = match &parou {
                 Some(e) => Err(format!("não executado: {e}")),
                 None => {
                     let r = pedido_gera(&c, &tok, &t, Instant::now(), &data, &mut guardado, gr::CfgGera::prova());
                     match &r {
-                        Ok(g) => println!("{nome} pedido {i} ({n}): {} ids, {} novos, prefill {:.1} ms, {:.2} ms por token (mediana), total {:.1} ms, T_sequencia {:.3} ms", g.ids.len(), g.gerados.len(), g.prefill_ms, g.ms_por_token_mediana(), g.total_ms, g.sequencia_ms),
+                        Ok(g) => println!("{nome} pedido {i} ({n}): {} ids, {} novos, prefill {:.1} ms, {:.2} ms por token (mediana), total {:.1} ms, T_sequencia {:.3} ms{}", g.ids.len(), g.gerados.len(), g.prefill_ms, g.ms_por_token_mediana(), g.total_ms, g.sequencia_ms, sufixo_media(args, g)),
                         Err(e) => {
                             println!("{nome} pedido {i} ({n}): ERRO {e}");
                             parou = Some(format!("erro no pedido {i}: {e}"));
@@ -856,26 +858,25 @@ fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> gr
                     r
                 }
             };
-            if args.repete.is_none() {
-                rec.pedidos.push(gr::PedidoGeracao { indice: i, nome: n.to_string(), texto_sha256: sha, geracao, referencia: refs.get(i).cloned() });
-            } else if let Err(e) = geracao {
-                parou = Some(format!("erro no aquecimento: {e}"));
+            if args.so_texto.is_some() {
+                medidas.push(gr::MedidaGera { rotulo: "frio".into(), descartada: false, geracao: geracao.clone() });
             }
+            rec.pedidos.push(gr::PedidoGeracao { indice: i, nome: n.to_string(), texto_sha256: sha, geracao, referencia: refs.get(i).cloned() });
         }
-        if let (Some(reps), Some(t), None) = (args.repete, t_repete, &parou) {
+        if let (Some(reps), Some(t)) = (args.repete, t_repete) {
             let n = args.so_texto.as_deref().unwrap_or("");
-            for k in 1..=reps {
-                match pedido_gera(&c, &tok, &t, Instant::now(), &data, &mut guardado, gr::CfgGera::prova()) {
-                    Ok(g) => println!("{nome} quente rep {k} ({n}): {} ids, {} novos, prefill {:.1} ms, {:.2} ms por token (mediana), total {:.1} ms, T_sequencia {:.3} ms", g.ids.len(), g.gerados.len(), g.prefill_ms, g.ms_por_token_mediana(), g.total_ms, g.sequencia_ms),
-                    Err(e) => {
-                        println!("{nome} quente rep {k} ({n}): ERRO {e}");
-                        rec.falha = Some(format!("erro na repetição quente {k}: {e}"));
-                        break;
-                    }
-                }
+            let idx = gr::PEDIDOS.iter().position(|x| *x == n).unwrap_or(0);
+            let mut saida = std::io::stdout();
+            let serie = gr::gera_serie(&t, &data, &tok, &mut guardado, || sequencia_real(&c), reps, &mut saida, &mut |m| match &m.geracao {
+                Ok(g) if m.descartada => println!("{nome} pedido {idx} ({n}): {} ids, {} novos, prefill {:.1} ms, {:.2} ms por token (mediana), total {:.1} ms, T_sequencia {:.3} ms{}", g.ids.len(), g.gerados.len(), g.prefill_ms, g.ms_por_token_mediana(), g.total_ms, g.sequencia_ms, sufixo_media(args, g)),
+                Ok(g) => println!("{nome} {} ({n}): {} ids, {} novos, prefill {:.1} ms, {:.2} ms por token (mediana), total {:.1} ms, T_sequencia {:.3} ms{}", m.rotulo, g.ids.len(), g.gerados.len(), g.prefill_ms, g.ms_por_token_mediana(), g.total_ms, g.sequencia_ms, sufixo_media(args, g)),
+                Err(e) => println!("{nome} {} ({n}): ERRO {e}", if m.descartada { format!("pedido {idx}") } else { m.rotulo.clone() }),
+            });
+            if let Some(m) = serie.iter().find(|m| m.geracao.is_err()) {
+                let e = m.geracao.as_ref().err().cloned().unwrap_or_default();
+                rec.falha = Some(if m.descartada { format!("erro no aquecimento: {e}") } else { format!("erro na repetição quente {}: {e}", m.rotulo.trim_start_matches("quente rep ")) });
             }
-        } else if let (Some(_), Some(e)) = (args.repete, &parou) {
-            rec.falha = Some(e.clone());
+            medidas.extend(serie);
         }
         rec.criacoes = guardado.criacoes;
         guardado.encerra().map_err(|e| format!("encerramento do motor reutilizado: {e}"))
@@ -883,7 +884,16 @@ fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> gr
     if let Err(e) = r {
         rec.falha = Some(e);
     }
-    rec
+    (rec, medidas)
+}
+
+/// Com `--so-texto`/`--repete` a linha ganha a média por passo (soma dos passo_ms / nº de passos); sem eles a saída é a de antes.
+fn sufixo_media(args: &Args, g: &gr::Geracao) -> String {
+    if args.so_texto.is_some() || args.repete.is_some() {
+        format!(", média por passo {:.3} ms ({} passos)", g.media_por_passo_ms(), g.passo_ms.len())
+    } else {
+        String::new()
+    }
 }
 
 fn gera_prova(args: &Args, exe: &Path) -> Result<i32, String> {
@@ -908,7 +918,10 @@ fn gera_prova(args: &Args, exe: &Path) -> Result<i32, String> {
     let mut rotulos = vec![];
     let mut linhas = vec![];
     for (nome, mdir) in &args.celulas {
-        let mut rec = gera_modelo(nome, mdir, args, &device);
+        let (mut rec, medidas) = gera_modelo(nome, mdir, args, &device);
+        if let Some(t) = &args.so_texto {
+            grava_json(&args.saida.join(format!("medidas-{nome}.json")), &gr::medidas_json(nome, t, &medidas))?;
+        }
         integro = agora(integro);
         rec.integro = integro;
         rec.extras.extend(extras.iter().cloned());

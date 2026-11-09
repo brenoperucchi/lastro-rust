@@ -236,6 +236,90 @@ where
     Ok(Geracao { ids, gerados, gaps, passo_ms, sequencia_ms, prefill_ms, total_ms, texto: texto_saida, cont: Contadores::default() })
 }
 
+// ---- Medidas de velocidade (comparação com o llama.cpp, emenda 2 de 08/11) -----------------------------------------------------------
+
+/// Média por passo de realimentação = soma(passo_ms) / nº de passos (63 para 64 tokens). NaN sem passo. Nunca por diferença de totais.
+pub fn media_por_passo(passo_ms: &[f64]) -> f64 {
+    if passo_ms.is_empty() {
+        f64::NAN
+    } else {
+        passo_ms.iter().sum::<f64>() / passo_ms.len() as f64
+    }
+}
+
+impl Geracao {
+    /// Média por passo de decode (ver `media_por_passo`); `T_sequencia`, tokenização e prefill ficam de fora.
+    pub fn media_por_passo_ms(&self) -> f64 {
+        media_por_passo(&self.passo_ms)
+    }
+}
+
+/// Uma medida de velocidade: o pedido de aquecimento (descartada), a medida fria (única) ou uma repetição quente.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MedidaGera {
+    /// "frio", "aquecimento" ou "quente rep k".
+    pub rotulo: String,
+    pub descartada: bool,
+    pub geracao: Result<Geracao, String>,
+}
+
+/// JSON de uma medida: ids do prompt, gerados, passo_ms, tempos, contadores e a média por passo.
+pub fn medida_json(m: &MedidaGera) -> Value {
+    let base = match &m.geracao {
+        Ok(g) => json!({
+            "ids": g.ids, "ids_n": g.ids.len(), "gerados": g.gerados, "gerados_n": g.gerados.len(), "passo_ms": g.passo_ms, "passo_n": g.passo_ms.len(),
+            "prefill_ms": g.prefill_ms, "total_ms": g.total_ms, "T_sequencia_ms": g.sequencia_ms,
+            "media_por_passo_ms": num_ou_nulo(g.media_por_passo_ms()), "ms_por_token_mediana_descritiva": num_ou_nulo(g.ms_por_token_mediana()),
+            "cont": {"needed": g.cont.needed, "hits": g.cont.hits, "cpu": g.cont.cpu},
+            "fracao_cpu_needed": num_ou_nulo(if g.cont.needed > 0 { g.cont.cpu as f64 / g.cont.needed as f64 } else { f64::NAN }),
+            "falha": null,
+        }),
+        Err(e) => json!({"falha": e}),
+    };
+    let mut v = json!({"rotulo": m.rotulo, "descartada": m.descartada});
+    if let (Some(a), Some(b)) = (v.as_object_mut(), base.as_object()) {
+        a.extend(b.iter().map(|(k, x)| (k.clone(), x.clone())));
+    }
+    v
+}
+
+/// O arquivo `medidas-<nome>.json`: uma entrada por pedido, na ordem em que rodaram.
+pub fn medidas_json(modelo: &str, texto: &str, medidas: &[MedidaGera]) -> Value {
+    json!({
+        "tipo": "medidas-gera",
+        "modelo": modelo,
+        "texto": texto,
+        "novos": N_NOVOS,
+        "definicao": "media_por_passo_ms = soma(passo_ms)/len(passo_ms); total_ms e T_sequencia_ms ficam separados e nunca entram na média",
+        "medidas": medidas.iter().map(medida_json).collect::<Vec<_>>(),
+    })
+}
+
+/// Aquecimento descartado + `reps` medidas no mesmo motor reutilizado (`nova_sequencia`). O primeiro erro para a série (a medida com erro é
+/// guardada). `emite` é chamado a cada medida concluída, na ordem (para imprimir a linha).
+pub fn gera_serie<B, P, C>(texto: &str, data: &str, tok: &Tokenizador, r: &mut MotorGeracao<B, P>, mut cria: C, reps: usize, saida: &mut dyn Write,
+                           emite: &mut dyn FnMut(&MedidaGera)) -> Vec<MedidaGera>
+where
+    B: Backend,
+    P: PreparaPasso,
+    P::Error: Debug,
+    C: FnMut() -> Result<Sequencia<B, P>, String>,
+{
+    let mut v: Vec<MedidaGera> = vec![];
+    for k in 0..=reps {
+        let (rotulo, descartada) = if k == 0 { ("aquecimento".to_string(), true) } else { (format!("quente rep {k}"), false) };
+        let geracao = gera(Instant::now(), texto, data, tok, r, &mut cria, CfgGera::prova(), saida);
+        let m = MedidaGera { rotulo, descartada, geracao };
+        emite(&m);
+        let erro = m.geracao.is_err();
+        v.push(m);
+        if erro {
+            break;
+        }
+    }
+    v
+}
+
 // ---- A referência --------------------------------------------------------------------------------------------------------------------
 
 /// O que a referência do HF guarda de um pedido.
@@ -1019,5 +1103,63 @@ mod tests {
         assert_eq!(le_referencia(&v).unwrap(), vec![r]);
         assert!(le_referencia(&json!({"casos": [{"nome": "x"}]})).is_err());
         assert!(le_referencia(&json!({})).is_err());
+    }
+
+    #[test]
+    fn serie_quente_grava_aquecimento_e_duas_medidas_e_a_media_nao_inclui_a_criacao_do_motor() {
+        let t = tok();
+        let cont = Arc::new(Mutex::new(0usize));
+        let mut r: MotorGeracao<FakeGpu, Prep> = MotorGeracao::novo();
+        let mut saida: Vec<u8> = vec![];
+        let mut linhas = 0usize;
+        let c2 = cont.clone();
+        let c3 = cont.clone();
+        let mut chamadas = 0usize;
+        let v = gera_serie(TEXTOS[1], &data_fixa_texto(), &t, &mut r, move || {
+            chamadas += 1;
+            *c2.lock().unwrap() = 0;
+            std::thread::sleep(std::time::Duration::from_millis(250)); // atraso conhecido só na criação do motor
+            sequencia(&c3, None, 1.0, None)
+        }, 2, &mut saida, &mut |_| linhas += 1);
+        assert_eq!(r.criacoes, 1, "um motor só: o aquecimento cria, as medidas usam nova_sequencia");
+        r.encerra().unwrap();
+        assert_eq!((v.len(), linhas), (3, 3), "1 aquecimento + 2 medidas");
+        assert!(v[0].descartada && v[0].rotulo == "aquecimento" && !v[1].descartada && !v[2].descartada);
+        assert_eq!((v[1].rotulo.as_str(), v[2].rotulo.as_str()), ("quente rep 1", "quente rep 2"));
+        for m in &v {
+            let g = m.geracao.as_ref().unwrap();
+            assert_eq!((g.gerados.len(), g.passo_ms.len()), (64, 63));
+            let esperado = g.passo_ms.iter().sum::<f64>() / g.passo_ms.len() as f64;
+            assert!((g.media_por_passo_ms() - esperado).abs() < 1e-12);
+        }
+        let (a, q) = (v[0].geracao.as_ref().unwrap(), v[1].geracao.as_ref().unwrap());
+        assert!(a.sequencia_ms >= 250.0 && a.total_ms >= 250.0, "a criação do motor entra em T_sequencia e em total_ms do aquecimento");
+        assert!(q.sequencia_ms < 250.0 && q.total_ms < 250.0, "a repetição quente não paga a criação");
+        assert!(a.media_por_passo_ms() < 100.0, "a média de decode do aquecimento não carrega o atraso de 250 ms ({} ms)", a.media_por_passo_ms());
+        // total - prefill dividido por 63 NÃO é a média (contamina com a criação do motor).
+        assert!((a.total_ms - a.prefill_ms) / 63.0 > a.media_por_passo_ms() + 3.0);
+        // O JSON traz tudo por pedido.
+        let j = medidas_json("1b", "medio", &v);
+        let ms_ = j["medidas"].as_array().unwrap();
+        assert_eq!(ms_.len(), 3);
+        assert_eq!(ms_[0]["descartada"], json!(true));
+        assert_eq!(ms_[2]["gerados"].as_array().unwrap().len(), 64);
+        assert_eq!(ms_[2]["passo_ms"].as_array().unwrap().len(), 63);
+        assert!(!ms_[2]["ids"].as_array().unwrap().is_empty());
+        assert!(ms_[2]["cont"].get("needed").is_some() && ms_[2]["cont"].get("hits").is_some() && ms_[2]["cont"].get("cpu").is_some());
+        assert!((ms_[2]["media_por_passo_ms"].as_f64().unwrap() - media_por_passo(&v[2].geracao.as_ref().unwrap().passo_ms)).abs() < 1e-12);
+        assert!(media_por_passo(&[]).is_nan() && (media_por_passo(&[1.0, 2.0, 6.0]) - 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn serie_quente_para_no_primeiro_erro_e_guarda_a_medida_com_falha() {
+        let t = tok();
+        let cont = Arc::new(Mutex::new(0usize));
+        let mut r: MotorGeracao<FakeGpu, Prep> = MotorGeracao::novo();
+        let c2 = cont.clone();
+        let v = gera_serie(TEXTOS[0], &data_fixa_texto(), &t, &mut r, move || sequencia(&c2, None, 1.0, Some(10)), 3, &mut vec![], &mut |_| {});
+        assert_eq!(v.len(), 1, "erro no aquecimento para a série");
+        assert!(v[0].geracao.is_err() && v[0].descartada);
+        assert_eq!(medida_json(&v[0])["falha"].as_str().is_some(), true);
     }
 }
