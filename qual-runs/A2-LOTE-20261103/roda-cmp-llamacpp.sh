@@ -92,12 +92,13 @@ derruba() { # derruba o servidor e confere ausência de processo; retorna 1 se s
     SRV_PID=
   fi
   if [ -n "$PORTA" ]; then
-    if pgrep -f -- "--port $PORTA( |\$)" > /dev/null 2>&1; then pkill -KILL -f -- "--port $PORTA( |\$)" 2> /dev/null; sleep 0.2; PORTA=; return 1; fi
+    # padrão restrito (r111, rev-2): só processo de llama-server com ESTA porta (a porta veio do bind efêmero), nunca qualquer "--port N" da máquina
+    if pgrep -f -- "llama-server .*--port $PORTA( |\$)" > /dev/null 2>&1; then pkill -KILL -f -- "llama-server .*--port $PORTA( |\$)" 2> /dev/null; sleep 0.2; PORTA=; return 1; fi
     PORTA=
   fi
   return 0
 }
-cleanup() { derruba; "$MONITOR" para --pid-arq "$SAIDA/monitor.pid" 2> /dev/null; }
+cleanup() { derruba; "$MONITOR" para --pid-arq "$SAIDA/monitor.pid" 2> /dev/null; r_para=$?; }
 trap cleanup EXIT
 trap 'cleanup; exit 143' INT TERM HUP
 
@@ -107,7 +108,9 @@ printf '%s ' "$LLAMA" "${ARGS_BASE[@]}" "${ARGS_SERIE[@]}" "${ARGS_AQUEC[@]}" --
 INI=$(date +%s)
 "$MONITOR" portao --saida "$SAIDA/portao.txt"; PORTAO_RC=$?
 PORTAO_MOTIVO=$(grep '^portao=FALHA' "$SAIDA/portao.txt" 2> /dev/null | head -n 1 | cut -d' ' -f2- | tr -d '"\\' | tr '\n' ' ')
-"$MONITOR" inicia --csv "$SAIDA/monitor.csv" --pid-arq "$SAIDA/monitor.pid"
+MON_FALHAS=()
+"$MONITOR" inicia --csv "$SAIDA/monitor.csv" --pid-arq "$SAIDA/monitor.pid"; r=$?
+[ $r = 0 ] || MON_FALHAS+=("inicia rc=$r")
 
 # sobe um servidor (K = número do servidor): define SRV_PID e PORTA; grava servidor-K.log e carga-K.ms; retorna 1 se não ficou pronto
 sobe() {
@@ -161,13 +164,20 @@ else
   else FALHOU=1; fi
   termina_servidor
 fi
+# a coleta tem de estar viva até o fim da célula (r111, rev-1 P2); falha de inicia/para/avalia fica em celula.json ("monitor_falha") e o extrator trata como SEM PROVA
+MON_PID=$(cat "$SAIDA/monitor.pid" 2> /dev/null)
+{ [ -n "$MON_PID" ] && kill -0 "$MON_PID" 2> /dev/null; } || MON_FALHAS+=("coleta encerrada antes do fim da célula")
 FIM=$(date +%s)
+r_para=0
 cleanup
+[ "$r_para" = 0 ] || MON_FALHAS+=("para rc=$r_para")
+"$MONITOR" avalia --csv "$SAIDA/monitor.csv" > "$SAIDA/monitor-resumo.txt" 2>&1; r=$?
+if [ $r -gt 1 ] || grep -q '^sem amostras' "$SAIDA/monitor-resumo.txt" 2> /dev/null; then MON_FALHAS+=("avalia rc=$r"); fi
+MON_FALHA=$(printf '%s; ' "${MON_FALHAS[@]:-}" | tr -d '"\\' | sed -e 's/; $//')
 "$LLAMA" --version > "$SAIDA/version.txt" 2>&1 < /dev/null || echo "llama-server --version saiu com erro" >> "$SAIDA/version.txt"
 {
-  printf '{"lado": "llamacpp", "serie": "%s", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "fim_epoch": %s, "falhas": "%s"}\n' \
-    "$SERIE" "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$FALHOU" "$INI" "$FIM" "$(printf '%s; ' "${MOTIVOS[@]:-}" | tr -d '"\\')"
+  printf '{"lado": "llamacpp", "serie": "%s", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "fim_epoch": %s, "falhas": "%s", "monitor_falha": "%s"}\n' \
+    "$SERIE" "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$FALHOU" "$INI" "$FIM" "$(printf '%s; ' "${MOTIVOS[@]:-}" | tr -d '"\\')" "$MON_FALHA"
 } > "$SAIDA/celula.json"
-"$MONITOR" avalia --csv "$SAIDA/monitor.csv" > "$SAIDA/monitor-resumo.txt" 2>&1 || true
 [ $FALHOU = 0 ] || exit 1
 exit 0

@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import tempfile
+import time
 import unittest
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -15,6 +16,7 @@ _spec = importlib.util.spec_from_loader("cmp_extrai", importlib.machinery.Source
 X = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(X)
 
+EPOCH_INI, EPOCH_FIM = 1_700_000_000, 1_700_000_010      # início e fim (s) das células sintéticas; o monitor.csv as cobre a 1 Hz
 GERADOS = list(range(100, 164))          # 64 ids
 IDS = {"curto": [1, 2, 3, 4, 5], "medio": [1, 2, 3, 4, 5, 6, 7], "longo": [9] * 11}
 
@@ -50,8 +52,19 @@ class Base(unittest.TestCase):
 
     # ---- construtores de célula
     def celula_meta(self, nome, **kw):
+        kw.setdefault("inicio_epoch", EPOCH_INI)
+        kw.setdefault("fim_epoch", EPOCH_FIM)
         grava(os.path.join(self.saida, "celulas", nome, "celula.json"), kw)
-        return os.path.join(self.saida, "celulas", nome)
+        d = os.path.join(self.saida, "celulas", nome)
+        self.monitor(d, [60.0])
+        return d
+
+    def monitor(self, d, temps, ini=EPOCH_INI, fim=EPOCH_FIM, passo=1):
+        """monitor.csv sintético no formato do nvidia-smi: uma amostra a cada `passo` s de ini a fim (a coluna 5 cicla por `temps`)."""
+        linhas = []
+        for i, t_ in enumerate(range(ini, fim + 1, passo)):
+            linhas.append("%s.000, 5, 2000, 10000, %s, 100" % (time.strftime("%Y/%m/%d %H:%M:%S", time.localtime(t_)), temps[i % len(temps)]))
+        grava(os.path.join(d, "monitor.csv"), "\n".join(linhas) + "\n")
 
     def lastro(self, m="1b", t="curto", estado="frio", n=3, prefill=100.0, passo=2.0, passos=None, gerados=None, ids=None, cpu=90, needed=100, portao=True,
                prefill_k=None, rc=0):
@@ -290,11 +303,17 @@ class TestCelulas(Base):
         r = self.razao(self.roda())
         self.assertEqual(r["status"], "SEM PROVA")
         self.assertTrue(any("portão" in x for x in r["motivos"]))
+        # emenda 6 (2): a linha 'warming up' no log do frio é só INFORMATIVA (LOG_TRC, não sai na verbosidade padrão): não é prova nem falha
         self.lastro(estado="frio", n=3)
         self.llama(estado="frio", serie="S1", n=3, warm_log=True)
-        r = self.razao(self.roda())
-        self.assertEqual(r["status"], "SEM PROVA")
-        self.assertTrue(any("warming up" in x for x in r["motivos"]))
+        res = self.roda()
+        r = self.razao(res)
+        self.assertEqual(r["status"], "OK")
+        self.assertTrue(any("warming up" in x for x in res["celulas"]["llamacpp-1b-S1-curto-frio"]["observacoes"]))
+        self.assertIn("Observações informativas", X.relatorio(res))
+        # sem a linha no log (o caso normal) o frio continua OK: a ausência não prova nada, a prova é a linha de comando
+        self.llama(estado="frio", serie="S1", n=3)
+        self.assertEqual(self.razao(self.roda())["status"], "OK")
         self.llama(estado="frio", serie="S1", n=3, quente_cmd="llama-server --host 127.0.0.1 -ngl 99")
         self.assertTrue(any("--no-warmup" in x for x in self.razao(self.roda())["motivos"]))
         self.llama(estado="quente", serie="S1", n=5, quente_cmd="llama-server --host 127.0.0.1 --no-warmup")
@@ -304,11 +323,11 @@ class TestCelulas(Base):
     def test_temperatura_acima_de_80_sem_prova_e_integridade_quebrada(self):
         self.lastro(estado="frio", n=3)
         d = self.llama(estado="frio", serie="S1", n=3)
-        grava(os.path.join(d, "monitor.csv"), "t, 5, 2000, 10000, 81, 100\nt, 5, 2000, 10000, 70, 100\n")
+        self.monitor(d, [81.0, 70.0])
         r = self.razao(self.roda())
         self.assertEqual(r["status"], "SEM PROVA")
         self.assertTrue(any("temperatura" in x for x in r["motivos"]))
-        grava(os.path.join(d, "monitor.csv"), "t, 5, 2000, 5000, 79, 100\n")        # clock de memória diferente: só registrado
+        self.monitor(d, [79.0])        # 79 C passa
         self.assertEqual(self.razao(self.roda())["status"], "OK")
         self.integra(depois="binario xxx\ngguf def\n")
         res = self.roda()
@@ -370,6 +389,235 @@ class TestCelulas(Base):
         self.assertTrue(r["descritivo"])
         self.assertIn("Lastro 10% experts GPU", open(os.path.join(self.saida, "cmp-resultado.md"), encoding="utf-8").read())
         self.assertEqual(X.main(["--saida", os.path.join(self.d, "nao-existe")]), 2)
+
+
+class TestMonitorFechado(Base):
+    """r111, rev-1 P2: sem prova de temperatura (monitor ausente, vazio, ilegível, coleta que não cobre a célula) a célula é SEM PROVA e a razão não sai."""
+
+    def par(self):
+        self.lastro(estado="frio", n=2)
+        return self.llama(estado="frio", serie="S1", n=2)
+
+    def sem_prova(self, trecho):
+        r = self.razao(self.roda())
+        self.assertEqual(r["status"], "SEM PROVA", r)
+        self.assertNotIn("prefill", r)
+        self.assertNotIn("decode", r)
+        self.assertTrue(any(trecho in x for x in r["motivos"]), r["motivos"])
+
+    def test_baseline_ok_e_79_81(self):
+        d = self.par()
+        self.assertEqual(self.razao(self.roda())["status"], "OK")
+        self.monitor(d, [79.0])
+        self.assertEqual(self.razao(self.roda())["status"], "OK")
+        self.monitor(d, [81.0])
+        self.sem_prova("temperatura")
+
+    def test_monitor_ausente(self):
+        d = self.par()
+        os.remove(os.path.join(d, "monitor.csv"))
+        self.sem_prova("monitor.csv ausente")
+
+    def test_monitor_vazio_e_so_linhas_ilegiveis(self):
+        d = self.par()
+        grava(os.path.join(d, "monitor.csv"), "")
+        self.sem_prova("sem amostra de temperatura legível")
+        grava(os.path.join(d, "monitor.csv"), "No devices were found\nlixo, x\nt, 1, 2, 3, abc, 5\nt, 1, 2, 3, nan, 5\n")
+        self.sem_prova("sem amostra de temperatura legível")
+
+    def test_coleta_morta_depois_de_uma_amostra_inicial(self):
+        d = self.par()
+        self.monitor(d, [60.0], fim=EPOCH_INI)          # só a amostra do 1º segundo; a célula durou 10 s
+        self.sem_prova("a coleta do monitor parou")
+
+    def test_lacuna_na_coleta(self):
+        d = self.par()
+        self.monitor(d, [60.0], passo=20)                # amostras em 0, 20 e... só 0 (fim 10): reforça com intervalo longo
+        grava(os.path.join(d, "celula.json"), dict(json.load(open(os.path.join(d, "celula.json"))), fim_epoch=EPOCH_INI + 40))
+        self.monitor(d, [60.0], ini=EPOCH_INI, fim=EPOCH_INI + 40, passo=20)
+        self.sem_prova("lacuna")
+
+    def test_falha_de_coleta_registrada_no_metadata_e_sem_epochs(self):
+        d = self.par()
+        meta = json.load(open(os.path.join(d, "celula.json")))
+        grava(os.path.join(d, "celula.json"), dict(meta, monitor_falha="inicia rc=3"))
+        self.sem_prova("falha do monitor registrada")
+        m2 = dict(meta)
+        del m2["fim_epoch"]
+        grava(os.path.join(d, "celula.json"), m2)
+        self.sem_prova("inicio_epoch/fim_epoch")
+
+    def test_carimbo_ilegivel_nao_verifica_cobertura(self):
+        d = self.par()
+        grava(os.path.join(d, "monitor.csv"), "t, 5, 2000, 10000, 60, 100\n")
+        self.sem_prova("carimbos de tempo")
+
+    def test_lastro_tambem(self):
+        d = self.lastro(estado="frio", n=2)
+        self.llama(estado="frio", serie="S1", n=2)
+        os.remove(os.path.join(d, "monitor.csv"))
+        self.sem_prova("monitor.csv ausente")
+
+
+class TestNumerosFechados(Base):
+    """r111, rev-1 P2: tempos negativos ou não finitos nunca viram razão OK; o JSON final é estrito."""
+
+    def par(self, **kw):
+        self.lastro(estado="frio", n=2, **kw)
+        self.llama(estado="frio", serie="S1", n=2)
+
+    def sem_prova(self, trecho=None):
+        res = self.roda()
+        r = self.razao(res)
+        self.assertEqual(r["status"], "SEM PROVA", r)
+        self.assertNotIn("prefill", r)
+        self.assertNotIn("decode", r)
+        if trecho:
+            self.assertTrue(any(trecho in x for x in r["motivos"]), r["motivos"])
+        self.estrito()
+        return res
+
+    def estrito(self):
+        def rej(c):
+            raise AssertionError("constante não finita no JSON final: " + c)
+        self.assertEqual(X.main(["--saida", self.saida, "--ids", self.ids, "--refs", self.refs, "--textos", self.textos]), 0)
+        with open(os.path.join(self.saida, "cmp-resultado.json"), encoding="utf-8") as f:
+            texto = f.read()
+        json.loads(texto, parse_constant=rej)
+        for lixo in ("NaN", "Infinity"):
+            self.assertNotIn(lixo, texto)
+
+    def reescreve(self, arq, de, para):
+        with open(arq, encoding="utf-8") as f:
+            t = f.read()
+        self.assertIn(de, t)
+        with open(arq, "w", encoding="utf-8") as f:
+            f.write(t.replace(de, para, 1))
+
+    def medidas(self, p="p1"):
+        return os.path.join(self.saida, "celulas", "lastro-1b-L-curto-frio", p, "saida", "medidas-1b.json")
+
+    def resp(self, k=1):
+        return os.path.join(self.saida, "celulas", "llamacpp-1b-S1-curto-frio", "resp-%d.json" % k)
+
+    def test_baseline_ok(self):
+        self.par()
+        self.assertEqual(self.razao(self.roda())["status"], "OK")
+        self.estrito()
+
+    def test_passo_negativo_lastro(self):
+        self.par(passos=[[2.0] * 62 + [-1.0]] * 3)
+        self.sem_prova("passo_ms fora do domínio")
+
+    def test_passo_zero_lastro(self):
+        self.par(passos=[[0.0] * 63] * 3)
+        self.sem_prova("passo_ms fora do domínio")
+
+    def test_prefill_negativo_lastro(self):
+        self.par(prefill=-5.0)
+        self.sem_prova("prefill_ms fora do domínio")
+
+    def test_passo_negativo_e_prefill_negativo_llama(self):
+        self.par()
+        r = json.load(open(self.resp()))
+        r["timings"]["predicted_per_token_ms"] = -2.0
+        grava(self.resp(), r)
+        self.sem_prova("predicted_per_token_ms fora do domínio")
+        r["timings"]["predicted_per_token_ms"] = 2.0
+        r["timings"]["prompt_ms"] = -1.0
+        grava(self.resp(), r)
+        self.sem_prova("prompt_ms fora do domínio")
+
+    def test_nan_e_infinity_nos_arquivos_json(self):
+        self.par()
+        for ruim in ("NaN", "Infinity", "-Infinity"):
+            self.par()
+            self.reescreve(self.medidas(), '"prefill_ms": 100.0', '"prefill_ms": %s' % ruim)
+            self.sem_prova()
+            self.par()
+            self.reescreve(self.resp(), '"prompt_ms": 50.0', '"prompt_ms": %s' % ruim)
+            self.sem_prova()
+
+    def test_nan_e_infinity_na_media_guardada_e_passos(self):
+        for ruim in ("NaN", "Infinity"):
+            self.par()
+            self.reescreve(self.medidas(), '"media_por_passo_ms": 2.0', '"media_por_passo_ms": %s' % ruim)
+            self.sem_prova()
+        self.par()
+        self.reescreve(self.medidas("p1"), "[2.0, ", "[NaN, ")
+        self.sem_prova()
+
+    def test_expoente_que_estoura(self):
+        self.par()
+        self.reescreve(self.medidas(), '"prefill_ms": 100.0', '"prefill_ms": 1e999')
+        self.sem_prova("prefill_ms")
+        self.par()
+        self.reescreve(self.medidas(), "[2.0, ", "[1e999, ")
+        self.sem_prova("passo_ms")
+        self.par()
+        self.reescreve(self.resp(), '"predicted_per_token_ms": 1.8', '"predicted_per_token_ms": 1e999')
+        self.sem_prova("predicted_per_token_ms")
+        self.par()
+        self.reescreve(self.resp(), '"prompt_ms": 50.0', '"prompt_ms": 1e999')
+        self.sem_prova("prompt_ms")
+
+    def test_soma_que_estoura_o_float(self):
+        # cada passo é finito, mas a soma não: o extrator não pode devolver média infinita
+        self.par()
+        with open(self.medidas(), encoding="utf-8") as f:
+            mj = json.load(f)
+        mj["medidas"][0]["passo_ms"] = [1e308] * 63
+        mj["medidas"][0]["media_por_passo_ms"] = 1e308
+        grava(self.medidas(), mj)
+        self.sem_prova("não finita")
+
+    def test_total_e_wall_invalidos(self):
+        self.par()
+        self.reescreve(self.medidas(), '"total_ms": 726.0', '"total_ms": -1')
+        self.sem_prova("total_ms fora do domínio")
+        self.par()
+        grava(os.path.join(self.saida, "celulas", "lastro-1b-L-curto-frio", "p1", "wall_ms.txt"), "nan\n")
+        self.sem_prova("wall_ms.txt ilegível ou não finito")
+        self.par()
+        grava(os.path.join(self.saida, "celulas", "lastro-1b-L-curto-frio", "p1", "wall_ms.txt"), "-5\n")
+        self.sem_prova("wall_ms.txt negativo")
+        self.par()
+        grava(os.path.join(self.saida, "celulas", "llamacpp-1b-S1-curto-frio", "carga-1.ms"), "inf\n")
+        self.sem_prova("carga-1.ms ilegível ou não finito")
+
+    def test_primitivos(self):
+        for ruim in (float("nan"), float("inf"), True, "2", None, -1.0):
+            with self.assertRaises(ValueError):
+                X.num(ruim, "x")
+        for ruim in (0, 0.0, -0.1):
+            with self.assertRaises(ValueError):
+                X.num(ruim, "x", True)
+        with self.assertRaises(ValueError):
+            X.num(10 ** 400, "x")
+        self.assertEqual(X.num(0, "x"), 0.0)
+        for t in ({"predicted_per_token_ms": float("nan")}, {"predicted_per_token_ms": -1}, {"predicted_n": 1, "predicted_ms": 5.0}, {"predicted_n": 64, "predicted_ms": float("inf")},
+                  {"predicted_n": True, "predicted_ms": 5.0}, {"predicted_n": 64, "predicted_ms": 1e-320 * 0}):
+            with self.assertRaises(ValueError):
+                X.passo_llama(t)
+
+
+class TestModelosDaJanela(Base):
+    """Emenda 6: uma janela por modelo; o outro modelo não vira NÃO RODOU."""
+
+    def test_so_o_modelo_declarado(self):
+        self.lastro(estado="frio", n=2)
+        self.llama(estado="frio", serie="S1", n=2)
+        grava(os.path.join(self.saida, "orcamento.json"), {"modelos": ["1b"], "cortes": []})
+        res = self.roda()
+        self.assertTrue(all(r["modelo"] == "1b" for r in res["razoes"]))
+        self.assertFalse(any(k.startswith(("lastro-3b", "llamacpp-3b")) for k in res["celulas"]))
+        self.assertEqual(res["modelos_da_janela"], ["1b"])
+        self.assertIn("Janela do(s) modelo(s): 1b", X.relatorio(res))
+        grava(os.path.join(self.saida, "orcamento.json"), {"modelos": ["3b"], "cortes": []})
+        res = self.roda()
+        self.assertTrue(all(r["modelo"] == "3b" and r["status"] == "NÃO RODOU" for r in res["razoes"]))
+        grava(os.path.join(self.saida, "orcamento.json"), {"cortes": []})
+        self.assertEqual({r["modelo"] for r in self.roda()["razoes"]}, {"1b", "3b"})
 
 
 if __name__ == "__main__":

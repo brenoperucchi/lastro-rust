@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extrator da comparação Lastro x llama.cpp (opção d), conforme criterio-comparacao-llamacpp-20261108.md (emendas 1 a 4).
+"""Extrator da comparação Lastro x llama.cpp (opção d), conforme criterio-comparacao-llamacpp-20261108.md (emendas 1 a 6).
 
     python3 -I cmp-extrai.py --saida DIR_DA_JANELA [--ids cmp-ids-prompt.json] [--refs 5c-referencia] [--textos 5c-textos/textos.json]
 
@@ -18,14 +18,18 @@ Lastro mais rápido). Nada é estimado: sem prova ou não rodou, não há razão
 """
 import argparse
 import json
+import math
 import os
 import statistics
 import sys
+import time
 
 NOVOS = 64
 PASSOS = NOVOS - 1
 RUIDOSA = 0.15            # emenda 4, item 2 (palpite declarado antes dos dados)
 TEMP_MAX = 80.0           # item (4) (palpite declarado antes dos dados)
+COBERTURA_TOL = 5.0       # r111: a última amostra do monitor tem de ficar a no máximo 5 s antes do fim da célula
+LACUNA_MAX = 10.0         # r111: intervalo máximo entre amostras consecutivas do monitor (a coleta é a 1 Hz)
 EMPATE = 1e-3             # item (2): gap da referência abaixo disto = empate
 DIFERE_RAZOES = 1.5       # E7
 FATIA = 0.30              # E7
@@ -62,23 +66,69 @@ def estat(v):
     return {"n": len(v), "mediana": med, "min": mn, "max": mx, "ruidosa": bool(ruidosa), "valores": list(v)}
 
 
+def num(v, nome, positivo=False):
+    """Número JSON finito (r111, rev-1 P2): recusa bool, texto, NaN, Infinity e o que estoura o float. positivo=True exige > 0 (passos e prefill); senão >= 0."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise ValueError("%s não é número (%r)" % (nome, v))
+    try:
+        x = float(v)
+    except OverflowError:
+        raise ValueError("%s fora do intervalo do float" % nome)
+    if not math.isfinite(x):
+        raise ValueError("%s não finito (%r)" % (nome, v))
+    if (positivo and x <= 0) or x < 0:
+        raise ValueError("%s fora do domínio (%s, esperado %s)" % (nome, x, "> 0" if positivo else ">= 0"))
+    return x
+
+
 def media_por_passo(passo_ms):
     return sum(passo_ms) / len(passo_ms)
 
 
 def passo_llama(t):
-    """ms por passo de decode do llama.cpp: predicted_per_token_ms; sem o campo, predicted_ms/(predicted_n-1) (63 passos, nunca /64)."""
+    """ms por passo de decode do llama.cpp: predicted_per_token_ms; sem o campo, predicted_ms/(predicted_n-1) (63 passos, nunca /64).
+    Levanta ValueError se o valor não for finito e positivo."""
     if t.get("predicted_per_token_ms") is not None:
-        return float(t["predicted_per_token_ms"]), "predicted_per_token_ms"
-    return float(t["predicted_ms"]) / (int(t["predicted_n"]) - 1), "predicted_ms/(predicted_n-1)"
+        return num(t["predicted_per_token_ms"], "predicted_per_token_ms", True), "predicted_per_token_ms"
+    n = t.get("predicted_n")
+    if isinstance(n, bool) or not isinstance(n, int) or n < 2:
+        raise ValueError("predicted_n inválido para predicted_ms/(predicted_n-1): %r" % (n,))
+    v = num(t.get("predicted_ms"), "predicted_ms", True) / (n - 1)
+    if not math.isfinite(v):
+        raise ValueError("passo calculado não finito")
+    return v, "predicted_ms/(predicted_n-1)"
+
+
+def _rejeita_constante(c):
+    raise ValueError("constante JSON não finita: %s" % c)
+
+
+def limpa_nao_finitos(o):
+    """Troca por None todo float não finito dentro de o (dict/list) e devolve True se achou algum (rede de segurança: o JSON final é estrito)."""
+    achou = False
+    if isinstance(o, dict):
+        for k in list(o):
+            if isinstance(o[k], float) and not math.isfinite(o[k]):
+                o[k] = None
+                achou = True
+            elif isinstance(o[k], (dict, list)):
+                achou = limpa_nao_finitos(o[k]) or achou
+    elif isinstance(o, list):
+        for i, x in enumerate(o):
+            if isinstance(x, float) and not math.isfinite(x):
+                o[i] = None
+                achou = True
+            elif isinstance(x, (dict, list)):
+                achou = limpa_nao_finitos(x) or achou
+    return achou
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------- leitura
 def le_json(p):
     try:
         with open(p, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
+            return json.load(f, parse_constant=_rejeita_constante)
+    except (OSError, ValueError, RecursionError):
         return None
 
 
@@ -93,9 +143,21 @@ def le_txt(p):
 def le_num(p):
     t = le_txt(p)
     try:
-        return float(t.strip().split()[0])
+        x = float(t.strip().split()[0])
     except (AttributeError, ValueError, IndexError):
         return None
+    return x if math.isfinite(x) else None
+
+
+def le_num_dom(p, nome, mot):
+    """Como le_num, mas se o arquivo existe e o valor é ilegível, não finito ou negativo, registra o motivo (SEM PROVA da célula)."""
+    x = le_num(p)
+    if x is None and le_txt(p) is not None:
+        mot.append("%s ilegível ou não finito" % nome)
+    elif x is not None and x < 0:
+        mot.append("%s negativo (%s)" % (nome, x))
+        return None
+    return x
 
 
 def le_chave_valor(p):
@@ -158,21 +220,76 @@ def integridade(saida):
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------- células
-def temp_max_csv(p):
-    """Maior temperatura (5ª coluna do monitor.csv: timestamp,util,sm,mem,temp,memoria usada)."""
+def ts_epoch(txt):
+    """Carimbo do nvidia-smi ('2026/11/08 19:14:28.123', hora local) em segundos; None se ilegível."""
+    base, _, frac = txt.strip().partition(".")
+    try:
+        t = time.mktime(time.strptime(base, "%Y/%m/%d %H:%M:%S"))
+        return t + float("0." + frac) if frac.isdigit() else t
+    except (ValueError, OverflowError):
+        return None
+
+
+def le_monitor(p):
+    """(temperaturas, carimbos) das linhas legíveis do monitor.csv (timestamp,util,sm,mem,temp,memoria); None se o arquivo não existe. Linha ilegível é ignorada."""
     t = le_txt(p)
     if t is None:
         return None
-    mx = None
+    temps, stamps = [], []
     for linha in t.splitlines():
         c = [x.strip() for x in linha.split(",")]
-        if len(c) >= 5:
-            try:
-                v = float(c[4])
-            except ValueError:
-                continue
-            mx = v if mx is None else max(mx, v)
-    return mx
+        if len(c) < 5:
+            continue
+        try:
+            v = float(c[4])
+        except ValueError:
+            continue
+        if not math.isfinite(v):
+            continue
+        temps.append(v)
+        stamps.append(ts_epoch(c[0]))
+    return temps, stamps
+
+
+def temp_max_csv(p):
+    """Maior temperatura legível (5ª coluna do monitor.csv); None se não há nenhuma."""
+    r = le_monitor(p)
+    return max(r[0]) if r and r[0] else None
+
+
+def analisa_monitor(d, meta):
+    """Falha FECHADA (r111, rev-1 P2): sem temperatura legível, com falha de coleta registrada, com coleta que não cobre a célula ou com > 80 C, a célula é SEM PROVA."""
+    mot = []
+    if meta.get("monitor_falha"):
+        mot.append("falha do monitor registrada pelo roteiro: %s" % meta.get("monitor_falha"))
+    r = le_monitor(os.path.join(d, "monitor.csv"))
+    if r is None:
+        mot.append("monitor.csv ausente: sem prova de temperatura da GPU")
+        return mot, None
+    temps, stamps = r
+    if not temps:
+        mot.append("monitor.csv vazio ou sem amostra de temperatura legível: sem prova de temperatura da GPU")
+        return mot, None
+    tm = max(temps)
+    if tm > TEMP_MAX:
+        mot.append("temperatura da GPU %.0f C > %.0f C em amostra da célula" % (tm, TEMP_MAX))
+    try:
+        ini, fim = num(meta.get("inicio_epoch"), "inicio_epoch"), num(meta.get("fim_epoch"), "fim_epoch")
+    except ValueError:
+        mot.append("celula.json sem inicio_epoch/fim_epoch legíveis: cobertura do monitor não verificável")
+        return mot, tm
+    if None in stamps:
+        mot.append("carimbos de tempo do monitor.csv ilegíveis: cobertura não verificável")
+        return mot, tm
+    ts = sorted(stamps)
+    if ts[-1] < fim - COBERTURA_TOL:
+        mot.append("a coleta do monitor parou %.0f s antes do fim da célula (última amostra antes do fim - %.0f s)" % (fim - ts[-1], COBERTURA_TOL))
+    elif ts[0] > fim:
+        mot.append("amostras do monitor todas depois do fim da célula")
+    lac = max((b - a for a, b in zip(ts, ts[1:])), default=0.0)
+    if lac > LACUNA_MAX:
+        mot.append("lacuna de %.0f s na coleta do monitor (máximo %.0f s)" % (lac, LACUNA_MAX))
+    return mot, tm
 
 
 def base_celula(d, meta):
@@ -183,10 +300,8 @@ def base_celula(d, meta):
         mot.append("portão antes da célula sem registro")
     if meta.get("rc") not in (None, 0):
         mot.append("o roteiro da célula terminou com código %s (%s)" % (meta.get("rc"), meta.get("falhas", "")))
-    tm = temp_max_csv(os.path.join(d, "monitor.csv"))
-    if tm is not None and tm > TEMP_MAX:
-        mot.append("temperatura da GPU %.0f C > %.0f C em amostra da célula" % (tm, TEMP_MAX))
-    return mot, tm
+    m2, tm = analisa_monitor(d, meta)
+    return mot + m2, tm
 
 
 def le_celula_lastro(d, meta, refs):
@@ -200,7 +315,7 @@ def le_celula_lastro(d, meta, refs):
         pd = os.path.join(d, p)
         k = int(p[1:])
         rc = le_num(os.path.join(pd, "rc.txt"))
-        wall = le_num(os.path.join(pd, "wall_ms.txt"))
+        wall = le_num_dom(os.path.join(pd, "wall_ms.txt"), "%s/wall_ms.txt" % p, mot)
         if rc is None or int(rc) != 0:
             mot.append("%s: execução com erro ou código != 0 (rc=%s)" % (p, "?" if rc is None else int(rc)))
         sd = os.path.join(pd, "saida")
@@ -220,22 +335,56 @@ def le_celula_lastro(d, meta, refs):
         if mj.get("modelo") != m or mj.get("texto") != t:
             mot.append("%s: medidas-%s.json é de %s/%s, não %s/%s" % (p, m, mj.get("modelo"), mj.get("texto"), m, t))
         entradas = mj.get("medidas", [])
+        if not isinstance(entradas, list):
+            mot.append("%s: medidas-%s.json sem lista de medidas" % (p, m))
+            continue
         ignora = est == "frio" and k == 0   # processo descartado do frio (o "aquecimento" do item (3)): só conferido, nunca medido
         soma_total = 0.0
         t_seq_primeira = None
+        soma_valida = True
         for e in entradas:
+            if not isinstance(e, dict):
+                mot.append("%s: entrada de medida inválida" % p)
+                soma_valida = False
+                continue
             if e.get("falha"):
                 mot.append("%s: pedido '%s' com falha: %s" % (p, e.get("rotulo"), e.get("falha")))
                 continue
-            soma_total += float(e.get("total_ms") or 0)
+            rot = "%s/%s" % (p, e.get("rotulo"))
+            try:
+                tot = num(e.get("total_ms"), "total_ms")
+                tseq = num(e.get("T_sequencia_ms"), "T_sequencia_ms")
+                soma_total += tot
+            except ValueError as ex:
+                mot.append("%s: valor numérico inválido: %s" % (rot, ex))
+                soma_valida = False
+                continue
             if t_seq_primeira is None:
-                t_seq_primeira = float(e.get("T_sequencia_ms") or 0)
+                t_seq_primeira = tseq
             if e.get("descartada") or ignora:
                 continue
-            passo = e.get("passo_ms") or []
             g = e.get("gerados") or []
             ids = e.get("ids") or []
-            rot = "%s/%s" % (p, e.get("rotulo"))
+            lista = e.get("passo_ms")
+            try:
+                if not isinstance(lista, list):
+                    raise ValueError("passo_ms ausente ou não é lista")
+                passo = [num(x, "passo_ms", True) for x in lista]
+                pre = num(e.get("prefill_ms"), "prefill_ms", True)
+                cont = e.get("cont") or {}
+                if not isinstance(cont, dict):
+                    raise ValueError("cont não é objeto")
+                needed, cpu_, hits_ = (num(cont.get(k) or 0, "cont." + k) for k in ("needed", "cpu", "hits"))
+                guardada = None if e.get("media_por_passo_ms") is None else num(e.get("media_por_passo_ms"), "media_por_passo_ms")
+                if not passo:
+                    mp = None
+                else:
+                    mp = media_por_passo(passo)
+                    if not (math.isfinite(mp) and math.isfinite(sum(passo))):
+                        raise ValueError("média ou soma dos passos não finita (estouro do float)")
+            except (ValueError, TypeError, OverflowError) as ex:
+                mot.append("%s: valor numérico inválido: %s" % (rot, ex))
+                continue
             if len(g) != NOVOS:
                 mot.append("%s: %d tokens gerados, não %d (contagem divergente)" % (rot, len(g), NOVOS))
             if len(passo) != PASSOS:
@@ -248,22 +397,15 @@ def le_celula_lastro(d, meta, refs):
                 mot.append("%s: prompt com %d ids, esperado %d" % (rot, len(ids), nesp))
             if not passo:
                 continue
-            mp = media_por_passo(passo)
-            guardada = e.get("media_por_passo_ms")
-            if guardada is None or abs(float(guardada) - mp) > 1e-6 * max(1.0, mp):
+            if guardada is None or abs(guardada - mp) > 1e-6 * max(1.0, mp):
                 mot.append("%s: media_por_passo_ms guardada (%s) não bate com soma/len (%.6f)" % (rot, guardada, mp))
-            tot = float(e.get("total_ms") or 0)
-            tseq = float(e.get("T_sequencia_ms") or 0)
-            pre = float(e["prefill_ms"])
-            cont = e.get("cont") or {}
-            needed = cont.get("needed") or 0
             meds.append({
                 "processo": p, "rotulo": e.get("rotulo"), "prefill_ms": pre, "decode_ms_passo": mp, "mediana_passos_descritiva": statistics.median(passo),
                 "total_ms": tot, "T_sequencia_ms": tseq, "soma_passos_ms": sum(passo), "gerados": g, "ids_n": len(ids), "cont": cont,
-                "fracao_cpu_needed": (cont.get("cpu", 0) / needed) if needed else None,
-                "fracao_hits_needed": (cont.get("hits", 0) / needed) if needed else None,
+                "fracao_cpu_needed": (cpu_ / needed) if needed else None,
+                "fracao_hits_needed": (hits_ / needed) if needed else None,
             })
-        if wall is not None and entradas and not any(e.get("falha") for e in entradas):
+        if wall is not None and soma_valida and entradas and not any(e.get("falha") for e in entradas):
             walls.append((k, wall))
             if (est == "frio" and k >= 1 and len(entradas) == 1) or est == "quente":
                 cargas.append(wall - soma_total + (t_seq_primeira or 0.0))
@@ -287,10 +429,13 @@ def le_celula_llama(d, meta, refs):
     if not (le_txt(os.path.join(d, "version.txt")) or "").strip():
         mot.append("sem llama-server --version gravado")
     logs = sorted(x for x in os.listdir(d) if x.startswith("servidor-") and x.endswith(".log"))
+    # emenda 6 (2): a prova do frio sem aquecimento é a linha de comando gravada com --no-warmup. A linha 'warming up the model' é LOG_TRC no build 0893ec9
+    # e não sai na verbosidade padrão: a checagem do log é só INFORMATIVA (não é prova nem falha).
+    obs = []
     if est == "frio":
         for lg in logs:
             if "warming up" in (le_txt(os.path.join(d, lg)) or "").lower():
-                mot.append("%s tem a linha 'warming up the model': o frio não pode aquecer" % lg)
+                obs.append("%s tem a linha 'warming up' (informativo: a prova do frio é --no-warmup na linha de comando; a ausência da linha não prova nada)" % lg)
     ks = sorted(int(x[5:-5]) for x in os.listdir(d) if x.startswith("resp-") and x.endswith(".json") and x[5:-5].isdigit())
     meds, cargas = [], []
     for k in ks:
@@ -298,7 +443,7 @@ def le_celula_llama(d, meta, refs):
         http = (rc or "").split()
         if len(http) < 2 or http[0] != "0" or http[1] != "200":
             mot.append("pedido %d: curl/HTTP %s" % (k, rc.strip() if rc else "sem registro"))
-        carga = le_num(os.path.join(d, "carga-%d.ms" % k))
+        carga = le_num_dom(os.path.join(d, "carga-%d.ms" % k), "carga-%d.ms" % k, mot)
         if carga is not None and ((est == "frio" and k >= 1) or (est == "quente" and k == 0)):
             cargas.append(carga)
         if k == 0:
@@ -314,15 +459,25 @@ def le_celula_llama(d, meta, refs):
             continue
         pn, gn = tm_.get("prompt_n"), tm_.get("predicted_n")
         toks = r.get("tokens") or []
+        try:
+            pre = num(tm_.get("prompt_ms"), "prompt_ms", True)
+            pred = num(tm_.get("predicted_ms"), "predicted_ms")
+        except ValueError as ex:
+            mot.append("%s: valor numérico inválido: %s" % (rot, ex))
+            continue
         if nesp is not None and pn != nesp:
             mot.append("%s: prompt_n %s, esperado %s (contagem de prompt divergente)" % (rot, pn, nesp))
         if gn != NOVOS or len(toks) != NOVOS:
             mot.append("%s: predicted_n %s e %d tokens, esperado %d (parada antes de 64 ou contagem divergente)" % (rot, gn, len(toks), NOVOS))
             continue
-        passo, fonte = passo_llama(tm_)
-        meds.append({"pedido": k, "prefill_ms": float(tm_["prompt_ms"]), "decode_ms_passo": passo, "fonte_decode": fonte, "gerados": toks, "prompt_n": pn,
-                     "predicted_ms": float(tm_["predicted_ms"]), "content": r.get("content")})
-    return {"meds": meds, "cargas_ms": cargas, "esperado_n": nesp, "temp_max": tm, "kv_fa": le_txt(os.path.join(d, "kv-fa.txt"))}, mot
+        try:
+            passo, fonte = passo_llama(tm_)
+        except ValueError as ex:
+            mot.append("%s: valor numérico inválido: %s" % (rot, ex))
+            continue
+        meds.append({"pedido": k, "prefill_ms": pre, "decode_ms_passo": passo, "fonte_decode": fonte, "gerados": toks, "prompt_n": pn,
+                     "predicted_ms": pred, "content": r.get("content")})
+    return {"meds": meds, "cargas_ms": cargas, "esperado_n": nesp, "temp_max": tm, "kv_fa": le_txt(os.path.join(d, "kv-fa.txt")), "observacoes": obs}, mot
 
 
 def resume_celula(meta, dados, mot):
@@ -336,7 +491,7 @@ def resume_celula(meta, dados, mot):
         "chave": meta.get("chave"), "lado": meta["lado"], "modelo": meta["modelo"], "texto": meta["texto"], "estado": meta["estado"], "serie": meta["serie"],
         "n_medidas_previstas": esp, "n_medidas": len(meds), "status": "SEM PROVA" if mot else "OK", "motivos": sorted(set(mot)),
         "prefill": estat([x["prefill_ms"] for x in meds]), "decode": estat([x["decode_ms_passo"] for x in meds]),
-        "temp_max": dados.get("temp_max"),
+        "temp_max": dados.get("temp_max"), "observacoes": dados.get("observacoes", []),
     }
     if meta["lado"] == "lastro":
         r["fracao_cpu_needed"] = estat([x["fracao_cpu_needed"] for x in meds if x["fracao_cpu_needed"] is not None])
@@ -353,6 +508,9 @@ def resume_celula(meta, dados, mot):
         r["carga_ms"] = estat(dados["cargas_ms"])
         r["fonte_decode"] = sorted({x["fonte_decode"] for x in meds})
         r["kv_fa_log"] = (dados.get("kv_fa") or "").strip() or None
+    if limpa_nao_finitos(r):
+        mot.append("valor derivado não finito (estouro do float) na célula")
+        r["status"], r["motivos"] = "SEM PROVA", sorted(set(mot))
     r["_meds"] = meds
     return r
 
@@ -403,7 +561,11 @@ def compara_sequencias(seq_l, seq_c, ref):
 def razao(l, c):
     if l is None or c is None or not c["mediana"]:
         return None
-    return l["mediana"] / c["mediana"]
+    try:
+        x = l["mediana"] / c["mediana"]
+    except (ArithmeticError, TypeError):
+        return None
+    return x if math.isfinite(x) else None
 
 
 def fatias_e_gargalo(cl):
@@ -447,6 +609,12 @@ def monta_razao(cl, cc, refs, serie):
     r["marca_sequencia"] = marca
     for nome in ("prefill", "decode"):
         rz = razao(cl[nome], cc[nome])
+        if rz is None or not rz > 0:
+            r["status"] = "SEM PROVA"
+            r["motivos"] = ["razão de %s não calculável ou não finita: não publicada" % nome]
+            for k in ("sequencia", "texto_informativo", "marca_sequencia", "prefill", "decode"):
+                r.pop(k, None)
+            return r
         r[nome] = {"razao_lastro_sobre_llama_cpp": rz, "lastro": cl[nome], "llama_cpp": cc[nome],
                    "ruidosa": bool(cl[nome]["ruidosa"] or cc[nome]["ruidosa"]),
                    "marca": ("sequências diferentes" if (nome == "decode" and seq["sequencias_diferentes"]) else None)}
@@ -487,6 +655,11 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
                 integ.append("memória do host em %s MT/s, fora de %d MT/s" % (mem, MEM_NOMINAL))
         except ValueError:
             obs_amb.append("memoria_mts ilegível: %s" % mem)
+    orc = le_json(os.path.join(saida, "orcamento.json"))
+    orc = orc if isinstance(orc, dict) else {}
+    # emenda 6: cada janela roda UM modelo; orcamento.json declara "modelos". Sem a declaração (janela antiga ou de teste), os dois.
+    decl = orc.get("modelos")
+    modelos = tuple(m for m in MODELOS if m in decl) if isinstance(decl, list) and decl else MODELOS
     celulas = {}
     cdir = os.path.join(saida, "celulas")
     achadas = {}
@@ -496,7 +669,7 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
             if isinstance(meta, dict) and {"lado", "modelo", "texto", "estado", "serie"} <= set(meta):
                 meta["chave"] = chave(meta["lado"], meta["modelo"], meta["serie"], meta["texto"], meta["estado"])
                 achadas[meta["chave"]] = (os.path.join(cdir, nome), meta)
-    for m in MODELOS:
+    for m in modelos:
         for t in TEXTOS:
             for est in ESTADOS:
                 previstas = [("lastro", "L")] + [("llamacpp", s) for s in SERIES]
@@ -510,7 +683,7 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
                     dados, mot = (le_celula_lastro if lado == "lastro" else le_celula_llama)(d, meta, refs)
                     celulas[k] = resume_celula(meta, dados, mot)
     razoes = []
-    for m in MODELOS:
+    for m in modelos:
         for t in TEXTOS:
             for est in ESTADOS:
                 cl = celulas[chave("lastro", m, "L", t, est)]
@@ -525,12 +698,11 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
             if c["status"] == "OK":
                 c["status"] = "SEM PROVA"
                 c["motivos"] = sorted(set(c["motivos"] + integ))
-    orc = le_json(os.path.join(saida, "orcamento.json")) or {}
     ordem = (le_txt(os.path.join(saida, "ordem.txt")) or "").splitlines()
     for c in celulas.values():
         c.pop("_meds", None)
     return {
-        "tipo": "cmp-resultado", "criterio": "criterio-comparacao-llamacpp-20261108.md (emendas 1 a 4)", "descritivo": True,
+        "tipo": "cmp-resultado", "criterio": "criterio-comparacao-llamacpp-20261108.md (emendas 1 a 6)", "descritivo": True, "modelos_da_janela": list(modelos),
         "aviso_rotulo": "Toda razão é 'Lastro 10% experts GPU contra llama.cpp <série>'. Nenhuma isola o motor; a fração cpu/needed vem ao lado. Sem meta, sem PASSA/REPROVA.",
         "integridade_problemas": integ, "observacoes_ambiente": obs_amb, "orcamento": orc, "ordem": ordem,
         "celulas": celulas, "razoes": razoes,
@@ -567,6 +739,8 @@ def relatorio(res):
         L.append("")
     for o in res["observacoes_ambiente"]:
         L.append("Observação: " + o)
+    if res.get("modelos_da_janela") and tuple(res["modelos_da_janela"]) != MODELOS:
+        L.append("Janela do(s) modelo(s): %s (emenda 6: uma janela por modelo; o outro modelo é outra janela e não aparece aqui)." % ", ".join(res["modelos_da_janela"]))
     orc = res.get("orcamento") or {}
     if orc:
         L.append("")
@@ -626,6 +800,12 @@ def relatorio(res):
         L.append("Nenhuma célula.")
     for k, c in sp:
         L.append("- %s: %s" % (k, "; ".join(c["motivos"])))
+    obs = [(k, c) for k, c in res["celulas"].items() if c.get("observacoes")]
+    if obs:
+        L.append("")
+        L.append("## Observações informativas (não são prova nem falha)")
+        for k, c in obs:
+            L.append("- %s: %s" % (k, "; ".join(c["observacoes"])))
     L.append("")
     L.append("## NÃO RODOU (nunca vira razão, PASSA nem estimativa)")
     L.append(", ".join(nr) if nr else "Nenhuma célula.")
@@ -645,8 +825,9 @@ def main(argv=None):
         print("pasta de saída inexistente: %s" % a.saida, file=sys.stderr)
         return 2
     res = processa(a.saida, a.ids, a.refs, a.textos)
+    limpa_nao_finitos(res)     # rede de segurança: o JSON final é estrito (allow_nan=False)
     with open(os.path.join(a.saida, "cmp-resultado.json"), "w", encoding="utf-8") as fo:
-        json.dump(res, fo, ensure_ascii=False, indent=1)
+        json.dump(res, fo, ensure_ascii=False, indent=1, allow_nan=False)
     with open(os.path.join(a.saida, "cmp-resultado.md"), "w", encoding="utf-8") as fo:
         fo.write(relatorio(res))
     n = {"OK": 0, "SEM PROVA": 0, "NÃO RODOU": 0}

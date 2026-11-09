@@ -9,11 +9,14 @@
 # carga_lastro_limite) e o código de saída (rc.txt). O medidas-<modelo>.json de cada saída é a fonte do extrator (media_por_passo_ms = soma/len).
 # Antes da célula: portão do roda-cmp-monitor.sh (CPU < 10% com espera de até 20 s, GPU sem outro PID de compute, carga da GPU <= 5%); falha do portão NÃO adia nem
 # repete: a célula roda e fica marcada SEM PROVA em celula.json. Durante a célula o monitor só registra (monitor.csv). Sem repetição automática: o 1º processo com
-# erro encerra a célula (celula.json grava rc != 0). Parâmetros fixos: --novos 64 --data 2026-11-07 (template do 5c, "November 07, 2026").
+# erro encerra a célula (celula.json grava rc != 0). Parâmetros 64 novos e data 2026-11-07 NÃO são passados: o harness `--gera --so-texto` os fixa (CfgGera::prova, data_fixa_texto) e recusa
+# --novos/--data fora do uso normal com --texto (primeira-palavra.rs, parse_args); r111, rev-1 P1.
+# Monitor (r111, rev-1 P2): falha de inicia/para/avalia ou coleta morta antes do fim da célula fica em celula.json ("monitor_falha"); o extrator trata como SEM PROVA.
 #
 # Falha FECHADA (código 2) sem PRIMEIRA_PALAVRA_AUTORIZADA=1 e sem CUDA_VISIBLE_DEVICES igual ao UUID da 4090 (a 5090 nunca), ou com DIR já existente.
 # Variáveis só para teste: MODELO_1B, MODELO_3B, MONITOR_SH, NVIDIA_SMI.
-# Códigos: 0 a célula rodou até o fim (a validade fica em celula.json e no extrator), 1 algum processo saiu com erro, 2 recusa de uso/ambiente.
+# Códigos: 0 a célula rodou até o fim (a validade fica em celula.json e no extrator), 1 algum processo saiu com erro, 2 recusa de uso/ambiente, inclusive recusa (código 2)
+# do binário (emenda 5, item 11: o envelope interrompe a janela e não inicia células posteriores); celula.json é gravado mesmo assim.
 set -u
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
 UUID=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
@@ -55,9 +58,11 @@ INI=$(date +%s)
 "$MONITOR" portao --saida "$SAIDA/portao.txt"; PORTAO_RC=$?
 PORTAO_MOTIVO=$(grep '^portao=FALHA' "$SAIDA/portao.txt" 2> /dev/null | head -n 1 | cut -d' ' -f2- | tr -d '"\\' | tr '\n' ' ')
 # amostragem a 1 Hz só registra
-"$MONITOR" inicia --csv "$SAIDA/monitor.csv" --pid-arq "$SAIDA/monitor.pid"
+MON_FALHAS=()
+"$MONITOR" inicia --csv "$SAIDA/monitor.csv" --pid-arq "$SAIDA/monitor.pid"; r=$?
+[ $r = 0 ] || MON_FALHAS+=("inicia rc=$r")
 SAI_RC=0
-cleanup() { "$MONITOR" para --pid-arq "$SAIDA/monitor.pid" 2> /dev/null; }
+cleanup() { "$MONITOR" para --pid-arq "$SAIDA/monitor.pid" 2> /dev/null; r_para=$?; }
 trap cleanup EXIT
 trap 'cleanup; exit 143' INT TERM HUP
 
@@ -66,7 +71,7 @@ roda_processo() { # K [--repete N]  (K = nome da pasta pK)
   local pd="$SAIDA/p$k" t0 t1 rc
   mkdir -p "$pd"
   t0=$(ms_agora)
-  "$BIN" --gera --celula "$MODELO:$MDIR" --so-texto "$TEXTO" "$@" --novos 64 --data 2026-11-07 --saida "$pd/saida" > "$pd/stdout.txt" 2> "$pd/stderr.txt" < /dev/null
+  "$BIN" --gera --celula "$MODELO:$MDIR" --so-texto "$TEXTO" "$@" --saida "$pd/saida" > "$pd/stdout.txt" 2> "$pd/stderr.txt" < /dev/null
   rc=$?
   t1=$(ms_agora)
   echo $((t1 - t0)) > "$pd/wall_ms.txt"
@@ -80,12 +85,21 @@ if [ "$ESTADO" = frio ]; then
 else
   roda_processo 1 --repete "$N" || SAI_RC=$?
 fi
+# a coleta tem de estar viva até o fim da célula (uma amostra inicial seguida de morte do monitor não vale)
+MON_PID=$(cat "$SAIDA/monitor.pid" 2> /dev/null)
+{ [ -n "$MON_PID" ] && kill -0 "$MON_PID" 2> /dev/null; } || MON_FALHAS+=("coleta encerrada antes do fim da célula")
 FIM=$(date +%s)
+r_para=0
 cleanup
+[ "$r_para" = 0 ] || MON_FALHAS+=("para rc=$r_para")
+"$MONITOR" avalia --csv "$SAIDA/monitor.csv" > "$SAIDA/monitor-resumo.txt" 2>&1; r=$?
+# avalia sai 1 também para > 80 C (o extrator lê o csv); aqui só a falha da própria avaliação: uso (2) ou sem amostras
+if [ $r -gt 1 ] || grep -q '^sem amostras' "$SAIDA/monitor-resumo.txt" 2> /dev/null; then MON_FALHAS+=("avalia rc=$r"); fi
+MON_FALHA=$(printf '%s; ' "${MON_FALHAS[@]:-}" | tr -d '"\\' | sed -e 's/; $//')
 {
-  printf '{"lado": "lastro", "serie": "L", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "fim_epoch": %s}\n' \
-    "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$SAI_RC" "$INI" "$FIM"
+  printf '{"lado": "lastro", "serie": "L", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "fim_epoch": %s, "monitor_falha": "%s"}\n' \
+    "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$SAI_RC" "$INI" "$FIM" "$MON_FALHA"
 } > "$SAIDA/celula.json"
-"$MONITOR" avalia --csv "$SAIDA/monitor.csv" > "$SAIDA/monitor-resumo.txt" 2>&1 || true
+[ "$SAI_RC" != 2 ] || exit 2
 [ "$SAI_RC" = 0 ] || exit 1
 exit 0

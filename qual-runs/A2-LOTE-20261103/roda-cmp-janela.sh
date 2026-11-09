@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
-# Comparação Lastro x llama.cpp (opção d), UMA janela na 4090 (criterio-comparacao-llamacpp-20261108.md, emendas 1 a 4; a emenda 4 vale sobre a 3, a 3 sobre a 2).
+# Comparação Lastro x llama.cpp (opção d), UMA janela de até 30 min POR MODELO na 4090 (criterio-comparacao-llamacpp-20261108.md, emendas 1 a 6; a mais nova vale sobre a anterior).
+# Emenda 6: duas janelas, 1B depois 3B, mesmo critério e mesmos roteiros; --modelos 1b|3b é OBRIGATÓRIO (sem ele, recusa: nunca roda as duas de uma vez por engano).
 # Composição já validada nas janelas 5c/5e: janela-e4b.sh (pausa e restauração conferida dos timers) por fora, roda-com-limite.sh (limite) por dentro, e este mesmo
 # script em modo interno.
 #
-#   roda-cmp-janela.sh --saida DIR [--estado-janela DIR] [--bin PRIMEIRA_PALAVRA] [--limite S] [--sem-s3]
+#   roda-cmp-janela.sh --modelos 1b|3b --saida DIR [--estado-janela DIR] [--bin PRIMEIRA_PALAVRA] [--limite S] [--sem-s3]
+#   roda-cmp-janela.sh --verifica-fixos     (sem GPU, sem autorização, só lê: confere os shas congelados do FIXO contra os arquivos reais; código 0 se todos OK)
 #
-# Dentro da janela: (1) sha256 de tudo que o critério manda conferir (binário do Lastro, binários e bibliotecas do llama.cpp, 2 GGUF, config/tokenizer/safetensors dos
+# Dentro da janela (do modelo escolhido; o sha de tudo é conferido nas duas): (1) sha256 de tudo que o critério manda conferir (binário do Lastro, binários e bibliotecas do llama.cpp, 2 GGUF, config/tokenizer/safetensors dos
 # dois modelos, textos, referências, cmp-ids-prompt.json, critério) ANTES e DEPOIS, contra os valores congelados onde há (critério, ids, textos, referências, tokenizers);
 # quebrada = SEM PROVA em tudo; (2) ambiente.txt (memória do host se o sistema deixar ler, sem sudo interativo); (3) as células, em BLOCOS por (modelo, texto), na ordem
-# da E8: 1B (S1, S2) todos os textos, frio e quente; 3B (S1, S2); por último S3 (llama.cpp KV f32, -fa off) só se sobrar; lados ALTERNADOS (blocos pares começam pelo
+# da E8: o modelo da janela (S1, S2) em todos os textos, frio e quente; por último S3 (llama.cpp KV f32, -fa off) só se sobrar; lados ALTERNADOS (blocos pares começam pelo
 # Lastro, ímpares pelo llama.cpp; dentro do bloco, frio e depois quente); ordem gravada em ordem.txt; (4) cmp-extrai.py (cmp-resultado.json/.md) e decisao.txt.
 # Cada célula é um processo (roda-cmp-lastro.sh ou roda-cmp-llamacpp.sh) com pasta NOVA em DIR/celulas/<lado>-<modelo>-<serie>-<texto>-<estado>; sem repetição
 # automática (célula com erro fica SEM PROVA e a janela segue; recusa de ambiente, código 2, interrompe tudo). A célula SEM portão (CPU/GPU) NÃO é adiada.
 #
-# ORÇAMENTO (E8, estimativa SEM dado): nominal quente = 1 aquecimento + 5 medidas, frio = 1 processo descartado + 3 medidas. ANTES de iniciar cada bloco o relógio projeta:
+# ORÇAMENTO (E8, estimativa; emenda 6 recalibra o lado Lastro e a carga com a janela 5c e declara que o lado llama.cpp segue palpite): nominal quente = 1 aquecimento + 5 medidas, frio = 1 processo descartado + 3 medidas. ANTES de iniciar cada bloco o relógio projeta:
 # decorrido + estimativa do que falta + folga (180 s para encerramento, sha final e restauração dos timers) contra o limite. Se estoura, cortes em ordem, um de cada vez,
 # reprojetando: (1) S3 inteira não roda; (2) S2 do 3B; depois S2 do 1B; (3) quente 5 -> 3 medidas; (4) frio 3 -> 2 medidas; (5) o que ainda não couber é NÃO RODOU
 # (nunca vira razão, PASSA nem estimativa). Os blocos da S3 usam as mesmas repetições do Lastro correspondente e só rodam se couberem. Cortes só mudam repetições e
@@ -22,8 +24,10 @@
 # Falha FECHADA antes de tocar em timers ou na GPU: PRIMEIRA_PALAVRA_AUTORIZADA=1 e CUDA_VISIBLE_DEVICES igual ao UUID da 4090 (a 5090 NUNCA entra, nem no llama-server)
 # têm de estar no ambiente de quem chama (o "autorizo" do Breno); --saida e --estado-janela têm de ser pastas novas ou vazias. Rede só em 127.0.0.1. Limite padrão 1800 s
 # (máx. 1800); o de fora é o de dentro mais 120 s. Fim da janela: aviso (notify-send se houver, ou CMP_AVISO_CMD) e DIR.aviso.txt. Este roteiro NÃO é rodado na entrega.
-# Variáveis só para teste: JANELA_SH, LIMITE_SH, JANELA_TIMERS, LASTRO_SH_CMP, LLAMA_SH_CMP, EXTRAI_PY, CMP_RELOGIO_ARQ (relógio virtual em segundos), CMP_FOLGA,
-# CMP_EST_* , MODELO_1B, MODELO_3B, GGUF_DIR, LLAMA_DIR, TEXTOS_5C, REF_5C, IDS_CMP, CRITERIO_CMP, SEM_SHA_FIXO=1, NVIDIA_SMI, CMP_AVISO_CMD, CMP_SEM_MEMORIA=1.
+# Variáveis só para teste (r111, rev-2): JANELA_SH, LIMITE_SH, JANELA_TIMERS, LASTRO_SH_CMP, LLAMA_SH_CMP, EXTRAI_PY, CMP_RELOGIO_ARQ (relógio virtual em segundos), CMP_FOLGA,
+# CMP_EST_*, CMP_FAKE_*, MODELO_1B, MODELO_3B, GGUF_DIR, LLAMA_DIR, TEXTOS_5C, REF_5C, IDS_CMP, CRITERIO_CMP, SEM_SHA_FIXO=1, NVIDIA_SMI, CMP_SEM_MEMORIA=1, CMP_TESTE_AMBOS, PROC_STAT,
+# CMP_CPU_JANELA, CMP_CPU_ESPERA, LLAMA_SERVER, CURL, MONITOR_SH, ESPERA_PRONTO, LOADAVG_ARQ, SYSTEMCTL, SYSTEMD_RUN, PENDENTE, JANELA_*, LIMITE_*, CGROUP_RAIZ. No modo real (envelope
+# externo) qualquer uma presente no ambiente é RECUSADA com código 2; só CMP_MODO_TESTE=1 (modo de teste explícito) as aceita. CMP_AVISO_CMD continua permitida (só avisa).
 # Códigos: 0 se decisao.txt foi gravada, o do comando (124 limite, ...) ou 2 recusa de uso, portão ou ambiente.
 set -u
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
@@ -43,8 +47,8 @@ REFS=${REF_5C:-$AQUI/5c-referencia}
 IDS=${IDS_CMP:-$AQUI/cmp-ids-prompt.json}
 CRIT=${CRITERIO_CMP:-$AQUI/criterio-comparacao-llamacpp-20261108.md}
 FOLGA=${CMP_FOLGA:-180}
-SAIDA=; ESTADO=; LIMITE=1800; INTERNO=0; COM_S3=1
-usa() { echo "uso: roda-cmp-janela.sh --saida DIR [--estado-janela DIR] [--bin PRIMEIRA_PALAVRA] [--limite S] [--sem-s3]" >&2; }
+SAIDA=; ESTADO=; LIMITE=1800; INTERNO=0; COM_S3=1; MODELOS=; VERIFICA=0
+usa() { echo "uso: roda-cmp-janela.sh --modelos 1b|3b --saida DIR [--estado-janela DIR] [--bin PRIMEIRA_PALAVRA] [--limite S] [--sem-s3] | --verifica-fixos" >&2; }
 recusa() { echo "roda-cmp-janela: $*" >&2; exit 2; }
 while [ $# -gt 0 ]; do
   case $1 in
@@ -53,16 +57,17 @@ while [ $# -gt 0 ]; do
     --bin) [ $# -ge 2 ] || { usa; exit 2; }; BIN=$2; shift 2;;
     --limite) [ $# -ge 2 ] || { usa; exit 2; }; LIMITE=$2; shift 2;;
     --sem-s3) COM_S3=0; shift;;
+    --modelos) [ $# -ge 2 ] || { usa; exit 2; }; MODELOS=$2; shift 2;;
+    --verifica-fixos) VERIFICA=1; shift;;
     --interno) INTERNO=1; shift;;
     *) usa; exit 2;;
   esac
 done
-[ -n "$SAIDA" ] || { usa; exit 2; }
 sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados (valem onde o critério já os fixa; binários, GGUF e safetensors só precisam ser iguais antes e depois).
 declare -A FIXO=(
-  [criterio-cmp]=bfc0cdc355b2442d8f29e74122334ca91527c42706659f370b04cfa3ad21732e
+  [criterio-cmp]=42687887ffe3829d1e382a45a50abe65d7bfddf35235a2979ebdf4102395baae
   [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
   [texto-curto]=5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d
   [texto-medio]=bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a
@@ -101,6 +106,29 @@ coleta_shas() {
   rmdir "$tmp" 2>/dev/null || true
 }
 
+# --verifica-fixos: só lê (sem GPU, sem autorização, sem tocar em timers): sha dos arquivos reais contra os congelados do FIXO. AUSENTE = arquivo fora do repositório que não existe aqui.
+if [ $VERIFICA = 1 ]; then
+  monta_lista
+  rc_v=0
+  for i in "${!CHAVES[@]}"; do
+    k=${CHAVES[$i]}
+    [ -n "${FIXO[$k]:-}" ] || continue
+    h=$(sha "${CAMINHOS[$i]}")
+    if [ -z "$h" ]; then echo "$k ${FIXO[$k]} - AUSENTE ${CAMINHOS[$i]##*/}"; rc_v=1
+    elif [ "$h" = "${FIXO[$k]}" ]; then echo "$k ${FIXO[$k]} $h OK"
+    else echo "$k ${FIXO[$k]} $h FALHA"; rc_v=1; fi
+  done
+  exit $rc_v
+fi
+# --modelos: uma janela por modelo (emenda 6); ausente ou inválido = recusa 2. 'ambos' só no modo interno de teste (CMP_TESTE_AMBOS=1), para os cenários antigos do orçamento.
+case $MODELOS in
+  1b|3b) ;;
+  ambos) { [ $INTERNO = 1 ] && [ "${CMP_TESTE_AMBOS:-}" = 1 ]; } || recusa "--modelos ambos só existe no modo interno de teste (CMP_TESTE_AMBOS=1)";;
+  '') usa; recusa "--modelos 1b|3b é obrigatório: uma janela por modelo (emenda 6)";;
+  *) recusa "--modelos inválido: '$MODELOS' (use 1b ou 3b)";;
+esac
+[ -n "$SAIDA" ] || { usa; exit 2; }
+
 # ---------------------------------------------------------------- modo interno (dentro da janela, com o portão e o UUID no ambiente)
 if [ $INTERNO = 1 ]; then
   [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] && [ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "modo interno sem portão ou UUID"
@@ -125,10 +153,14 @@ if [ $INTERNO = 1 ]; then
 
   # ---- plano e orçamento
   est() { local v=CMP_EST_$1; echo "${!v:-$2}"; }   # est NOME PADRAO
+  # Emenda 6 (r111): recalibração do lado Lastro com a evidência da janela 5c (08/11, 19:14:28 a 19:15:17, 1B e 3B, 3 pedidos cada): o motor de cada modelo foi criado em no máximo
+  # 3,0 s (1B) e 4,2 s (3B) (tempo do bloco menos a soma dos total_ms dos pedidos); totais por pedido de 2,8 a 7,3 s no 1B e de 5,6 a 11,9 s no 3B, já contando o T_sequencia da 5c que a
+  # prova --so-texto não roda; prefill de 1,5 a 3,3 s (1B) e de 2,9 a 6,3 s (3B); decode de 21,4 e 40,3 ms por passo (64 passos = 1,4 s e 2,6 s). Valores abaixo = o pior caso visto
+  # mais margem. O lado llama.cpp NÃO tem evidência (a 5c é só do Lastro): os palpites antigos ficam, declarados como palpite.
   E_PORTAO=$(est PORTAO 8)
-  declare -A E_L_CARGA=([1b]=$(est L_CARGA_1B 20) [3b]=$(est L_CARGA_3B 40))
-  declare -A E_L_FRIO=([1b]=$(est L_FRIO_1B 7) [3b]=$(est L_FRIO_3B 12))
-  declare -A E_L_QUENTE=([1b]=$(est L_QUENTE_1B 4) [3b]=$(est L_QUENTE_3B 7))
+  declare -A E_L_CARGA=([1b]=$(est L_CARGA_1B 5) [3b]=$(est L_CARGA_3B 7))
+  declare -A E_L_FRIO=([1b]=$(est L_FRIO_1B 5) [3b]=$(est L_FRIO_3B 9))
+  declare -A E_L_QUENTE=([1b]=$(est L_QUENTE_1B 5) [3b]=$(est L_QUENTE_3B 9))
   declare -A E_C_CARGA=([1b]=$(est C_CARGA_1B 8) [3b]=$(est C_CARGA_3B 15))
   declare -A E_C_PED=([1b]=$(est C_PED_1B 2) [3b]=$(est C_PED_3B 3))
   E_C_AQUEC=$(est C_AQUEC 3); E_C_FIXO=$(est C_FIXO 3)
@@ -147,8 +179,9 @@ if [ $INTERNO = 1 ]; then
   REPS_Q=5; REPS_F=3; S3=$COM_S3; S2_1B=1; S2_3B=1; PROX_CORTE=1; CORTES=()
   # blocos: "main:modelo:texto" ou "s3:modelo:texto"
   BLOCOS=()
-  for m in 1b 3b; do for t in curto medio longo; do BLOCOS+=("main:$m:$t"); done; done
-  for m in 1b 3b; do for t in curto medio longo; do BLOCOS+=("s3:$m:$t"); done; done
+  case $MODELOS in 1b) LISTA_M=(1b);; 3b) LISTA_M=(3b);; *) LISTA_M=(1b 3b);; esac
+  for m in "${LISTA_M[@]}"; do for t in curto medio longo; do BLOCOS+=("main:$m:$t"); done; done
+  for m in "${LISTA_M[@]}"; do for t in curto medio longo; do BLOCOS+=("s3:$m:$t"); done; done
   est_bloco() { # tipo modelo texto -> segundos com a configuração ATUAL
     local tipo=$1 m=$2 tot=0 s
     if [ "$tipo" = main ]; then
@@ -169,6 +202,12 @@ if [ $INTERNO = 1 ]; then
     echo "$tot"
   }
   aplica_corte() { # aplica o PRÓXIMO corte da ordem E8; retorna 1 quando não há mais
+    # numa janela de um modelo só, o corte da S2 do OUTRO modelo não existe: pula sem registrar
+    while :; do
+      if [ $PROX_CORTE = 2 ] && [ "$MODELOS" = 1b ]; then PROX_CORTE=3; continue; fi
+      if [ $PROX_CORTE = 3 ] && [ "$MODELOS" = 3b ]; then PROX_CORTE=4; continue; fi
+      break
+    done
     case $PROX_CORTE in
       1) S3=0; CORTES+=("(1) S3 inteira não roda");;
       2) S2_3B=0; CORTES+=("(2) S2 do 3B não roda");;
@@ -250,7 +289,7 @@ if [ $INTERNO = 1 ]; then
   done < "$SAIDA/integridade-antes.txt"
   # ---- orçamento declarado
   {
-    printf '{"limite_s": %s, "folga_s": %s, "decorrido_s": %s, "cortes": [' "$LIMITE" "$FOLGA" "$(decorrido)"
+    printf '{"modelos": [%s], "limite_s": %s, "folga_s": %s, "decorrido_s": %s, "cortes": [' "$(printf '"%s", ' "${LISTA_M[@]}" | sed 's/, $//')" "$LIMITE" "$FOLGA" "$(decorrido)"
     sep=; for c in "${CORTES[@]:-}"; do [ -n "$c" ] || continue; printf '%s"%s"' "$sep" "$c"; sep=', '; done
     printf '], "reps": {"quente_nominal": 5, "frio_nominal": 3}, "reps_finais": {"quente": %s, "frio": %s}, "s3_ativa_no_fim": %s, "nao_rodou": [' "$REPS_Q" "$REPS_F" "$([ $S3 = 1 ] && echo true || echo false)"
     sep=; for c in "${NAO_RODOU[@]:-}"; do [ -n "$c" ] || continue; printf '%s"%s"' "$sep" "$(echo "$c" | tr -d '"\\')"; sep=', '; done
@@ -258,7 +297,7 @@ if [ $INTERNO = 1 ]; then
   } > "$SAIDA/orcamento.json"
   python3 -I "$EXTRAI" --saida "$SAIDA" --ids "$IDS" --refs "$REFS" --textos "$TEXTOS/textos.json" > "$SAIDA/cmp-extrai.out" 2>&1; RC_EXT=$?
   {
-    echo "comparação Lastro x llama.cpp (opção d), critério sha256 $(sha "$CRIT")"
+    echo "comparação Lastro x llama.cpp (opção d), janela do modelo ${LISTA_M[*]}, critério sha256 $(sha "$CRIT")"
     echo "resultado DESCRITIVO: sem meta, sem PASSA/REPROVA de velocidade; toda razão é 'Lastro 10% experts GPU contra llama.cpp <série>'"
     if [ $INTEGRO = 1 ]; then echo "integridade: íntegra (binários, GGUF, safetensors, textos, referências, ids e critério iguais antes e depois$([ "${SEM_SHA_FIXO:-0}" = 1 ] && echo '; congelados NÃO conferidos: SEM_SHA_FIXO=1' || echo ' e aos congelados onde há'))"
     else echo "integridade: QUEBRADA: tudo SEM PROVA"; for n in "${NOTAS[@]}"; do echo "  $n"; done; fi
@@ -277,6 +316,17 @@ case $LIMITE in ''|*[!0-9]*) recusa "limite inválido: $LIMITE";; esac
 [ "$LIMITE" -ge 1 ] && [ "$LIMITE" -le 1800 ] || recusa "limite fora de 1..1800 s: $LIMITE"
 [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] || recusa "portão fechado: sem PRIMEIRA_PALAVRA_AUTORIZADA=1 (o 'autorizo' do Breno que nomeia a janela)"
 [ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a 4090 combinada; a 5090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
+# variáveis só de teste no ambiente do modo real = recusa 2 (r111, rev-2); só CMP_MODO_TESTE=1 as aceita. `compgen -e` lista só as EXPORTADAS (as variáveis internas do roteiro não contam).
+if [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
+  for v in $(compgen -e); do
+    case $v in
+      SEM_SHA_FIXO|LLAMA_SERVER|MONITOR_SH|LASTRO_SH_CMP|LLAMA_SH_CMP|EXTRAI_PY|CMP_RELOGIO_ARQ|NVIDIA_SMI|MODELO_1B|MODELO_3B|GGUF_DIR|LLAMA_DIR|TEXTOS_5C|REF_5C|IDS_CMP|CRITERIO_CMP \
+      |PROC_STAT|CMP_CPU_JANELA|CMP_CPU_ESPERA|CMP_FOLGA|CMP_SEM_MEMORIA|CMP_TESTE_AMBOS|CURL|ESPERA_PRONTO|LOADAVG_ARQ|SYSTEMCTL|SYSTEMD_RUN|PENDENTE|CGROUP_RAIZ \
+      |CMP_EST_*|CMP_FAKE_*|JANELA_*|LIMITE_*)
+        recusa "variável só de teste presente no modo real: $v (só CMP_MODO_TESTE=1, o modo de teste explícito, a aceita); limpe o ambiente de quem chama";;
+    esac
+  done
+fi
 [ -x "$BIN" ] || recusa "binário não executável: $BIN"
 [ -x "$JANELA" ] && [ -x "$LIMITE_SH" ] && [ -x "$LASTRO_SH" ] && [ -x "$LLAMA_SH" ] && [ -x "$AQUI/roda-cmp-monitor.sh" ] || recusa "faltam janela-e4b.sh, roda-com-limite.sh, roda-cmp-lastro.sh, roda-cmp-llamacpp.sh ou roda-cmp-monitor.sh executáveis"
 [ -f "$EXTRAI" ] || recusa "falta cmp-extrai.py"
@@ -311,12 +361,12 @@ lista_systemd antes
 coleta início "$SAIDA.carga-antes.txt"
 EXTRA=(); [ $COM_S3 = 1 ] || EXTRA=(--sem-s3)
 "$JANELA" --estado "$ESTADO" "${TIMERS[@]}" --limite $((LIMITE + 120)) --kill-apos 30 -- \
-  "$LIMITE_SH" --limite "$LIMITE" -- env "${PASSA[@]}" "$AQUI/roda-cmp-janela.sh" --interno --saida "$SAIDA" --bin "$BIN" --limite "$LIMITE" "${EXTRA[@]}"
+  "$LIMITE_SH" --limite "$LIMITE" -- env "${PASSA[@]}" "$AQUI/roda-cmp-janela.sh" --interno --modelos "$MODELOS" --saida "$SAIDA" --bin "$BIN" --limite "$LIMITE" "${EXTRA[@]}"
 RC=$?
 coleta fim "$SAIDA.carga-depois.txt"
 lista_systemd depois
 # aviso no fim da janela (sempre, qualquer que seja o código): arquivo ao lado da pasta e notificação se houver como
-MSG="janela da comparação Lastro x llama.cpp terminou (código $RC): $SAIDA"
+MSG="janela da comparação Lastro x llama.cpp ($MODELOS) terminou (código $RC): $SAIDA"
 echo "$MSG" > "$SAIDA.aviso.txt"
 if [ -n "${CMP_AVISO_CMD:-}" ]; then "$CMP_AVISO_CMD" "$MSG" > /dev/null 2>&1 || true
 elif command -v notify-send > /dev/null 2>&1; then notify-send "Lastro x llama.cpp" "$MSG" > /dev/null 2>&1 || true; fi

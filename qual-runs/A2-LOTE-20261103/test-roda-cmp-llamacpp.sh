@@ -56,11 +56,15 @@ json.dump({"modelos": {m: {t: {"ids": list(range(n))} for t, n in (("curto", 89)
 PY
 cat > "$D/mon" <<F
 #!/usr/bin/env bash
+# comportamentos por arquivo: mon.inicia.rc, mon.morre, mon.para.rc, mon.avalia.rc
 case \$1 in
   portao) echo "portao=OK" > "\$3"; exit 0;;
-  inicia) echo "t, 1, 2000, 10000, 60, 100" > "\$3"; sleep 100 & echo \$! > "\$5"; echo \$! >> $D/mon.pids;;
-  para) p=\$(cat "\$3" 2>/dev/null); [ -z "\$p" ] || kill "\$p" 2>/dev/null;;
-  avalia) echo "amostras=1 temp_max=60"; exit 0;;
+  inicia) [ ! -e $D/mon.inicia.rc ] || exit \$(cat $D/mon.inicia.rc)
+          echo "t, 1, 2000, 10000, 60, 100" > "\$3"
+          if [ -e $D/mon.morre ]; then true & p=\$!; wait \$p; echo \$p > "\$5"
+          else sleep 100 & echo \$! > "\$5"; echo \$! >> $D/mon.pids; fi;;
+  para) p=\$(cat "\$3" 2>/dev/null); [ -z "\$p" ] || kill "\$p" 2>/dev/null; [ ! -e $D/mon.para.rc ] || exit \$(cat $D/mon.para.rc);;
+  avalia) echo "amostras=1 temp_max=60"; [ ! -e $D/mon.avalia.rc ] || exit \$(cat $D/mon.avalia.rc); exit 0;;
 esac
 F
 chmod +x "$D/mon"
@@ -111,6 +115,19 @@ confere "servidor que morre na partida: sai 1, célula marcada" "[ $RC = 1 ] && 
 # 7. servidor que ignora TERM: derrubado por KILL, sem processo remanescente
 FAKE_MODO=naoencerra roda naoenc --modelo 1b --texto curto --estado quente --serie S1 --n 1
 confere "servidor que ignora TERM: derrubado por KILL e nenhum processo vivo" "[ $RC = 0 ] && sem_vivos naoenc && ! pgrep -f 'srv.py.*--port' > /dev/null"
+# 7b. monitor: falhas de inicia/para/avalia e coleta morta ficam no metadata (o extrator trata como SEM PROVA)
+vazio() { grep -q '"monitor_falha": ""' "$1"; }
+confere "monitor saudável: monitor_falha vazio (célula S1 quente anterior)" "vazio $D/s-s1q/celula.json"
+echo 3 > "$D/mon.inicia.rc"; roda mi --modelo 1b --texto curto --estado quente --serie S1 --n 1; rm -f "$D/mon.inicia.rc"
+confere "falha de inicia registrada" "grep -q 'inicia rc=3' $D/s-mi/celula.json"
+touch "$D/mon.morre"; roda mm --modelo 1b --texto curto --estado quente --serie S1 --n 1; rm -f "$D/mon.morre"
+confere "coleta morta antes do fim registrada" "grep -q 'coleta encerrada antes do fim' $D/s-mm/celula.json"
+echo 4 > "$D/mon.para.rc"; roda mp --modelo 1b --texto curto --estado quente --serie S1 --n 1; rm -f "$D/mon.para.rc"
+confere "falha de para registrada" "grep -q 'para rc=4' $D/s-mp/celula.json"
+echo 2 > "$D/mon.avalia.rc"; roda ma --modelo 1b --texto curto --estado quente --serie S1 --n 1; rm -f "$D/mon.avalia.rc"
+confere "falha de avalia registrada" "grep -q 'avalia rc=2' $D/s-ma/celula.json"
+# 7c. o pkill de segurança é restrito a llama-server com a porta (não mata outro processo que tenha só '--port N')
+confere "padrão de segurança restrito a llama-server com a porta" "grep -q 'llama-server .\*--port \$PORTA' $L && ! grep -q 'pkill -KILL -f -- \"--port' $L"
 # 8. o monitor é parado em todas as células
 vivos=0; for p in $(cat "$D/mon.pids"); do kill -0 "$p" 2> /dev/null && vivos=1; done
 confere "amostragem parada ao fim de todas as células" "[ -s $D/mon.pids ] && [ $vivos = 0 ]"

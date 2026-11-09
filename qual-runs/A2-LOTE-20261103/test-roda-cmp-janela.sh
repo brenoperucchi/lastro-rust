@@ -37,6 +37,15 @@ echo "$chave n=$n" >> "$CMP_FAKE_LOG"
 [ -z "${CMP_FAKE_MUDA:-}" ] || [ "$chave" != "${CMP_FAKE_MUDA_NA:-}" ] || echo mudou >> "$CMP_FAKE_MUDA"
 mult=${CMP_FAKE_MULT:-1}
 if [ "$lado" = lastro ]; then custo=$(( (n + 1) * 10 )); elif [ "$serie" = S2 ]; then custo=$(( (n + 1) * 10 )); else custo=$(( (n + 1) * 5 )); fi
+if [ "${CMP_FAKE_EST:-}" = 1 ]; then
+  # custo = as estimativas FINAIS da emenda 6 (cópia independente das fórmulas do envelope; se os padrões mudarem, o cenário K/L falha de propósito)
+  P=8; if [ "$modelo" = 1b ]; then LC=5; LF=5; LQ=5; CC=8; CP=2; else LC=7; LF=9; LQ=9; CC=15; CP=3; fi; AQ=3; FX=3; m2=1; [ "$serie" = S2 ] && m2=2
+  if [ "$lado" = lastro ]; then
+    if [ "$estado" = frio ]; then custo=$(( P + (n + 1) * (LC + LF) )); else custo=$(( P + LC + (n + 1) * LQ )); fi
+  else
+    if [ "$estado" = frio ]; then custo=$(( P + FX + (n + 1) * (CC + CP * m2) )); else custo=$(( P + FX + CC + AQ + (n + 1) * CP * m2 )); fi
+  fi
+fi
 if [ -n "${CMP_FAKE_RELOGIO:-}" ]; then echo $(( $(cat "$CMP_FAKE_RELOGIO") + custo * mult )) > "$CMP_FAKE_RELOGIO"; fi
 [ -z "${CMP_FAKE_SLEEP:-}" ] || sleep "$CMP_FAKE_SLEEP"
 mkdir -p "$saida"
@@ -51,11 +60,11 @@ export CMP_EST_C_CARGA_1B=0 CMP_EST_C_CARGA_3B=0 CMP_EST_C_PED_1B=5 CMP_EST_C_PE
 # 3B: o custo estimado das células do 3B segue a mesma fórmula; o bloco do 3B com S2 desligado (S1 apenas) vale (L 40+60) + (S1 20+30) = 150
 export NVIDIA_SMI=$D/smi LASTRO_SH_CMP=$D/lastro-falso LLAMA_SH_CMP=$D/llama-falso MODELO_1B=$D/m/1b MODELO_3B=$D/m/3b GGUF_DIR=$D/gguf LLAMA_DIR=$D/llama
 export TEXTOS_5C=$D/textos REF_5C=$D/refs IDS_CMP=$D/ids.json CRITERIO_CMP=$D/crit.md SEM_SHA_FIXO=1 CMP_SEM_MEMORIA=1 CMP_FOLGA=0
-interno() { # nome limite [env extras via ambiente]; define RC; relógio virtual zerado
+interno() { # nome limite [env extras via ambiente]; define RC; relógio virtual zerado. Cenários A a J usam os dois modelos de uma vez (só o modo interno de teste, CMP_TESTE_AMBOS=1)
   local n=$1 lim=$2; shift 2
   echo 0 > "$D/clock"; : > "$D/log-$n"
-  PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID CMP_RELOGIO_ARQ=$D/clock CMP_FAKE_RELOGIO=$D/clock CMP_FAKE_LOG=$D/log-$n \
-    "$J" --interno --saida "$D/si-$n" --bin "$D/pp" --limite "$lim" "$@" > "$D/outi-$n" 2>&1
+  PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID CMP_RELOGIO_ARQ=$D/clock CMP_FAKE_RELOGIO=$D/clock CMP_FAKE_LOG=$D/log-$n CMP_TESTE_AMBOS=1 \
+    "$J" --interno --modelos "${MODELOS_T:-ambos}" --saida "$D/si-$n" --bin "$D/pp" --limite "$lim" "$@" > "$D/outi-$n" 2>&1
   RC=$?
 }
 nceluas() { wc -l < "$D/si-$1/ordem.txt"; }
@@ -64,7 +73,7 @@ cortes() { python3 -I -c "import json; print(len(json.load(open('$D/si-$1/orcame
 
 echo "== Parte 1: orçamento E8 (modo interno, relógio virtual)"
 # recusa do modo interno sem portão
-"$J" --interno --saida "$D/si-sem" --bin "$D/pp" --limite 100 > "$D/outi-sem" 2>&1
+"$J" --interno --modelos 1b --saida "$D/si-sem" --bin "$D/pp" --limite 100 > "$D/outi-sem" 2>&1
 confere "modo interno sem portão/UUID: recusa 2" "[ $? = 2 ] && [ ! -e $D/si-sem/ordem.txt ]"
 # A. orçamento folgado: nada cortado, 48 células (36 principais + 12 da S3), repetições nominais
 interno A 100000
@@ -110,6 +119,33 @@ echo c > "$D/textos/texto-curto.txt"
 SEM_SHA_FIXO=0 interno J 100000
 confere "sha diferente do congelado (arquivos falsos): QUEBRADA e a nota diz qual" "grep -q 'não o congelado' $D/si-J/decisao.txt && grep -q 'FALHA' $D/si-J/integridade-fixos.txt"
 
+# K e L: SIMULAÇÃO DAS DUAS JANELAS com as estimativas FINAIS da emenda 6 (sem CMP_EST_* nem CMP_FOLGA: padrões do envelope; limite 1800 s, folga 180 s) e células falsas que
+# gastam exatamente a estimativa (CMP_FAKE_EST=1). Mostra quais células rodam: o que não cabe fica declarado NÃO RODOU, nunca estimado.
+interno_final() { # nome modelo
+  local n=$1 m=$2 us=() v
+  for v in $(compgen -e | grep -E '^CMP_(EST|FOLGA)'); do us+=(-u "$v"); done
+  echo 0 > "$D/clock"; : > "$D/log-$n"
+  env "${us[@]}" PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID CMP_RELOGIO_ARQ=$D/clock CMP_FAKE_RELOGIO=$D/clock CMP_FAKE_LOG=$D/log-$n CMP_FAKE_EST=1 \
+    "$J" --interno --modelos "$m" --saida "$D/si-$n" --bin "$D/pp" --limite 1800 > "$D/outi-$n" 2>&1
+  RC=$?
+}
+interno_final K 1b; CLK_K=$(cat "$D/clock")
+interno_final L 3b; CLK_L=$(cat "$D/clock")
+echo "simulação K (janela do 1B, estimativas finais): $(nceluas K) células, $CLK_K s de 1800 (folga 180); cortes: $(cortes K); NÃO RODOU: $(grep -c 'NÃO RODOU' $D/si-K/orcamento-log.txt)"
+echo "simulação L (janela do 3B, estimativas finais): $(nceluas L) células, $CLK_L s de 1800 (folga 180); cortes: $(cortes L); NÃO RODOU: $(grep -c 'NÃO RODOU' $D/si-L/orcamento-log.txt)"
+[ -z "${CMP_SIM_SAIDA:-}" ] || { cp "$D/si-K/ordem.txt" "$CMP_SIM_SAIDA.K"; cp "$D/si-L/ordem.txt" "$CMP_SIM_SAIDA.L"; cp "$D/si-L/orcamento-log.txt" "$CMP_SIM_SAIDA.Llog"; }
+confere "K (janela do 1B, estimativas finais, 1800 s): sem cortes, 24 células (S1, S2 e S3 nos 3 textos, frio e quente), nenhum NÃO RODOU, cabe com folga" "[ \$(nceluas K) = 24 ] && [ \$(cortes K) = 0 ] && [ \$(grep -c 'NÃO RODOU' $D/si-K/orcamento-log.txt) = 0 ] && grep -q '1b-S2-longo-quente' $D/si-K/ordem.txt && grep -q '1b-S3-longo-quente' $D/si-K/ordem.txt && ! grep -q '3b' $D/si-K/ordem.txt && [ $CLK_K -le 1620 ]"
+confere "L (janela do 3B, estimativas finais, 1800 s): só a S3 não cabe (corte 1); S1 e S2 em todos os textos, frio e quente, sem bloco principal NÃO RODOU" "[ \$(nceluas L) = 18 ] && [ \$(cortes L) = 1 ] && grep -q '(1) S3 inteira não roda' $D/si-L/orcamento.json && grep -q '3b-S2-longo-quente' $D/si-L/ordem.txt && ! grep -q 'S3\|1b' $D/si-L/ordem.txt && ! grep -q 'NÃO RODOU: bloco' $D/si-L/orcamento-log.txt && [ \$(grep -c 'NÃO RODOU' $D/si-L/orcamento-log.txt) = 3 ] && [ $CLK_L -le 1620 ]"
+confere "K e L: o orçamento declara o modelo da janela e a extração só espera esse modelo (sem NÃO RODOU do outro)" "grep -q '\"modelos\": \[\"1b\"\]' $D/si-K/orcamento.json && grep -q '\"modelos\": \[\"3b\"\]' $D/si-L/orcamento.json && ! grep -q '| 1b ' $D/si-L/cmp-resultado.md && ! grep -q '| 3b ' $D/si-K/cmp-resultado.md"
+# --modelos: obrigatório e validado (recusa 2, nada roda); 'ambos' só com CMP_TESTE_AMBOS no modo interno
+for casom in "" "5b" "1b,3b" "ambos"; do
+  rm -f "$D/log-m"; : > "$D/log-m"
+  if [ -z "$casom" ]; then args=(); else args=(--modelos "$casom"); fi
+  PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID CMP_FAKE_LOG=$D/log-m env -u CMP_TESTE_AMBOS "$J" --interno "${args[@]}" --saida "$D/si-m-$casom" --bin "$D/pp" --limite 100 > "$D/outi-m" 2>&1
+  rcm=$?
+  confere "--modelos '${casom:-ausente}': recusa 2, nada rodou" "[ $rcm = 2 ] && [ ! -s $D/log-m ] && [ ! -e '$D/si-m-$casom/ordem.txt' ]"
+done
+
 echo "== Parte 2: envelope (portões, pastas novas, unidades transitórias, aviso, limite)"
 cat > "$D/fake-systemctl" <<'F'
 #!/bin/bash
@@ -131,6 +167,7 @@ chmod +x "$D/fake-systemctl"
 printf '# lista de teste\na.timer\nb.timer\n' > "$D/timers.txt"
 printf '#!/usr/bin/env bash\necho "$1" > "%s/aviso-chamado"\n' "$D" > "$D/aviso-cmd"; chmod +x "$D/aviso-cmd"
 export LIMITE_PASSA="PATH HOME CUDA_VISIBLE_DEVICES"
+export CMP_MODO_TESTE=1     # modo de teste explícito: sem ele o envelope recusa as variáveis só de teste (testado mais abaixo com ambiente limpo)
 unset CMP_RELOGIO_ARQ CMP_FAKE_RELOGIO
 roda() { # nome args...; define RC
   local n=$1; shift
@@ -138,7 +175,7 @@ roda() { # nome args...; define RC
   mkdir -p "$FAKE_DIR"
   echo active > "$FAKE_DIR/a.timer"; echo active > "$FAKE_DIR/b.timer"; echo inactive > "$FAKE_DIR/a.service"; echo inactive > "$FAKE_DIR/b.service"; : > "$FAKE_DIR/log"
   SYSTEMCTL="$D/fake-systemctl" PENDENTE="$D/pend-$n" JANELA_PASSO_ESPERA=0.1 XDG_RUNTIME_DIR=/run/user/fake JANELA_TIMERS="$D/timers.txt" CMP_AVISO_CMD="$D/aviso-cmd" \
-    "$J" --bin "$D/pp" --saida "$D/se-$n" --limite "${LIM:-60}" "$@" > "$D/oute-$n" 2>&1
+    "$J" --modelos "${MOD-1b}" --bin "$D/pp" --saida "$D/se-$n" --limite "${LIM:-60}" "$@" > "$D/oute-$n" 2>&1
   RC=$?
 }
 roda sem-portao; confere "sem portão: recusa 2, nada rodou, timers intocados" "[ $RC = 2 ] && [ ! -s $D/elog-sem-portao ] && ! grep -q '^stop' $D/sem-portao/log && [ ! -e $D/se-sem-portao ]"
@@ -154,9 +191,37 @@ mkdir -p "$D/se-ocupada"; echo x > "$D/se-ocupada/a"
 roda ocupada; confere "--saida não vazia: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-ocupada ]"
 roda limite-alto --limite 1801; confere "limite acima de 1800: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-limite-alto ]"
 roda opcao-ruim --nao-existe; confere "opção desconhecida: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-opcao-ruim ]"
+# emenda 6: --modelos obrigatório no envelope (recusa 2 antes de qualquer coisa)
+MOD="" roda sem-modelos; confere "envelope sem --modelos (a janela dupla por engano): recusa 2, nada rodou, timers intocados" "[ $RC = 2 ] && grep -q 'modelos' $D/oute-sem-modelos && [ ! -s $D/elog-sem-modelos ] && ! grep -q '^stop' $D/sem-modelos/log && [ ! -e $D/se-sem-modelos ]"
+unset MOD
+for mm in 5b ambos 1b,3b; do MOD=$mm roda mod-ruim; confere "envelope com --modelos '$mm': recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-mod-ruim ] && [ ! -e $D/se-mod-ruim ]"; done
+unset MOD
+# variáveis só de teste no modo real: ambiente LIMPO (env -i) com a variável e SEM CMP_MODO_TESTE = recusa 2, nada criado; com ambiente limpo e outra recusa, a de teste não aparece
+real() { # nome VAR=valor...  (ambiente limpo; o envelope é chamado com autorização válida e pasta de saída nova)
+  local n=$1; shift
+  env -i PATH="$PATH" HOME="$HOME" PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID "$@" "$J" --modelos 1b --bin "$D/pp" --saida "$D/se-real-$n" --limite 60 > "$D/oute-real-$n" 2>&1
+  RC=$?
+}
+for v in SEM_SHA_FIXO LLAMA_SERVER MONITOR_SH LASTRO_SH_CMP LLAMA_SH_CMP EXTRAI_PY CMP_RELOGIO_ARQ NVIDIA_SMI MODELO_1B MODELO_3B GGUF_DIR LLAMA_DIR TEXTOS_5C REF_5C IDS_CMP CRITERIO_CMP \
+         PROC_STAT CMP_CPU_JANELA CMP_CPU_ESPERA CMP_FOLGA CMP_SEM_MEMORIA CMP_TESTE_AMBOS CURL ESPERA_PRONTO LOADAVG_ARQ SYSTEMCTL SYSTEMD_RUN PENDENTE CGROUP_RAIZ \
+         CMP_EST_L_CARGA_1B CMP_FAKE_RECUSA JANELA_SH JANELA_TIMERS JANELA_PASSO_ESPERA LIMITE_SH LIMITE_PASSA; do
+  real "v-$v" "$v=1"
+  confere "modo real com $v no ambiente: recusa 2 citando a variável, nada criado" "[ $RC = 2 ] && grep -q 'variável só de teste presente no modo real: $v' $D/oute-real-v-$v && [ ! -e $D/se-real-v-$v ]"
+done
+mkdir -p "$D/se-real-limpo"; echo x > "$D/se-real-limpo/a"
+real limpo
+confere "ambiente limpo: a checagem de variáveis de teste passa (a recusa seguinte é a da pasta ocupada)" "[ $RC = 2 ] && ! grep -q 'variável só de teste' $D/oute-real-limpo && grep -q 'não está vazio' $D/oute-real-limpo"
+real com-modo-teste CMP_MODO_TESTE=1 SEM_SHA_FIXO=1
+confere "CMP_MODO_TESTE=1 (modo de teste explícito) aceita a variável de teste: passa da checagem" "! grep -q 'variável só de teste' $D/oute-real-com-modo-teste"
+# o sha congelado do critério e os demais, contra os arquivos REAIS (sem SEM_SHA_FIXO, sem desvios de caminho): ambiente limpo, só leitura
+env -i PATH="$PATH" HOME="$HOME" "$J" --verifica-fixos > "$D/fixos.txt" 2>&1; rcf=$?
+nok=$(grep -c ' OK$' "$D/fixos.txt"); nfal=$(grep -c ' FALHA$' "$D/fixos.txt"); naus=$(grep -c ' AUSENTE ' "$D/fixos.txt")
+echo "congelados do FIXO contra os arquivos reais: $nok OK, $nfal FALHA, $naus AUSENTE (tokenizers fora do repositório podem faltar em outra máquina)"
+confere "FIXO: os shas congelados (critério, ids, textos, textos.json, referências 5c; mais os tokenizers se existirem aqui) batem com os arquivos reais; nenhum FALHA" "[ $nfal = 0 ] && [ $nok -ge 8 ] && grep -q '^criterio-cmp .* OK$' $D/fixos.txt && grep -q '^cmp-ids-prompt .* OK$' $D/fixos.txt && grep -q '^ref5c-3b .* OK$' $D/fixos.txt && ! grep ' AUSENTE ' $D/fixos.txt | grep -qv 'tokenizer-'"
+confere "FIXO: o sha congelado do critério é o do arquivo atual (sha256sum direto)" "[ \"\$(grep '^criterio-cmp ' $D/fixos.txt | cut -d' ' -f2)\" = \"\$(sha256sum $AQUI/criterio-comparacao-llamacpp-20261108.md | cut -d' ' -f1)\" ]"
 # caminho feliz (relógio real; células falsas instantâneas)
 LIM=1800 roda ok
-confere "ok: sai 0, decisao.txt, 48 células, extrator, timers parados e restaurados" "[ $RC = 0 ] && [ -s $D/se-ok/decisao.txt ] && [ \$(ls $D/se-ok/celulas | wc -l) = 48 ] && [ -s $D/se-ok/cmp-resultado.json ] && grep -q '^stop a.timer' $D/ok/log && [ \"\$(cat $D/ok/a.timer)\" = active ] && grep -q 'RESTAURAÇÃO OK' $D/se-ok-estado-janela/restauracao.txt"
+confere "ok: sai 0, decisao.txt, 24 células do 1B (emenda 6: uma janela por modelo), extrator, timers parados e restaurados" "[ $RC = 0 ] && [ -s $D/se-ok/decisao.txt ] && [ \$(ls $D/se-ok/celulas | wc -l) = 24 ] && ! ls $D/se-ok/celulas | grep -q 3b && grep -q '\"modelos\": \[\"1b\"\]' $D/se-ok/orcamento.json && [ -s $D/se-ok/cmp-resultado.json ] && grep -q '^stop a.timer' $D/ok/log && [ \"\$(cat $D/ok/a.timer)\" = active ] && grep -q 'RESTAURAÇÃO OK' $D/se-ok-estado-janela/restauracao.txt"
 confere "ok: decisão descritiva (sem PASSA/REPROVA), integridade íntegra, sem cortes; cargas e listas systemd ao lado da pasta" "grep -q 'resultado DESCRITIVO' $D/se-ok/decisao.txt && ! grep -q '^rótulo:' $D/se-ok/decisao.txt && grep -q 'integridade: íntegra' $D/se-ok/decisao.txt && grep -q 'cortes de orçamento: nenhum' $D/se-ok/decisao.txt && [ -f $D/se-ok.carga-antes.txt ] && [ -f $D/se-ok.carga-depois.txt ] && [ -s $D/se-ok.unidades-antes.txt ] && [ -s $D/se-ok.timers-depois.txt ]"
 confere "ok: aviso no fim da janela (arquivo e comando de aviso)" "grep -q 'terminou (código 0)' $D/se-ok.aviso.txt && grep -q 'terminou (código 0)' $D/aviso-chamado"
 # limite de tempo estourado: células lentas; 124, timers restaurados, aviso mesmo assim

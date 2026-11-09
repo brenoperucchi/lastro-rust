@@ -2026,6 +2026,39 @@ mod tests {
         assert!(parse_args(v(&["--gera", "--celula", "1b:/m", "--texto", "oi", "--so-texto", "curto"])).is_err());
     }
 
+    /// r111 (rev-1 P1): os argv que `roda-cmp-lastro.sh` monta (frio e quente) têm de ser ACEITOS pelo parser real; a combinação antiga (`--novos`/`--data` na prova
+    /// `--gera --so-texto`) é recusada. A linha do roteiro é lida do próprio arquivo, para o teste não divergir dele.
+    #[test]
+    fn roteiro_cmp_lastro_monta_argv_que_o_parser_real_aceita() {
+        let src = include_str!("../../../../qual-runs/A2-LOTE-20261103/roda-cmp-lastro.sh");
+        let linha = src.lines().find(|l| l.trim_start().starts_with("\"$BIN\" --gera")).expect("linha de chamada do binário no roteiro").trim_start();
+        let esperado = "\"$BIN\" --gera --celula \"$MODELO:$MDIR\" --so-texto \"$TEXTO\" \"$@\" --saida \"$pd/saida\"";
+        assert!(linha.starts_with(esperado), "o roteiro mudou a chamada; ajuste este teste junto: {linha}");
+        assert!(!linha.contains("--novos") && !linha.contains("--data"), "o harness fixa 64 novos e a data: o roteiro não pode passá-los");
+        let n_max = REPETE_MAX.min(50).to_string();
+        for modelo in ["1b", "3b"] {
+            for texto in ["curto", "medio", "longo"] {
+                // frio: um processo por medida, sem --repete
+                let frio = ["--gera", "--celula", &format!("{modelo}:/m"), "--so-texto", texto, "--saida", "/o/p1/saida"];
+                let a = parse_args(v(&frio)).unwrap_or_else(|e| panic!("frio {modelo}/{texto} recusado pelo parser real: {e}"));
+                assert_eq!((a.so_texto.as_deref(), a.repete, a.data.is_none(), a.novos.is_none()), (Some(texto), None, true, true));
+                // quente: um processo com --repete N (N de 1 a 50 no roteiro)
+                for n in ["1", "3", "5", n_max.as_str()] {
+                    let quente = ["--gera", "--celula", &format!("{modelo}:/m"), "--so-texto", texto, "--repete", n, "--saida", "/o/p1/saida"];
+                    let a = parse_args(v(&quente)).unwrap_or_else(|e| panic!("quente {modelo}/{texto}/{n} recusado pelo parser real: {e}"));
+                    assert_eq!((a.so_texto.as_deref(), a.repete), (Some(texto), Some(n.parse().unwrap())));
+                }
+            }
+        }
+        // a combinação ANTIGA do roteiro é recusada (era o P1 da r111)
+        for extra in [&["--novos", "64", "--data", "2026-11-07"][..], &["--novos", "64"][..], &["--data", "2026-11-07"][..]] {
+            let mut x = vec!["--gera", "--celula", "1b:/m", "--so-texto", "curto"];
+            x.extend_from_slice(extra);
+            x.extend_from_slice(&["--saida", "/o/p1/saida"]);
+            assert!(parse_args(v(&x)).is_err(), "{extra:?} deve ser recusado");
+        }
+    }
+
     #[test]
     fn gera_argumentos_e_arquivos() {
         let base = ["--gera", "--celula", "1b:/m", "--saida", "/o"];
