@@ -127,6 +127,8 @@ struct Args {
     so_texto: Option<String>,
     /// `--repete N` (com `--so-texto`): 1 pedido de aquecimento descartado + N medidos no mesmo motor reutilizado (medida QUENTE).
     repete: Option<usize>,
+    /// `--fracao-slots F` (só `--gera`): fração dos experts (camadas x experts) residentes na GPU; padrão 0,10 (comportamento atual).
+    fracao: f64,
 }
 
 /// Limite de `--repete` (é medida de velocidade, não laço aberto).
@@ -164,9 +166,10 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
         referencia: PathBuf::from(REFERENCIA_PADRAO), textos: PathBuf::from(TEXTOS_PADRAO), threads: 8, ensaio: false, cenario: None, rep: None, consolida: None,
         modelos: vec!["1b".into(), "3b".into()], texto: None, pedido: None, data: None, reutiliza: false,
         criterio_reset: PathBuf::from(CRITERIO_RESET_PADRAO),
-        criterio_5c: PathBuf::from(CRITERIO_5C_PADRAO), textos_5c: PathBuf::from(TEXTOS_5C_PADRAO), referencia_5c: PathBuf::from(REFERENCIA_5C_PADRAO), novos: None, so_texto: None, repete: None,
+        criterio_5c: PathBuf::from(CRITERIO_5C_PADRAO), textos_5c: PathBuf::from(TEXTOS_5C_PADRAO), referencia_5c: PathBuf::from(REFERENCIA_5C_PADRAO), novos: None, so_texto: None, repete: None, fracao: FRACAO_SLOTS,
     };
     let mut modelos_dados = false;
+    let mut fracao_dada = false;
     let mut prova_reset = false;
     let mut gera = false;
     while let Some(k) = a.next() {
@@ -240,6 +243,14 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
                 }
                 r.so_texto = Some(t);
             }
+            "--fracao-slots" => {
+                let f: f64 = val()?.parse().map_err(|_| "--fracao-slots".to_string())?;
+                if !(f.is_finite() && f > 0.0 && f <= 1.0) {
+                    return Err("--fracao-slots em (0, 1]".into());
+                }
+                r.fracao = f;
+                fracao_dada = true;
+            }
             "--repete" => {
                 let n: usize = val()?.parse().map_err(|_| "--repete".to_string())?;
                 if !(1..=REPETE_MAX).contains(&n) {
@@ -282,6 +293,9 @@ fn parse_args(v: Vec<String>) -> Result<Args, String> {
     }
     if modo != Modo::Gera && (r.so_texto.is_some() || r.repete.is_some()) {
         return Err("--so-texto e --repete são só do --gera".into());
+    }
+    if modo != Modo::Gera && fracao_dada {
+        return Err("--fracao-slots é só do --gera".into());
     }
     if r.repete.is_some() && r.so_texto.is_none() {
         return Err("--repete exige --so-texto".into());
@@ -537,11 +551,12 @@ struct Cenario<'a> {
     host: &'a HostModel,
     cfg: &'a ModelConfig,
     threads: usize,
+    fracao: f64,
 }
 
 impl Cenario<'_> {
     fn slots_10(&self) -> usize {
-        (FRACAO_SLOTS * (self.cfg.layers * self.cfg.experts) as f64) as usize
+        ((self.fracao * (self.cfg.layers * self.cfg.experts) as f64) as usize).max(1)
     }
 }
 
@@ -655,7 +670,7 @@ fn correcao_modelo(nome: &str, mdir: &Path, args: &Args, prompts: &[String], dev
         let refs_json: Value = serde_json::from_slice(&std::fs::read(args.referencia.join(format!("ref-{nome}.json"))).d()?).d()?;
         let refs = pp::le_referencia(&refs_json)?;
         let host = carrega_host(mdir, &cfg)?;
-        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads };
+        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
         let data = pp::data_fixa_texto();
         let mut guardada = pp::SequenciaReutilizavel::nova();
         executa_pedidos(&mut rec, prompts, &refs, |i, p| {
@@ -725,7 +740,7 @@ fn reset_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> r
             }
         }
         let host = carrega_host(mdir, &cfg)?;
-        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads };
+        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
         let mut guardada = pp::SequenciaReutilizavel::nova();
         let criou_a = std::cell::Cell::new(0usize);
         rec.pedidos = rr::executa_prova(
@@ -837,7 +852,7 @@ fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> (g
             textos.push((idx, n, t, sha256(&arq)?));
         }
         let host = carrega_host(mdir, &cfg)?;
-        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads };
+        let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
         let mut guardado: MotorG = gr::MotorGeracao::novo();
         let mut parou: Option<String> = None;
         let t_repete = textos.first().map(|x| x.2.clone());
@@ -961,7 +976,7 @@ fn gera_livre(args: &Args) -> Result<i32, String> {
     let tok = carrega_tokenizador(mdir)?;
     let device = Device::new(0).d()?;
     let host = carrega_host(mdir, &cfg)?;
-    let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads };
+    let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
     let mut m: MotorG = gr::MotorGeracao::novo();
     let g = pedido_gera(&c, &tok, &texto, Instant::now(), &data, &mut m, gr::CfgGera { novos: args.novos.unwrap_or(gr::N_NOVOS), para_no_eos: true });
     m.encerra().ok();
@@ -1112,7 +1127,7 @@ fn quente(args: &Args, exe: &Path) -> Result<i32, String> {
             let arq = arquivo_pedido(&args.textos, cen);
             let mut rec = match &carregado {
                 Ok((cfg, tok, host)) => {
-                    let c = Cenario { device: &device, host, cfg, threads: args.threads };
+                    let c = Cenario { device: &device, host, cfg, threads: args.threads, fracao: args.fracao };
                     match le_texto_de_arquivo(&arq).and_then(|(t, _, _)| conta_ids(tok, &t, &data)) {
                         Err(e) => RegistroQuente { modelo: nome.clone(), cen, integro: true, falha: Some(e), ids_n: 0, aquecimento: vec![], reps: vec![], extras: vec![] },
                         Ok(n) if !pp::ids_na_faixa(n, cen) => RegistroQuente { modelo: nome.clone(), cen, integro: true, falha: Some(format!("{n} ids fora da faixa de 2% em torno de {}", cen.n())), ids_n: n, aquecimento: vec![], reps: vec![], extras: vec![] },
@@ -1182,7 +1197,7 @@ fn frio(t0: Instant, args: &Args, exe: &Path) -> Result<i32, String> {
             return Err(format!("{ids_n} ids fora da faixa de 2% em torno de {}", cen.n()));
         }
         passo("texto_e_contagem", &mut partes);
-        let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads };
+        let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
         let r = pedido_real(&c, &tok, &texto, t_entrada, entrada_ms, &data)?;
         let m = r.medida;
         for (k, v) in [("T_entrada", m.crono.entrada_ms), ("T_token", m.crono.token_ms), ("T_sequencia", m.crono.sequencia_ms), ("T_leitura", m.crono.leitura_ms), ("T_logits", m.crono.logits_ms), ("T_escolha", m.crono.escolha_ms), ("T_detok", m.crono.detok_ms), ("T_entrega", m.crono.entrega_ms)] {
@@ -1241,7 +1256,7 @@ fn livre(args: &Args) -> Result<i32, String> {
     let tok = carrega_tokenizador(mdir)?;
     let device = Device::new(0).d()?;
     let host = carrega_host(mdir, &cfg)?;
-    let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads };
+    let c = Cenario { device: &device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
     // t_entrada depois da carga em todos os modos (stdin incluso): o produto nunca inclui a carga do modelo. entrada_ms é só a leitura da entrada.
     let t_entrada = Instant::now();
     let r = pedido_real(&c, &tok, &texto, t_entrada, entrada_ms, &data)?;
@@ -1990,6 +2005,21 @@ mod tests {
         // Os portões são os dos outros modos (a recusa vem antes de qualquer acesso ao device).
         assert!(exige_autorizacao(None).is_err() && exige_uuid(Some("outra")).is_err());
         assert_eq!(rr::CRITERIO_RESET_SHA.len(), 64);
+    }
+
+    #[test]
+    fn gera_fracao_slots() {
+        let v = |a: &[&str]| a.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let base = ["--gera", "--celula", "1b:/m", "--so-texto", "curto", "--saida", "/o/p1/saida"];
+        let com = |x: &[&str]| parse_args(v(&[&base[..], x].concat()));
+        assert_eq!(com(&[]).unwrap().fracao, 0.10, "padrão = comportamento atual");
+        assert_eq!(com(&["--fracao-slots", "1.0"]).unwrap().fracao, 1.0);
+        assert_eq!(com(&["--fracao-slots", "0.5"]).unwrap().fracao, 0.5);
+        for ruim in ["0", "-1", "1.01", "nan", "inf", "x", ""] {
+            assert!(com(&["--fracao-slots", ruim]).is_err(), "fracao {ruim:?}");
+        }
+        assert!(com(&["--fracao-slots"]).is_err(), "sem valor");
+        assert!(parse_args(v(&["--modo", "correcao", "--celula", "1b:/m", "--saida", "/o", "--fracao-slots", "1.0"])).is_err());
     }
 
     #[test]
