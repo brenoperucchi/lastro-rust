@@ -18,3 +18,45 @@
 # Logits de referência do texto-a (52 MB cada; regenerados por tools/ref_logits.py).
 /qual-runs/REF-granite-*-texto-a/logits.npy
 __pycache__/
+
+# Repositório PÚBLICO (instrução do Breno, 08/11/2026): nada sensível em commit.
+# Credenciais, tokens, chaves e ambiente
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*.token
+credentials*
+secrets*
+.netrc
+# Rede interna, túneis e acesso remoto
+*.ovpn
+*.ts.net*
+*tailscale*
+*.tunnel
+known_hosts
+# Saídas de ambiente e logs com dados do sistema (listas de unidades, variáveis, journal, dmidecode)
+*.journal
+journal-*.txt
+env-dump*
+ambiente*.txt
+*.unidades-antes.txt
+*.unidades-depois.txt
+dmidecode*
+lscpu*.txt
+# Arquivos de modelo e pesos
+*.gguf
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.npy
+*.npz
+# Dados pessoais
+*.sqlite
+*.db
