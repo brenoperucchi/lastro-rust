@@ -97,7 +97,9 @@ def integridade_fixos(saida, m):
             mot.append("integridade FIXA: %s com estado %s (esperado OK)" % (k, est))
         elif not (re.fullmatch(r"[0-9a-f]{64}", esp) and esp == obs):
             mot.append("integridade FIXA: %s com sha esperado/observado diferentes ou inválidos" % k)
-        elif antes.get(k) is not None and antes.get(k) != obs:
+        elif antes.get(k) is None:
+            mot.append("integridade FIXA: %s ausente de integridade-antes.txt (o snapshot inicial tem de ter toda chave obrigatória)" % k)
+        elif antes.get(k) != obs:
             mot.append("integridade FIXA: %s com sha diferente do de integridade-antes.txt" % k)
     falta = [k for k in FIXO_CHAVES + ("tokenizer-%s" % m,) if k not in vistas]
     if falta:

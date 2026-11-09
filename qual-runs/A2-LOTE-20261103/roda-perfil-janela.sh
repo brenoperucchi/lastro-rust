@@ -75,7 +75,7 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 declare -A FIXO=(
   [criterio-perfil]=4fd2e00039cab08196c979776e617ab1b5ad129bf491f81a6ff95c1687f92370
   [binario-lastro]=e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4
-  [script-perfil-extrai]=869cd1f2b27a7ff7b6f872095b2f1d78f3d2444cbb6fc9fe4abf5c1891ee0acc
+  [script-perfil-extrai]=2e1d4ae57b7c0c196e156803d5b5a808ace231d7a3df699691f81926d9c81da8
   [script-amostra-cpu]=de17df09d75015b54bc527954dc54944c465328a9bab1fbce6e20bb5a8adb3f4
   [script-cmp-extrai]=f740d72781c5203a5e6eedf2eaa71840931d756a4f384993bdd496ef4984898c
   [script-lastro]=af62e9c1e9f0312a4b1e917569a9f181ee099d83d20703af742a01e8bc55ae14

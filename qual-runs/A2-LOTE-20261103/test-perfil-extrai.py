@@ -568,6 +568,36 @@ class TestManifestoFixo(Base):
         grava(arq, "\n".join(["%s %s %s OK" % (k, "e" * 64, "e" * 64)] + linhas[1:]) + "\n")
         self.todas_sem_prova(self.roda())
 
+    def snapshots_sem(self, k):
+        """manifesto completo, mas a chave k some dos DOIS snapshots (antes e depois)"""
+        linhas = "".join("%s %s\n" % (x, h) for x, h in self.shas.items() if x != k)
+        grava(os.path.join(self.saida, "integridade-antes.txt"), linhas)
+        grava(os.path.join(self.saida, "integridade-depois.txt"), linhas)
+
+    def test_chave_obrigatoria_ausente_dos_dois_snapshots(self):
+        self.tudo()
+        for k in ("binario-lastro", "texto-curto", "tokenizer-1b", "criterio-perfil"):
+            self.manifesto()
+            self.snapshots_sem(k)
+            r = self.roda()
+            self.todas_sem_prova(r)
+            self.assertTrue(any(k in x and "ausente de integridade-antes.txt" in x for x in r["integridade_problemas"]), (k, r["integridade_problemas"]))
+
+    def test_snapshots_iguais_so_com_linha_nao_relacionada(self):
+        self.tudo()
+        for nome in ("antes", "depois"):
+            grava(os.path.join(self.saida, "integridade-%s.txt" % nome), "gguf-extra %s\n" % ("d" * 64))
+        r = self.roda()
+        self.todas_sem_prova(r)
+        self.assertTrue(any("ausente de integridade-antes.txt" in x for x in r["integridade_problemas"]))
+
+    def test_snapshots_e_manifesto_completos_seguem_validos(self):
+        self.tudo()
+        self.manifesto()
+        r = self.roda()
+        self.assertEqual(r["integridade_problemas"], [])
+        self.assertTrue(all(c["status"] == "OK" for c in r["celulas"].values()))
+
     def test_chaves_do_extrator_batem_com_o_FIXO_do_roteiro(self):
         sh = le(os.path.join(AQUI, "roda-perfil-janela.sh"))
         bloco = sh[sh.index("declare -A FIXO=("):]
