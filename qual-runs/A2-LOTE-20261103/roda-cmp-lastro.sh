@@ -92,6 +92,8 @@ MON_PID=$(cat "$SAIDA/monitor.pid" 2> /dev/null)
 FIM=$(date +%s)
 r_para=0
 cleanup
+# emenda 8: mesma amostra pmon depois da célula (só registra; o desktop divide a 4090 nos dois lados)
+"$MONITOR" portao-depois --saida "$SAIDA/portao-depois.txt" > /dev/null 2>&1 || true
 [ "$r_para" = 0 ] || MON_FALHAS+=("para rc=$r_para")
 "$MONITOR" avalia --csv "$SAIDA/monitor.csv" > "$SAIDA/monitor-resumo.txt" 2>&1; r=$?
 # avalia sai 1 também para > 80 C (o extrator lê o csv); aqui só a falha da própria avaliação: uso (2) ou sem amostras
@@ -101,6 +103,9 @@ MON_FALHA=$(printf '%s; ' "${MON_FALHAS[@]:-}" | tr -d '"\\' | sed -e 's/; $//')
   printf '{"lado": "lastro", "serie": "L", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "inicio_coleta_epoch": %s, "fim_epoch": %s, "monitor_falha": "%s"}\n' \
     "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$SAI_RC" "$INI" "$INI_COLETA" "$FIM" "$MON_FALHA"
 } > "$SAIDA/celula.json"
+# emenda 8: soma de sm% dos PIDs de tipo G (desktop) antes e depois, para o relatório (null = sem leitura)
+desk_n() { local v; v=$(grep -h "^pmon_$2_g_soma_sm_max=" "$SAIDA/$1" 2> /dev/null | head -n 1 | cut -d= -f2); case $v in ''|*[!0-9]*) echo null;; *) echo "$v";; esac; }
+sed -i "\$ s/}\$/, \"desktop_g_sm_antes\": $(desk_n portao.txt antes), \"desktop_g_sm_depois\": $(desk_n portao-depois.txt depois)}/" "$SAIDA/celula.json"
 [ "$SAI_RC" != 2 ] || exit 2
 [ "$SAI_RC" = 0 ] || exit 1
 exit 0

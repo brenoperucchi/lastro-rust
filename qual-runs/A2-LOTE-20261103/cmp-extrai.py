@@ -300,12 +300,32 @@ def analisa_monitor(d, meta):
     return mot, tm
 
 
+def confere_portao_pmon(d):
+    """Emenda 8: se a célula tem portao.txt, ele precisa trazer `pmon_antes_veredito=OK` (amostra pmon de 3 s antes da célula, falha fechada).
+    Sem a linha (portão de formato antigo) ou com outro valor, SEM PROVA. Sem portao.txt na pasta, vale só o portao_ok do celula.json."""
+    arq = os.path.join(d, "portao.txt")
+    if not os.path.exists(arq):
+        return []
+    try:
+        with open(arq, encoding="utf-8", errors="replace") as fh:
+            linhas = fh.read().splitlines()
+    except OSError:
+        return ["portao.txt ilegível: sem prova do portão da GPU"]
+    ver = [l.split("=", 1)[1] for l in linhas if l.startswith("pmon_antes_veredito=")]
+    if not ver:
+        return ["portao.txt sem a amostra pmon (emenda 8): sem prova do portão da GPU"]
+    if ver[-1] != "OK":
+        return ["portão pmon antes da célula: %s" % ver[-1]]
+    return []
+
+
 def base_celula(d, meta):
     mot = []
     if meta.get("portao_ok") is False:
         mot.append("portão antes da célula falhou: %s" % meta.get("portao_motivo", "sem motivo gravado"))
     elif meta.get("portao_ok") is None:
         mot.append("portão antes da célula sem registro")
+    mot += confere_portao_pmon(d)
     if meta.get("rc") not in (None, 0):
         mot.append("o roteiro da célula terminou com código %s (%s)" % (meta.get("rc"), meta.get("falhas", "")))
     m2, tm = analisa_monitor(d, meta)
@@ -488,6 +508,10 @@ def le_celula_llama(d, meta, refs):
     return {"meds": meds, "cargas_ms": cargas, "esperado_n": nesp, "temp_max": tm, "kv_fa": le_txt(os.path.join(d, "kv-fa.txt")), "observacoes": obs}, mot
 
 
+def num_ou_none(x):
+    return x if isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) else None
+
+
 def resume_celula(meta, dados, mot):
     meds = dados["meds"]
     esp = meta.get("n_medidas")
@@ -500,6 +524,7 @@ def resume_celula(meta, dados, mot):
         "n_medidas_previstas": esp, "n_medidas": len(meds), "status": "SEM PROVA" if mot else "OK", "motivos": sorted(set(mot)),
         "prefill": estat([x["prefill_ms"] for x in meds]), "decode": estat([x["decode_ms_passo"] for x in meds]),
         "temp_max": dados.get("temp_max"), "observacoes": dados.get("observacoes", []),
+        "desktop_g_sm_antes": num_ou_none(meta.get("desktop_g_sm_antes")), "desktop_g_sm_depois": num_ou_none(meta.get("desktop_g_sm_depois")),
     }
     if meta["lado"] == "lastro":
         r["fracao_cpu_needed"] = estat([x["fracao_cpu_needed"] for x in meds if x["fracao_cpu_needed"] is not None])
@@ -802,6 +827,18 @@ def relatorio(res):
         L.append("| %s | %s%s | %s |" % (k, faixa(carga, 0), rot, f(tps, 1)))
     sp = [(k, c) for k, c in res["celulas"].items() if c["status"] == "SEM PROVA"]
     nr = [k for k, c in res["celulas"].items() if c["status"] == "NÃO RODOU"]
+    L.append("")
+    L.append("## Condição do desktop (emenda 8)")
+    L.append("O desktop (compositor Hyprland, etc.) divide a 4090 nos DOIS lados em todas as células: é condição constante declarada, fora do SEM PROVA. "
+             "Soma de sm% dos PIDs de tipo G, medida por `nvidia-smi pmon -c 3 -s um` antes e depois de cada célula (maior valor das 3 voltas; `-` = sem leitura). "
+             "Só decide SEM PROVA: PID fora da árvore medida de tipo C ou C+G com sm > 5%, ou soma G > 60% (palpites declarados antes dos dados).")
+    L.append("")
+    L.append("| célula | desktop sm% antes | desktop sm% depois |")
+    L.append("|---|---|---|")
+    for k, c in res["celulas"].items():
+        if c.get("status") == "NÃO RODOU":
+            continue
+        L.append("| %s | %s | %s |" % (k, f(c.get("desktop_g_sm_antes"), 0), f(c.get("desktop_g_sm_depois"), 0)))
     L.append("")
     L.append("## SEM PROVA (sem razão publicada)")
     if not sp:

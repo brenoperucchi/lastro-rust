@@ -28,6 +28,8 @@ inicia_stat() { para_gerador; "$D/gera-stat.sh" "$D/stat" "$1" "$2" "$3" & GER=$
 cat > "$D/smi" <<'F'
 #!/usr/bin/env bash
 case $* in
+  *pmon*) [ "${FAKE_PMON_RC:-0}" = 0 ] || { echo "erro falso" >&2; exit "$FAKE_PMON_RC"; }
+          if [ -n "${FAKE_PMON_ARQ:-}" ]; then cat "$FAKE_PMON_ARQ"; else printf '# gpu         pid   type     sm    mem    enc    dec    jpg    ofa     fb   ccpm    command \n# Idx           #    C/G      %%      %%      %%      %%      %%      %%     MB     MB    name \n'; fi;;
   *query-compute-apps*) [ -z "${FAKE_APPS:-}" ] || printf '%b\n' "$FAKE_APPS";;
   *-l\ 1*) while :; do echo "2026/11/08 10:00:00.000, ${FAKE_UTIL:-0}, 2100, 10500, ${FAKE_TEMP:-60}, 4000"; sleep 1; done;;
   *query-gpu=utilization.gpu*) echo "${FAKE_UTIL:-0}";;
@@ -55,28 +57,65 @@ inicia_stat 10 999 10
 "$M" portao --saida "$D/p4.txt"; rc=$?
 confere "CPU a 10% exatos não passa (< 10%)" "[ $rc = 1 ]"
 inicia_stat 2 999 2
-# 5. outro PID de compute
-FAKE_APPS='12345, 500 MiB, /usr/bin/outro' "$M" portao --saida "$D/p5.txt"; rc=$?
-confere "outro processo de compute: falha e registra a linha" "[ $rc = 1 ] && grep -q 'outro processo de compute na GPU: 12345' $D/p5.txt && grep -q '^compute_app_fora=12345' $D/p5.txt"
-# 6. PID dentro da árvore medida passa; PID filho também
+# pmon sintético no formato real lido em 09/11 (nvidia-smi pmon -i UUID -c 3 -s um): cabeçalho de 2 linhas, depois uma linha por PID e por volta (3 voltas)
+CAB='# gpu         pid   type     sm    mem    enc    dec    jpg    ofa     fb   ccpm    command \n# Idx           #    C/G      %      %      %      %      %      %     MB     MB    name \n'
+lin() { printf '    0 %7s %5s %6s %6s      -      -      -      -  %5s      0    %s       \n' "$1" "$2" "$3" "$4" "$5" "$6"; }
+volta() { # $1 = sm do Hyprland (G); $2.. extras já formatados
+  lin 41533 G "$1" "$1" 413 Hyprland; lin 41609 G 1 - 761 quickshell; lin 42406 C+G - - 364 'renderD128 --cr'; lin 1352017 C+G - - 997 voxtype; [ -z "${2:-}" ] || printf '%s\n' "$2"
+}
+pm() { { printf "%b" "$CAB"; for i in 1 2 3; do volta "$1" "${2:-}"; done; } > "$D/pmon.txt"; }
+roda_pm() { FAKE_PMON_ARQ=$D/pmon.txt "$M" portao --saida "$1" "${@:2}"; }
+# 5. só o desktop: Hyprland G 25%, chrome e voxtype C+G ociosos: VÁLIDO
+pm 25
+roda_pm "$D/p5.txt"; rc=$?
+confere "só desktop (G 25%) com chrome e voxtype C+G ociosos: portão passa" "[ $rc = 0 ] && grep -q '^portao=OK' $D/p5.txt && grep -q '^pmon_antes_veredito=OK' $D/p5.txt && grep -q '^pmon_antes_g_soma_sm_max=26' $D/p5.txt && grep -q '^pmon_antes_cg_ociosos=2' $D/p5.txt && grep -q 'pmon_antes_pid=1352017 tipo=C+G' $D/p5.txt"
+# 6. um PID C com sm 20 fora da árvore: SEM PROVA
+pm 25 "$(lin 77777 C 20 5 500 outro)"
+roda_pm "$D/p6.txt"; rc=$?
+confere "PID C com sm 20% fora da árvore: falha e registra o motivo" "[ $rc = 1 ] && grep -q 'portao=FALHA.*tipo C ou C+G usando sm 20%' $D/p6.txt"
+pm 25 "$(lin 77777 C+G 6 5 500 outro)"
+roda_pm "$D/p6b.txt"; rc=$?
+confere "PID C+G com sm 6% (> 5%) fora da árvore: falha" "[ $rc = 1 ]"
+pm 25 "$(lin 77777 C 5 5 500 outro)"
+roda_pm "$D/p6c.txt"; rc=$?
+confere "PID C com sm 5% exatos passa (> 5% é o limite)" "[ $rc = 0 ]"
+# 7. PID da árvore medida é ignorado (inclusive descendente)
 sleep 60 & ARV=$!
-FAKE_APPS="$ARV, 500 MiB, /x" "$M" portao --saida "$D/p6.txt" --arvore "$ARV"; rc=$?
-confere "PID da própria árvore medida não é acusado" "[ $rc = 0 ]"
+pm 25 "$(lin "$ARV" C 90 50 3000 medido)"
+roda_pm "$D/p7.txt" --arvore "$ARV"; rc=$?
+confere "PID da árvore medida (C, sm 90%) é ignorado" "[ $rc = 0 ] && grep -q \"dentro_arvore=1 cmd=medido\" $D/p7.txt"
 bash -c 'sleep 60 & echo $! > '"$D"'/filho.pid; wait' &
-PAI=$!; sleep 0.5
-FILHO=$(cat "$D/filho.pid")
-FAKE_APPS="$FILHO, 500 MiB, /x" "$M" portao --saida "$D/p6b.txt" --arvore "$PAI"; rc=$?
-confere "PID descendente da árvore medida não é acusado" "[ $rc = 0 ]"
-FAKE_APPS="$FILHO, 500 MiB, /x
-99999, 1 MiB, /y" "$M" portao --saida "$D/p6c.txt" --arvore "$PAI"; rc=$?
-confere "mas um PID fora da árvore, junto com o da árvore, falha" "[ $rc = 1 ] && grep -q '99999' $D/p6c.txt"
+PAI=$!; sleep 0.5; FILHO=$(cat "$D/filho.pid")
+pm 25 "$(lin "$FILHO" C 90 50 3000 filho; lin 99999 C 30 1 1 fora)"
+roda_pm "$D/p7b.txt" --arvore "$PAI"; rc=$?
+confere "descendente da árvore ignorado, mas outro PID C fora dela falha" "[ $rc = 1 ] && grep -q 'usando sm 30%' $D/p7b.txt"
 kill "$PAI" "$FILHO" "$ARV" 2> /dev/null; wait "$PAI" "$ARV" 2> /dev/null; ARV=
-# 7. carga da GPU
-FAKE_UTIL=50 "$M" portao --saida "$D/p7.txt"; rc=$?
-confere "GPU a 50%: falha" "[ $rc = 1 ] && grep -q 'carga da GPU 50%' $D/p7.txt"
-FAKE_UTIL=5 "$M" portao --saida "$D/p7b.txt"; rc=$?
-confere "GPU a 5% passa (<= 5%)" "[ $rc = 0 ]"
-# 8. amostragem a 1 Hz só registra e avalia temperatura
+# 8. soma dos PIDs G: 70% falha; 60% passa
+pm 70
+roda_pm "$D/p8.txt"; rc=$?
+confere "PIDs G somando 71%: SEM PROVA" "[ $rc = 1 ] && grep -q 'soma de sm dos PIDs de tipo G em 71%' $D/p8.txt"
+pm 59
+roda_pm "$D/p8b.txt"; rc=$?
+confere "PIDs G somando 60% exatos passa (> 60% é o limite)" "[ $rc = 0 ]"
+# 9. utilização total só registrada (46% não decide)
+FAKE_UTIL=46 roda_pm "$D/p9.txt"; rc=$?
+confere "utilização total da GPU 46% só registrada, não decide" "[ $rc = 0 ] && grep -q '^gpu_util_pct_registrado=46' $D/p9.txt"
+# 10. pmon ilegível ou ausente: SEM PROVA fechado
+FAKE_PMON_RC=1 "$M" portao --saida "$D/p10.txt"; rc=$?
+confere "pmon com erro (código 1): falha fechada" "[ $rc = 1 ] && grep -q 'pmon falhou' $D/p10.txt"
+printf 'lixo sem cabecalho\n' > "$D/pmon.txt"; roda_pm "$D/p10b.txt"; rc=$?
+confere "pmon sem cabeçalho: falha fechada" "[ $rc = 1 ] && grep -q 'pmon ilegível' $D/p10b.txt"
+{ printf "%b" "$CAB"; printf '    0   41533     G    abc      -      -      -      -      -    413      0    Hyprland\n'; } > "$D/pmon.txt"; roda_pm "$D/p10c.txt"; rc=$?
+confere "linha de PID ilegível: falha fechada" "[ $rc = 1 ] && grep -q 'ilegíve' $D/p10c.txt"
+NVIDIA_SMI=$D/nao-existe "$M" portao --saida "$D/p10d.txt"; rc=$?
+confere "nvidia-smi ausente: falha fechada" "[ $rc = 1 ] && grep -q 'pmon falhou' $D/p10d.txt"
+# 11. depois da célula: só registra (código 0 mesmo com PID C), grava o veredito e a soma G
+pm 25 "$(lin 77777 C 20 5 500 outro)"
+FAKE_PMON_ARQ=$D/pmon.txt "$M" portao-depois --saida "$D/pd.txt"; rc=$?
+confere "portao-depois: código 0, registra soma G e veredito, não decide" "[ $rc = 0 ] && grep -q '^pmon_depois_g_soma_sm_max=26' $D/pd.txt && grep -q '^pmon_depois_veredito=PID' $D/pd.txt"
+FAKE_PMON_RC=1 "$M" portao-depois --saida "$D/pd2.txt"; rc=$?
+confere "portao-depois com pmon quebrado: código 0 e registra" "[ $rc = 0 ] && grep -q '^pmon_depois_rc=1' $D/pd2.txt"
+# 12. amostragem a 1 Hz só registra e avalia temperatura
 FAKE_TEMP=60 "$M" inicia --csv "$D/mon.csv" --pid-arq "$D/mon.pid"; sleep 3.3
 "$M" para --pid-arq "$D/mon.pid"
 n=$(wc -l < "$D/mon.csv")
@@ -86,7 +125,7 @@ confere "temperatura 60 C: ok, clock de memória 'registrado, não decisivo'" "[
 FAKE_TEMP=85 "$M" inicia --csv "$D/mon2.csv" --pid-arq "$D/mon2.pid"; sleep 1.3; "$M" para --pid-arq "$D/mon2.pid"
 "$M" avalia --csv "$D/mon2.csv" > "$D/av2.txt"; rc=$?
 confere "temperatura 85 C: SEM PROVA (código 1)" "[ $rc = 1 ] && grep -q 'temp_max=85' $D/av2.txt"
-# 9. uso
+# 13. uso
 "$M" 2> /dev/null; confere "sem subcomando: código 2" "[ $? = 2 ]"
 "$M" portao 2> /dev/null; confere "portão sem --saida: código 2" "[ $? = 2 ]"
 para_gerador

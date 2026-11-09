@@ -659,5 +659,50 @@ class TestModelosDaJanela(Base):
         self.assertEqual({r["modelo"] for r in self.roda()["razoes"]}, {"1b", "3b"})
 
 
+class TestPortaoPmon(Base):
+    """Emenda 8: portao.txt com a amostra pmon; só `pmon_antes_veredito=OK` vale; seção 'Condição do desktop' no relatório."""
+
+    def escreve_portao(self, nome, linhas):
+        with open(os.path.join(self.saida, "celulas", nome, "portao.txt"), "w", encoding="utf-8") as fh:
+            fh.write("\n".join(linhas) + "\n")
+
+    def test_veredito_ok_vale_e_aparece_no_relatorio(self):
+        d = self.lastro(estado="frio", n=3)
+        self.llama(estado="frio", serie="S1", n=3)
+        for k in os.listdir(os.path.join(self.saida, "celulas")):
+            self.escreve_portao(k, ["pmon_antes_veredito=OK", "portao=OK"])
+        r = self.razao(self.roda())
+        self.assertEqual(r["status"], "OK")
+        md = X.relatorio(self.roda())
+        self.assertIn("## Condição do desktop (emenda 8)", md)
+        self.assertIn("divide a 4090 nos DOIS lados", md)
+
+    def test_veredito_de_falha_ou_ausente_e_sem_prova(self):
+        self.lastro(estado="frio", n=3)
+        self.llama(estado="frio", serie="S1", n=3)
+        for k in os.listdir(os.path.join(self.saida, "celulas")):
+            self.escreve_portao(k, ["pmon_antes_veredito=PID fora da árvore medida com tipo C ou C+G usando sm 20%", "portao=OK"])
+        r = self.razao(self.roda())
+        self.assertEqual(r["status"], "SEM PROVA")
+        self.assertTrue(any("pmon" in x for x in r["motivos"]))
+        for k in os.listdir(os.path.join(self.saida, "celulas")):
+            self.escreve_portao(k, ["gpu_util_pct=3", "portao=OK"])  # formato antigo, sem amostra pmon: falha fechada
+        r = self.razao(self.roda())
+        self.assertEqual(r["status"], "SEM PROVA")
+        self.assertTrue(any("sem a amostra pmon" in x for x in r["motivos"]))
+
+    def test_desktop_sm_do_celula_json_vai_para_o_resultado(self):
+        self.lastro(estado="frio", n=3)
+        for k in os.listdir(os.path.join(self.saida, "celulas")):
+            arq = os.path.join(self.saida, "celulas", k, "celula.json")
+            with open(arq, encoding="utf-8") as fh:
+                m = json.load(fh)
+            m["desktop_g_sm_antes"], m["desktop_g_sm_depois"] = 25, None
+            grava(arq, m)
+        res = self.roda()
+        c = [c for c in res["celulas"].values() if c["lado"] == "lastro" and c["status"] != "NÃO RODOU"][0]
+        self.assertEqual((c["desktop_g_sm_antes"], c["desktop_g_sm_depois"]), (25, None))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
