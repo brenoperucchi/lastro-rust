@@ -60,3 +60,8 @@ lscpu*.txt
 # Dados pessoais
 *.sqlite
 *.db
+
+# Listas de timers/serviços do usuário (nomes de serviços e de máquinas): nunca versionar
+*-timers/
+timers*.txt
+*.timers-*.txt

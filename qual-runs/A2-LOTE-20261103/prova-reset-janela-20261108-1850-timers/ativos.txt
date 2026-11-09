@@ -1,3 +1,0 @@
-omabackup-sync.timer
-omabackup-push.timer
-inventory-collect.timer

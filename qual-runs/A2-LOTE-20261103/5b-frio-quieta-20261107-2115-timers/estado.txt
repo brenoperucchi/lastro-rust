@@ -1,7 +1,0 @@
-início: 2026-11-07T21:23:56-03:00 pid=1962362 XDG_RUNTIME_DIR=/run/user/1000
-omabackup-sync.timer is-active=active is-enabled=enabled
-omabackup-sync.service is-active=activating is-enabled=static
-omabackup-push.timer is-active=active is-enabled=enabled
-omabackup-push.service is-active=inactive is-enabled=static
-inventory-collect.timer is-active=active is-enabled=enabled
-inventory-collect.service is-active=activating is-enabled=linked

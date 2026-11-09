@@ -1,6 +1,0 @@
-omabackup-sync.timer timer: is-active=active is-enabled=enabled
-omabackup-sync.service service: is-active=inactive is-enabled=static
-omabackup-push.timer timer: is-active=active is-enabled=enabled
-omabackup-push.service service: is-active=inactive is-enabled=static
-inventory-collect.timer timer: is-active=active is-enabled=enabled
-inventory-collect.service service: is-active=inactive is-enabled=linked

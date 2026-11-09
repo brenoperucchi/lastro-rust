@@ -1,4 +1,0 @@
-omabackup-sync.timer is-active=active (era active): ok
-omabackup-push.timer is-active=active (era active): ok
-inventory-collect.timer is-active=active (era active): ok
-RESTAURAÇÃO OK

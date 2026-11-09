@@ -1,5 +1,0 @@
-# Timers de USUÁRIO pausados durante a janela de medida do E4b (decisão do Breno de 06/11/2026: sequência da proposta-janela-e4b-20261106.md).
-# Uma unidade .timer por linha. Só se faz `stop` e depois `start` do que estava ativo; nunca disable, mask nem matar serviço em curso.
-omabackup-sync.timer
-omabackup-push.timer
-inventory-collect.timer
