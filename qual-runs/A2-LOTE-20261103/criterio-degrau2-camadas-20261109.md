@@ -35,3 +35,6 @@ KV f32 contra f16; fronteira do prefill diferente (base); o prefill da S2 tem op
 
 ## 7. Rito
 Revisão dos roteiros alterados e deste critério ANTES da janela (nível definido pelo Breno); janela com Chrome fechado, voxtype parado e portão de GPU do base; emendas só com nota datada antes dos dados; commits locais, sem push.
+
+## Emenda 1 (09/11/2026, antes de qualquer dado; r118 rev-2 P2)
+Seção 3, item de `cont.needed` e `cont.cpu`: vale onde conflita com o texto acima (a frase "NÃO se exige cpu == 0 ... a fração é reportada" fica substituída por esta). Por medida, no smoke e em cada célula LC, com inteiros e (L, N) do modelo (1B: L = 24, N = 22; 3B: L = 32, N = 29): `cpu × L == needed × N`, isto é, cpu/needed = N/L exato. Diferente disso, o posicionamento por camada não está provado: o smoke falha ("SMOKE DO DEGRAU 2 FALHOU: cpu/needed = x, esperado N/L exato: o posicionamento por camada não é o declarado") e a célula LC é SEM PROVA. A fração continua sendo reportada.

@@ -437,6 +437,14 @@ def le_cont_l100(cont):
 
 
 
+def erro_posicionamento_d2(m, needed, cpu):
+    """Degrau 2, Emenda 1 (r118 rev-2 P2): por medida, cpu*L == needed*N com inteiros (L e N do modelo); None se exato, senão o motivo."""
+    L_, _ = CAMADAS_EXPERTS[m]; n = N_CPU[m]
+    if needed != int(needed) or cpu != int(cpu) or int(cpu) * L_ != int(needed) * n:
+        return "cpu/needed = %s, esperado %d/%d exato: o posicionamento por camada não é o declarado" % ((cpu / needed) if needed else "indefinido", n, L_)
+    return None
+
+
 def le_celula_lastro(d, meta, refs):
     m, t, est = meta["modelo"], meta["texto"], meta["estado"]
     mot, tm = base_celula(d, meta)
@@ -579,6 +587,11 @@ def le_celula_lastro(d, meta, refs):
         for x in meds:
             if x["fracao_cpu_needed"] is None:
                 mot.append("%s/%s: needed = 0, cpu/needed não calculável (LC exige needed > 0)" % (x["processo"], x["rotulo"]))
+            else:
+                c_ = x["cont"]
+                er = erro_posicionamento_d2(m, c_["needed"], c_["cpu"])
+                if er:
+                    mot.append("%s/%s: %s" % (x["processo"], x["rotulo"], er))
     if D1:
         for x in meds:
             if x["fracao_cpu_needed"] is None or x["fracao_cpu_needed"] != 0:
@@ -808,6 +821,12 @@ def avalia_smoke(sdir, modelo, ids_arq, refs_dir, textos_arq, d2=False):
             pares = [le_cont_l100(e.get("cont")) for e in meds]
             needed = sum(x[0] for x in pares)
             cpu_ = sum(x[1] for x in pares)
+            if d2:
+                for x in pares:
+                    er = erro_posicionamento_d2(modelo, x[0], x[1]) if x[0] > 0 else None
+                    if er:
+                        falhas.append(er)
+                        break
         except ValueError as ex:
             needed = cpu_ = None
             falhas.append("contadores do motor ilegíveis: %s" % ex)

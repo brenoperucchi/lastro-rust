@@ -94,7 +94,7 @@ declare -A FIXO=(
   [tokenizer-1b]=ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654
   [tokenizer-3b]=ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654
   [criterio-degrau1]=f7b5d7ebbb5ff3da25013ae95b0f311efc0c18e0331962504bf5dfefd0ba687b
-  [criterio-degrau2]=46b8dd819920cf993c1e1c345a9aa4a751311546d420279798e49330873a5cfd
+  [criterio-degrau2]=5ed3a01a394390dcaed9689501b64fab59686d9b85986d7d57e1e27560af1dec
 )
 CHAVES=(); CAMINHOS=()
 monta_lista() {

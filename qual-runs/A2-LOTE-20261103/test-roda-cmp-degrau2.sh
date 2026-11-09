@@ -48,7 +48,7 @@ if [ "$1" = --smoke ]; then
 import json, os, sys
 saida, m = sys.argv[1:3]
 g = list(range(64)) if os.environ.get("FAKE_SMOKE_IDS", "igual") == "igual" else list(range(1, 65))
-json.dump({"medidas": [{"descartada": False, "falha": None, "gerados": g, "cont": {"needed": 100, "cpu": int(os.environ.get("FAKE_SMOKE_CPU", "60")), "hits": 100}}]}, open(os.path.join(saida, "p1", "saida", "medidas-%s.json" % m), "w"))
+json.dump({"medidas": [{"descartada": False, "falha": None, "gerados": g, "cont": {"needed": (24 if m == "1b" else 32) * 8 * 152, "cpu": int(os.environ.get("FAKE_SMOKE_CPU", str((22 if m == "1b" else 29) * 8 * 152))), "hits": 100}}]}, open(os.path.join(saida, "p1", "saida", "medidas-%s.json" % m), "w"))
 PY
   if [ -n "${FAKE_LINHA:-}" ]; then echo "$FAKE_LINHA" > "$saida/p1/stderr.txt"; elif [ "$modelo" = 1b ]; then echo "camadas-cpu 22 de 24; slots 64 de 768" > "$saida/p1/stderr.txt"; else echo "camadas-cpu 29 de 32; slots 120 de 1280" > "$saida/p1/stderr.txt"; fi; : > "$saida/p1/stdout.txt"
   [ "${FAKE_SMOKE_RC:-0}" = 0 ] || exit 1
@@ -85,7 +85,7 @@ echo "== degrau 2: caminho feliz"
 interno A 1b 100000 --degrau2
 confere "A: sai 0; smoke julgado ANTES das células; 12 células do 1B (6 LC + 6 S2), nenhuma S1/S3" "[ $RC = 0 ] && head -n 1 $D/si-A/ordem.txt | grep -q '^smoke ' && head -n 1 $D/log-A | grep -q '^SMOKE 1b' && [ \$(grep -vc '^smoke' $D/si-A/ordem.txt) = 12 ] && [ \$(grep -c 'lastro-1b-LC' $D/si-A/ordem.txt) = 6 ] && [ \$(grep -c 'llamacpp-1b-S2' $D/si-A/ordem.txt) = 6 ] && ! grep -q 'S1\|S3\|L100' $D/si-A/ordem.txt && ! grep -q 'S1\|S3' $D/si-A/orcamento-log.txt"
 confere "A: CMP_CAMADAS_CPU=22 chega ao smoke e a toda célula do Lastro (série LC), sem CMP_FRACAO_SLOTS; o llama.cpp roda sem a variável de camadas por célula" "grep -q '^SMOKE 1b CMP_CAMADAS_CPU=22 FRAC=\$' $D/log-A && [ \$(grep -c '^lastro-1b-LC-.* cam=22 frac=\$' $D/log-A) = 6 ]"
-confere "A: veredito do smoke OK (cpu/needed alto NÃO reprova) citado na decisão; rótulo exato com N=22 na decisão e no relatório" "grep -q '^veredito=OK' $D/si-A/smoke/veredito.txt && grep -q '^smoke: veredito=OK' $D/si-A/decisao.txt && grep -q '^cpu_needed=0.6' $D/si-A/smoke/veredito.txt && grep -q 'Lastro camadas inteiras (22 na CPU) contra llama.cpp S2 (--n-cpu-moe 22); KV f32 no Lastro contra f16 no llama.cpp; op offload ligado no llama.cpp, prefill da S2 não é leitura de experts na CPU' $D/si-A/decisao.txt && grep -q 'Degrau 2' $D/si-A/cmp-resultado.md && grep -q 'decode LC/S2 <= 1,25: equivale' $D/si-A/cmp-resultado.md"
+confere "A: veredito do smoke OK (cpu/needed alto NÃO reprova) citado na decisão; rótulo exato com N=22 na decisão e no relatório" "grep -q '^veredito=OK' $D/si-A/smoke/veredito.txt && grep -q '^smoke: veredito=OK' $D/si-A/decisao.txt && grep -q '^cpu_needed=0.9166' $D/si-A/smoke/veredito.txt && grep -q 'Lastro camadas inteiras (22 na CPU) contra llama.cpp S2 (--n-cpu-moe 22); KV f32 no Lastro contra f16 no llama.cpp; op offload ligado no llama.cpp, prefill da S2 não é leitura de experts na CPU' $D/si-A/decisao.txt && grep -q 'Degrau 2' $D/si-A/cmp-resultado.md && grep -q 'decode LC/S2 <= 1,25: equivale' $D/si-A/cmp-resultado.md"
 confere "A: orcamento.json declara degrau2 e não degrau1, S3 inativa, sem cortes; critério do degrau 2 na lista de integridade e na decisão" "grep -q '\"degrau2\": true' $D/si-A/orcamento.json && grep -q '\"degrau1\": false' $D/si-A/orcamento.json && grep -q '\"s3_ativa_no_fim\": false' $D/si-A/orcamento.json && grep -q '\"cortes\": \[\]' $D/si-A/orcamento.json && grep -q '^criterio-degrau2 ' $D/si-A/integridade-antes.txt && grep -q 'critério do degrau 2 sha256' $D/si-A/decisao.txt"
 confere "A: lados ALTERNADOS (bloco 0 começa pelo Lastro LC, bloco 1 pela S2); frio antes do quente" "[ \$(ordem A 1) = lastro-1b-LC-curto-frio ] && [ \$(ordem A 2) = llamacpp-1b-S2-curto-frio ] && [ \$(ordem A 5) = llamacpp-1b-S2-medio-frio ] && [ \$(ordem A 6) = lastro-1b-LC-medio-frio ]"
 confere "A: o extrator foi chamado com --degrau2 (cmp-resultado.json degrau2)" "grep -q '\"degrau2\": true' $D/si-A/cmp-resultado.json"
@@ -109,7 +109,7 @@ confere "E: processo do smoke com código != 0: janela para" "[ \$(ls $D/si-E/ce
 FAKE_SMOKE_RC=2 interno F 1b 100000 --degrau2
 confere "F: smoke com recusa de ambiente (2): janela interrompida, nada roda" "[ \$(ls $D/si-F/celulas | wc -l) = 0 ] && grep -q 'smoke recusou o ambiente' $D/si-F/orcamento-log.txt && grep -q 'SMOKE DO DEGRAU 2 FALHOU' $D/si-F/decisao.txt"
 FAKE_SMOKE_CPU=0 interno F2 1b 100000 --degrau2
-confere "F2: cpu = 0 explícito (needed > 0) também passa: cpu==0 NÃO é exigido nem proibido" "[ $RC = 0 ] && grep -q '^veredito=OK' $D/si-F2/smoke/veredito.txt && [ \$(grep -vc '^smoke' $D/si-F2/ordem.txt) = 12 ]"
+confere "F2: cpu = 0 no smoke: janela para, nenhuma célula (posicionamento não provado)" "[ \$(ls $D/si-F2/celulas | wc -l) = 0 ] && grep -q '^SMOKE DO DEGRAU 2 FALHOU: cpu/needed = 0.0, esperado 22/24 exato' $D/si-F2/decisao.txt"
 FAKE_SMOKE_IDS=diferente interno G 1b 100000 --degrau2
 confere "G: ids do smoke diferentes da referência 5c: REPORTADO, a janela segue (12 células), decisão traz ids=DIVERGEM" "[ $RC = 0 ] && [ \$(grep -vc '^smoke' $D/si-G/ordem.txt) = 12 ] && grep -q 'ids=DIVERGEM' $D/si-G/decisao.txt && ! grep -q 'FALHOU' $D/si-G/decisao.txt"
 echo "== degrau 2: orçamento (só os cortes 3 e 4; sem S1/S3)"

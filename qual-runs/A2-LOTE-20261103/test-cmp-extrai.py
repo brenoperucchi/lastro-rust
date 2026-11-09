@@ -1082,8 +1082,11 @@ class BaseD2(BaseD1):
     LINHA = {"1b": "camadas-cpu 22 de 24; slots 64 de 768\n", "3b": "camadas-cpu 29 de 32; slots 120 de 1280\n"}
     NN = {"1b": 22, "3b": 29}
 
+    EXATO = {"1b": (24 * 8 * 152, 22 * 8 * 152), "3b": (32 * 8 * 152, 29 * 8 * 152)}   # (needed, cpu) = (L, N) * k * posições
+
     def smoke2(self, m="1b", cmdline=None, **kw):
-        kw.setdefault("cpu", 60)
+        kw.setdefault("needed", self.EXATO[m][0])
+        kw.setdefault("cpu", self.EXATO[m][1])
         kw.setdefault("stderr", self.LINHA[m])
         sd = self.smoke_ok(**kw)
         grava(os.path.join(sd, "cmdline.txt"), cmdline if cmdline is not None else "pp --gera --celula %s:/m --so-texto curto --camadas-cpu %d --saida /s/p1/saida\n" % (m, self.NN[m]))
@@ -1095,7 +1098,8 @@ class BaseD2(BaseD1):
         return X.avalia_smoke(sd, m, self.ids, self.refs, self.textos, d2=True)
 
     def lastroLC(self, m="1b", t="curto", estado="frio", n=3, cmdline=True, camadas=None, linha=None, **kw):
-        kw.setdefault("cpu", 60)
+        kw.setdefault("needed", self.EXATO[m][0])
+        kw.setdefault("cpu", self.EXATO[m][1])
         d = self.lastro(m=m, t=t, estado=estado, n=n, **kw)
         novo = d.replace("-L-", "-LC-")
         os.rename(d, novo)
@@ -1120,7 +1124,7 @@ class TestDegrau2Smoke(BaseD2):
         ok, lin = self.avalia2(self.smoke2())
         self.assertTrue(ok, lin)
         self.assertIn("veredito=OK", lin)
-        self.assertIn("cpu_needed=0.6", lin)
+        self.assertIn("cpu_needed=%s" % (22 / 24), lin)
         self.assertIn("camadas_cpu=22", lin)
         self.assertIn("ids=IGUAIS", lin)
 
@@ -1128,9 +1132,15 @@ class TestDegrau2Smoke(BaseD2):
         ok, lin = self.avalia2(self.smoke2(m="3b"), m="3b")
         self.assertTrue(ok, lin)
 
-    def test_smoke_cpu_zero_tambem_passa(self):
-        ok, lin = self.avalia2(self.smoke2(cpu=0))
-        self.assertTrue(ok, lin)
+    def test_smoke_cpu_zero_ou_exato_menos_um_falha_e_exato_passa_nos_dois_modelos(self):
+        for m in ("1b", "3b"):
+            needed, exato = self.EXATO[m]
+            for cpu in (0, exato - 1, exato + 1):
+                ok, lin = self.avalia2(self.smoke2(m=m, cpu=cpu), m=m)
+                self.assertFalse(ok, (m, cpu))
+                self.assertTrue(any("esperado %d/%d exato" % (self.NN[m], X.CAMADAS_EXPERTS[m][0]) in x for x in lin), lin)
+            ok, lin = self.avalia2(self.smoke2(m=m), m=m)
+            self.assertTrue(ok, lin)
 
     def test_smoke_linha_ausente_errada_ou_antiga_falha(self):
         for erro in ("", "slots 768 de 768\n", "camadas-cpu 21 de 24; slots 96 de 768\n", "camadas-cpu 22 de 24; slots 768 de 768\n",
@@ -1246,11 +1256,21 @@ class TestDegrau2Extrator(BaseD2):
         self.assertEqual(res["resultado_smoke"], "SMOKE DO DEGRAU 2 FALHOU: linha de camadas/slots diferente")
         self.assertIn("SMOKE DO DEGRAU 2 FALHOU", X.relatorio(res))
 
-    def test_celula_lc_com_cpu_zero_ou_alto_vale_mas_needed_ausente_e_sem_prova(self):
-        self.veredito()
-        self.lastroLC(estado="frio", n=3, cpu=0)
-        self.llama(estado="frio", serie="S2", n=3)
-        self.assertEqual(self.razao(self.roda2(), "1b", "curto", "frio", "S2")["status"], "OK")
+    def test_celula_lc_cpu_zero_ou_exato_menos_um_e_sem_prova_e_exato_vale_nos_dois_modelos(self):
+        for m in ("1b", "3b"):
+            for cpu in (0, self.EXATO[m][1] - 1):
+                self.setUp()
+                self.veredito()
+                self.lastroLC(m=m, estado="frio", n=3, cpu=cpu)
+                self.llama(m=m, estado="frio", serie="S2", n=3)
+                r = self.razao(self.roda2(), m, "curto", "frio", "S2")
+                self.assertEqual(r["status"], "SEM PROVA", (m, cpu))
+                self.assertTrue(any("esperado %d/%d exato: o posicionamento por camada não é o declarado" % (self.NN[m], X.CAMADAS_EXPERTS[m][0]) in x for x in r["motivos"]), r["motivos"])
+            self.setUp()
+            self.veredito()
+            self.lastroLC(m=m, estado="frio", n=3)
+            self.llama(m=m, estado="frio", serie="S2", n=3)
+            self.assertEqual(self.razao(self.roda2(), m, "curto", "frio", "S2")["status"], "OK")
 
     def test_celula_lc_sem_linha_ou_linha_errada_e_sem_prova(self):
         self.veredito()
