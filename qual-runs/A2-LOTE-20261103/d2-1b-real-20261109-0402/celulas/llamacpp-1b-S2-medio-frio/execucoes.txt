@@ -1,0 +1,4 @@
+servidor 0 pid=2676171 porta=60729
+servidor 1 pid=2676546 porta=42809
+servidor 2 pid=2676804 porta=47587
+servidor 3 pid=2677049 porta=53657

@@ -1,0 +1,1 @@
+servidor 0 pid=2696134 porta=39135

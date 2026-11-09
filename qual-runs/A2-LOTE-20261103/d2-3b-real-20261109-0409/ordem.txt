@@ -1,0 +1,13 @@
+smoke inicio=3s fim=23s rc=0
+01 lastro-3b-LC-curto-frio n=3 inicio=23s fim=104s rc=0
+02 llamacpp-3b-S2-curto-frio n=3 inicio=104s fim=128s rc=0
+03 lastro-3b-LC-curto-quente n=5 inicio=128s fim=173s rc=0
+04 llamacpp-3b-S2-curto-quente n=5 inicio=173s fim=199s rc=0
+05 llamacpp-3b-S2-medio-frio n=3 inicio=199s fim=223s rc=0
+06 lastro-3b-LC-medio-frio n=3 inicio=223s fim=310s rc=0
+07 llamacpp-3b-S2-medio-quente n=5 inicio=310s fim=336s rc=0
+08 lastro-3b-LC-medio-quente n=5 inicio=336s fim=389s rc=0
+09 lastro-3b-LC-longo-frio n=3 inicio=389s fim=490s rc=0
+10 llamacpp-3b-S2-longo-frio n=3 inicio=490s fim=514s rc=0
+11 lastro-3b-LC-longo-quente n=5 inicio=514s fim=590s rc=0
+12 llamacpp-3b-S2-longo-quente n=5 inicio=590s fim=616s rc=0

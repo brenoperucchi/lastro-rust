@@ -1,0 +1,20 @@
+0.00.069.469 I srv  llama_server: initializing ...
+0.00.069.479 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.069.578 I srv  init_listene: The UI is disabled
+0.00.069.580 I srv  init_listene: Use --ui/--no-ui (or deprecated --webui/--no-webui) to enable/disable
+0.00.069.649 W srv  server_setup: security: no API key is set and CORS allows all origins (see https://github.com/ggml-org/llama.cpp/pull/25655)
+0.00.073.088 I srv    load_model: loading model '/home/brenoperucchi/models/gguf/granite-3.1-3b-a800m-instruct-bf16.gguf'
+0.00.251.856 W llama_model_loader: tensor overrides to CPU are used with mmap enabled - consider using --load-mode none for better performance
+0.00.601.185 I cmn          init: llama threadpool init, n_threads = 8
+0.00.684.374 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'
+0.00.686.764 I srv  server_run_i: model loaded
+0.00.686.771 I srv  server_on_li: listening on http://127.0.0.1:39971
+0.00.897.048 I slot get_availabl: id  0 | task -1 | selected slot by LRU, n_tokens = 0, t_last = -1
+0.00.897.078 I slot launch_slot_: id  0 | task 0 | processing task, is_child = 0
+0.04.157.361 I slot print_timing: id  0 | task 0 | prompt eval time =     669.45 ms /   170 tokens (    3.94 ms per token,   253.94 tokens per second)
+0.04.157.364 I slot print_timing: id  0 | task 0 |        eval time =    2590.81 ms /    64 tokens (   41.12 ms per token,    24.32 tokens per second)
+0.04.157.365 I slot print_timing: id  0 | task 0 |       total time =    3260.25 ms /   234 tokens
+0.04.157.369 I slot print_timing: id  0 | task 0 |    graphs reused =         62
+0.04.157.369 I slot print_timing: id  0 | task 0 |   graph reallocs =          0    /     0        (same size) / (changed size)
+0.04.157.407 I slot      release: id  0 | task 0 | stop processing: n_tokens = 233, truncated = 0
+0.04.161.040 I srv    operator(): operator(): cleaning up before exit...

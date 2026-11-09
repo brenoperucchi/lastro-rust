@@ -1,0 +1,22 @@
+integridade antes: binário e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4; critério 5c 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731; critério 5b 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b; 5 arquivos de entrada
+Absolutely, I'd be happy to help you set up your small vegetable garden. Here's a detailed guide for each vegetable, tailored to your specific conditions:
+
+1. **Tomatoes**: Start with a deep, well-draining potting mix. Tomato
+1b pedido 1 (medio): 170 ids, 64 novos, prefill 3923.0 ms, 21.26 ms por token (mediana), total 8078.1 ms, T_sequencia 2777.333 ms, média por passo 21.867 ms (63 passos)
+== geração livre 5c 1b
+pedido 1 (medio): 64/64 ids iguais -> PASSA
+  descritivo: prefill 3923.0 ms (170 ids), ms por token (mediana) 21.26, total 8078.1 ms, T_sequencia 2777.333 ms
+empates usados: nenhum
+ms por token do modelo (mediana de todos os passos): 21.26
+motivo(s): 1 pedidos (ou fora da ordem curto, medio, longo); esperados 3
+criações do motor: 1 (esperado 1)
+rótulo: SEM PROVA
+integridade conferida no fim do modelo: íntegra
+
+etapa 5c, geração livre curta (critério sha256 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731)
+1b: SEM PROVA
+integridade do conjunto: íntegra
+modelo(s) ausente(s) no conjunto: 3b (o critério exige 1B e 3B; sem os dois não há PASSA)
+ids de prompt diferentes entre o Rust e a referência valem REPROVA (leitura da seção "Regra de rótulo" do critério; a seção "Referência" fala em SEM PROVA)
+rótulo: SEM PROVA
+

@@ -1,0 +1,40 @@
+integridade antes: binário e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4; critério 5c 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731; critério 5b 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b; 5 arquivos de entrada
+A bicycle gear system works by changing the number of teeth on the chainring (front ring) and the cassette (rear cogs). Here's how it helps a rider climb hills and maintain speed on flat roads:
+
+1. Climbing hills: When
+1b pedido 0 (curto): 89 ids, 64 novos, prefill 3203.4 ms, 21.01 ms por token (mediana), total 7360.2 ms, T_sequencia 2804.597 ms, média por passo 21.462 ms (63 passos)
+A bicycle gear system works by changing the number of teeth on the chainring (front ring) and the cassette (rear cogs). Here's how it helps a rider climb hills and maintain speed on flat roads:
+
+1. Climbing hills: When
+1b quente rep 1 (curto): 89 ids, 64 novos, prefill 778.6 ms, 20.92 ms por token (mediana), total 2129.2 ms, T_sequencia 0.000 ms, média por passo 21.435 ms (63 passos)
+A bicycle gear system works by changing the number of teeth on the chainring (front ring) and the cassette (rear cogs). Here's how it helps a rider climb hills and maintain speed on flat roads:
+
+1. Climbing hills: When
+1b quente rep 2 (curto): 89 ids, 64 novos, prefill 766.4 ms, 20.99 ms por token (mediana), total 2124.9 ms, T_sequencia 0.001 ms, média por passo 21.562 ms (63 passos)
+A bicycle gear system works by changing the number of teeth on the chainring (front ring) and the cassette (rear cogs). Here's how it helps a rider climb hills and maintain speed on flat roads:
+
+1. Climbing hills: When
+1b quente rep 3 (curto): 89 ids, 64 novos, prefill 788.5 ms, 20.85 ms por token (mediana), total 2145.2 ms, T_sequencia 0.000 ms, média por passo 21.532 ms (63 passos)
+A bicycle gear system works by changing the number of teeth on the chainring (front ring) and the cassette (rear cogs). Here's how it helps a rider climb hills and maintain speed on flat roads:
+
+1. Climbing hills: When
+1b quente rep 4 (curto): 89 ids, 64 novos, prefill 782.4 ms, 20.82 ms por token (mediana), total 2117.8 ms, T_sequencia 0.000 ms, média por passo 21.194 ms (63 passos)
+A bicycle gear system works by changing the number of teeth on the chainring (front ring) and the cassette (rear cogs). Here's how it helps a rider climb hills and maintain speed on flat roads:
+
+1. Climbing hills: When
+1b quente rep 5 (curto): 89 ids, 64 novos, prefill 779.6 ms, 20.79 ms por token (mediana), total 2116.1 ms, T_sequencia 0.000 ms, média por passo 21.213 ms (63 passos)
+== geração livre 5c 1b
+empates usados: nenhum
+ms por token do modelo (mediana de todos os passos): NaN
+motivo(s): 0 pedidos (ou fora da ordem curto, medio, longo); esperados 3
+criações do motor: 1 (esperado 1)
+rótulo: SEM PROVA
+integridade conferida no fim do modelo: íntegra
+
+etapa 5c, geração livre curta (critério sha256 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731)
+1b: SEM PROVA
+integridade do conjunto: íntegra
+modelo(s) ausente(s) no conjunto: 3b (o critério exige 1B e 3B; sem os dois não há PASSA)
+ids de prompt diferentes entre o Rust e a referência valem REPROVA (leitura da seção "Regra de rótulo" do critério; a seção "Referência" fala em SEM PROVA)
+rótulo: SEM PROVA
+

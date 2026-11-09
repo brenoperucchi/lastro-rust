@@ -1,0 +1,40 @@
+integridade antes: binário e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4; critério 5c 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731; critério 5b 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b; 5 arquivos de entrada
+Absolutely, I'd be delighted to help you prepare for your small vegetable garden. Here's a detailed plan for your tomatoes, carrots, lettuce, and herbs, considering the soil type and watering frequency you've provided.
+
+1. **So
+3b pedido 1 (medio): 170 ids, 64 novos, prefill 5705.3 ms, 39.86 ms por token (mediana), total 14028.4 ms, T_sequencia 5762.696 ms, média por passo 40.638 ms (63 passos)
+Absolutely, I'd be delighted to help you prepare for your small vegetable garden. Here's a detailed plan for your tomatoes, carrots, lettuce, and herbs, considering the soil type and watering frequency you've provided.
+
+1. **So
+3b quente rep 1 (medio): 170 ids, 64 novos, prefill 2960.3 ms, 40.32 ms por token (mediana), total 5549.6 ms, T_sequencia 0.000 ms, média por passo 41.097 ms (63 passos)
+Absolutely, I'd be delighted to help you prepare for your small vegetable garden. Here's a detailed plan for your tomatoes, carrots, lettuce, and herbs, considering the soil type and watering frequency you've provided.
+
+1. **So
+3b quente rep 2 (medio): 170 ids, 64 novos, prefill 2953.9 ms, 40.10 ms por token (mediana), total 5528.1 ms, T_sequencia 0.000 ms, média por passo 40.857 ms (63 passos)
+Absolutely, I'd be delighted to help you prepare for your small vegetable garden. Here's a detailed plan for your tomatoes, carrots, lettuce, and herbs, considering the soil type and watering frequency you've provided.
+
+1. **So
+3b quente rep 3 (medio): 170 ids, 64 novos, prefill 2939.4 ms, 39.90 ms por token (mediana), total 5516.7 ms, T_sequencia 0.000 ms, média por passo 40.907 ms (63 passos)
+Absolutely, I'd be delighted to help you prepare for your small vegetable garden. Here's a detailed plan for your tomatoes, carrots, lettuce, and herbs, considering the soil type and watering frequency you've provided.
+
+1. **So
+3b quente rep 4 (medio): 170 ids, 64 novos, prefill 2978.0 ms, 39.39 ms por token (mediana), total 5562.7 ms, T_sequencia 0.000 ms, média por passo 41.024 ms (63 passos)
+Absolutely, I'd be delighted to help you prepare for your small vegetable garden. Here's a detailed plan for your tomatoes, carrots, lettuce, and herbs, considering the soil type and watering frequency you've provided.
+
+1. **So
+3b quente rep 5 (medio): 170 ids, 64 novos, prefill 2953.2 ms, 39.96 ms por token (mediana), total 5525.9 ms, T_sequencia 0.000 ms, média por passo 40.833 ms (63 passos)
+== geração livre 5c 3b
+empates usados: nenhum
+ms por token do modelo (mediana de todos os passos): NaN
+motivo(s): 0 pedidos (ou fora da ordem curto, medio, longo); esperados 3
+criações do motor: 1 (esperado 1)
+rótulo: SEM PROVA
+integridade conferida no fim do modelo: íntegra
+
+etapa 5c, geração livre curta (critério sha256 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731)
+3b: SEM PROVA
+integridade do conjunto: íntegra
+modelo(s) ausente(s) no conjunto: 1b (o critério exige 1B e 3B; sem os dois não há PASSA)
+ids de prompt diferentes entre o Rust e a referência valem REPROVA (leitura da seção "Regra de rótulo" do critério; a seção "Referência" fala em SEM PROVA)
+rótulo: SEM PROVA
+

@@ -1,0 +1,1 @@
+camadas-cpu 29 de 32; slots 120 de 1280

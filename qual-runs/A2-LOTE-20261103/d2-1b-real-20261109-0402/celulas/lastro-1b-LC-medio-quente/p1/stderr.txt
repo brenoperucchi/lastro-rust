@@ -1,0 +1,1 @@
+camadas-cpu 22 de 24; slots 64 de 768

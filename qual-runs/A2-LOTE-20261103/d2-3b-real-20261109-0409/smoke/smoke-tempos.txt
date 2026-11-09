@@ -1,0 +1,4 @@
+coletor_inicio_ms=1794208164737
+bin_inicio_ms=1794208164739
+bin_fim_ms=1794208183996
+coletor_fim_ms=1794208183998

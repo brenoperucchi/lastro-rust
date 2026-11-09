@@ -1,0 +1,12 @@
+veredito=OK
+modelo=1b
+camadas_cpu=22
+gpu_pico_pct=11.8
+gpu_leituras_no_intervalo=21
+gpu_lacuna_max_s=0.5
+gpu_falhas_coleta=0
+gpu_pos_saida_descritiva=1794207779513, 1856, 24564
+cpu_needed=0.9166666666666666
+ids=IGUAIS
+slots_impressos=camadas-cpu 22 de 24; slots 64 de 768
+cmdline=/home/brenoperucchi/Devs/lastro-rust/rust/moe-rt/target/release/primeira-palavra --gera --celula 1b:/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct --so-texto curto --camadas-cpu 22 --saida /home/brenoperucchi/Devs/lastro-rust/qual-runs/A2-LOTE-20261103/d2-1b-real-20261109-0402/smoke/p1/saida

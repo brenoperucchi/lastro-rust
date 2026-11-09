@@ -1,0 +1,1 @@
+{"lado": "lastro", "serie": "LC", "fracao_slots": "", "modelo": "1b", "texto": "longo", "estado": "quente", "n_medidas": 5, "portao_ok": true, "portao_motivo": "", "rc": 0, "inicio_epoch": 1794208072, "inicio_coleta_epoch": 1794208077, "fim_epoch": 1794208113, "monitor_falha": "", "camadas_cpu": "22", "desktop_g_sm_antes": 3, "desktop_g_sm_depois": 3, "dmon_sm_antes": 0}

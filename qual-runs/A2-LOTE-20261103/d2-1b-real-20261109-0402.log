@@ -1,0 +1,15 @@
+degrau 2, Lastro camadas inteiras x llama.cpp S2, janela do modelo 1b, critério do degrau 2 sha256 5ed3a01a394390dcaed9689501b64fab59686d9b85986d7d57e1e27560af1dec, critério do degrau 1 sha256 f7b5d7ebbb5ff3da25013ae95b0f311efc0c18e0331962504bf5dfefd0ba687b, critério base sha256 f1bd1e0f35378f5efe16ea156546d8b96370b754f986c4dca56e2ecd191a5932
+resultado DESCRITIVO: sem meta, sem PASSA/REPROVA de velocidade; todo rótulo: Lastro camadas inteiras (22 na CPU) contra llama.cpp S2 (--n-cpu-moe 22); KV f32 no Lastro contra f16 no llama.cpp; op offload ligado no llama.cpp, prefill da S2 não é leitura de experts na CPU
+smoke: veredito=OK camadas_cpu=22 gpu_pico_pct=11.8 cpu_needed=0.9166666666666666 ids=IGUAIS 
+integridade: íntegra (binários, GGUF, safetensors, textos, referências, ids e critério iguais antes e depois e aos congelados onde há)
+cortes de orçamento: nenhum
+repetições finais: quente 5, frio 3; decorrido 367 s de 1800 s
+não rodou: 0 item(ns); ver orcamento.json
+extrator: cmp-extrai: células OK 12, SEM PROVA 0, NÃO RODOU 0; gravados cmp-resultado.json e cmp-resultado.md (código 0)
+células executadas: 12 (ordem.txt)
+Running as unit: lastro-limite-2660331-1794207765441400898.service
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 6min 7.466s
+             CPU time consumed: 23min 30.672s
+                   Memory peak: 7.2G (swap: 0B)
