@@ -167,7 +167,12 @@ confere "sem a variável: sem --fracao-slots na linha, série L, fracao_slots va
 : > "$D/mon.log"
 CMP_FRACAO_SLOTS=1.0 roda smoke --smoke --modelo 1b
 confere "smoke: sai 0, um processo com --so-texto curto --fracao-slots 1.0, sem monitor nem portão" "[ $RC = 0 ] && [ \$(wc -l < $D/log-smoke) = 1 ] && grep -q -- '--gera --celula 1b:$D/m1b --so-texto curto --fracao-slots 1.0 --saida $D/s-smoke/p1/saida' $D/log-smoke && [ ! -s $D/mon.log ] && [ ! -e $D/s-smoke/celula.json ]"
-confere "smoke: grava rc.txt 0, cmdline.txt, gpumem.csv (usada, total) e smoke.json" "[ \"\$(cat $D/s-smoke/rc.txt)\" = 0 ] && grep -q -- '--fracao-slots 1.0' $D/s-smoke/cmdline.txt && grep -q '^2000, 24000' $D/s-smoke/gpumem.csv && grep -q '\"smoke\": true' $D/s-smoke/smoke.json && [ -s $D/s-smoke/p1/saida/medidas-1b.json ]"
+confere "smoke: grava rc.txt 0, cmdline.txt, gpumem.csv (epoch_ms, usada, total) e smoke.json" "[ \"\$(cat $D/s-smoke/rc.txt)\" = 0 ] && grep -q -- '--fracao-slots 1.0' $D/s-smoke/cmdline.txt && grep -q '^[0-9]*, 2000, 24000\$' $D/s-smoke/gpumem.csv && grep -q '\"smoke\": true' $D/s-smoke/smoke.json && [ -s $D/s-smoke/p1/saida/medidas-1b.json ]"
+confere "smoke: smoke-tempos.txt com início/fim do coletor e do binário (epoch ms, ordem coerente) e amostra pós-saída em arquivo À PARTE" "python3 -I -c \"import sys; t=dict(l.strip().split('=') for l in open(sys.argv[1]) if '=' in l); v=[int(t[k]) for k in ('coletor_inicio_ms','bin_inicio_ms','bin_fim_ms','coletor_fim_ms')]; assert v==sorted(v) and v[0]>1700000000000\" $D/s-smoke/smoke-tempos.txt && grep -q '^[0-9]*, 2000, 24000\$' $D/s-smoke/gpumem-pos-saida.csv"
+# monitor de memória falso que falha durante toda a execução do binário e só responde depois de ele sair (rev-1 P2 da r116): gpumem.csv não pode ter leitura, a falha é registrada e a pós-saída fica à parte
+printf '#!/usr/bin/env bash\nif grep -q bin_fim_ms "%s/s-smoke-tardio/smoke-tempos.txt" 2> /dev/null; then echo "2000, 24000"; else exit 1; fi\n' "$D" > "$D/smi-tardio"; chmod +x "$D/smi-tardio"
+NVIDIA_SMI=$D/smi-tardio CMP_FRACAO_SLOTS=1.0 roda smoke-tardio --smoke --modelo 1b
+confere "smoke com monitor que só responde depois da saída: gpumem.csv sem leitura viva, falhas registradas, pós-saída à parte" "[ $RC = 0 ] && [ ! -s $D/s-smoke-tardio/gpumem.csv ] && [ -s $D/s-smoke-tardio/gpumem-falhas.txt ] && grep -q '^[0-9]*, 2000, 24000\$' $D/s-smoke-tardio/gpumem-pos-saida.csv"
 roda smoke-sem-var --smoke --modelo 1b
 confere "smoke sem CMP_FRACAO_SLOTS=1.0: recusa 2" "[ $RC = 2 ] && [ ! -s $D/log-smoke-sem-var ]"
 CMP_FRACAO_SLOTS=1.0 roda smoke-uso --smoke --modelo 1b --texto longo

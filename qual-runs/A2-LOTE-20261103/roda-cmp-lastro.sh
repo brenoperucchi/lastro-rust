@@ -20,7 +20,7 @@
 # processo; o stdout/stderr de cada pK guarda os `slots` impressos pelo binário, se houver). Sem a variável o comportamento é o de antes (série "L", sem flag).
 #   roda-cmp-lastro.sh --smoke --modelo 1b|3b --saida DIR [--bin BINARIO]   (seção 3 do critério do degrau 1; exige CMP_FRACAO_SLOTS=1.0)
 # smoke = UMA geração curta (texto curto, 64 tokens, processo novo), sem portão nem monitor de célula e sem medida; amostra a memória da 4090 a ~2 Hz em DIR/gpumem.csv
-# ("usada, total" em MiB) e grava DIR/{cmdline.txt,rc.txt,p1/...}; quem julga (código 0, GPU <= 90%, cpu/needed == 0, ids) é `cmp-extrai.py --smoke`.
+# ("epoch_ms, usada, total", MiB; só leituras ok), com falhas em gpumem-falhas.txt, tempos em smoke-tempos.txt e amostra pós-saída (só descritiva) em gpumem-pos-saida.csv; grava DIR/{cmdline.txt,rc.txt,p1/...}; quem julga (código 0, GPU <= 90%, cpu/needed == 0, ids) é `cmp-extrai.py --smoke`.
 # Códigos: 0 a célula rodou até o fim (a validade fica em celula.json e no extrator), 1 algum processo saiu com erro, 2 recusa de uso/ambiente, inclusive recusa (código 2)
 # do binário (emenda 5, item 11: o envelope interrompe a janela e não inicia células posteriores); celula.json é gravado mesmo assim.
 set -u
@@ -77,14 +77,26 @@ if [ $SMOKE = 1 ]; then
   mkdir -p "$SAIDA/p1"
   CMD=("$BIN" --gera --celula "$MODELO:$MDIR" --so-texto curto "${FRACAO_ARGS[@]}" --saida "$SAIDA/p1/saida")
   printf '%q ' "${CMD[@]}" > "$SAIDA/cmdline.txt"; echo >> "$SAIDA/cmdline.txt"
-  : > "$SAIDA/gpumem.csv"
-  ( while :; do "$SMI" -i "$UUID" --query-gpu=memory.used,memory.total --format=csv,noheader,nounits >> "$SAIDA/gpumem.csv" 2> /dev/null; sleep 0.5; done ) &
+  # memória a ~2 Hz com carimbo: gpumem.csv = "epoch_ms, usada, total" (só leituras com nvidia-smi rc 0); falhas da coleta em gpumem-falhas.txt ("epoch_ms rc=N");
+  # smoke-tempos.txt = início/fim do binário e do coletor (epoch ms). A amostra depois da saída do binário vai para gpumem-pos-saida.csv (descritiva, o extrator nunca a usa para aprovar).
+  : > "$SAIDA/gpumem.csv"; : > "$SAIDA/gpumem-falhas.txt"
+  AMOSTRA=
+  para_coletor() { [ -z "$AMOSTRA" ] || { kill "$AMOSTRA" 2> /dev/null; wait "$AMOSTRA" 2> /dev/null; AMOSTRA=; echo "coletor_fim_ms=$(ms_agora)" >> "$SAIDA/smoke-tempos.txt"; }; }
+  trap para_coletor EXIT
+  trap 'para_coletor; exit 143' INT TERM HUP
+  echo "coletor_inicio_ms=$(ms_agora)" > "$SAIDA/smoke-tempos.txt"
+  ( while :; do
+      leit=$("$SMI" -i "$UUID" --query-gpu=memory.used,memory.total --format=csv,noheader,nounits 2> /dev/null); r=$?
+      agora=$(ms_agora)
+      if [ $r = 0 ] && [ -n "$leit" ]; then echo "$agora, $leit" >> "$SAIDA/gpumem.csv"; else echo "$agora rc=$r" >> "$SAIDA/gpumem-falhas.txt"; fi
+      sleep 0.5
+    done ) &
   AMOSTRA=$!
-  t0=$(ms_agora)
+  t0=$(ms_agora); echo "bin_inicio_ms=$t0" >> "$SAIDA/smoke-tempos.txt"
   "${CMD[@]}" > "$SAIDA/p1/stdout.txt" 2> "$SAIDA/p1/stderr.txt" < /dev/null; rc=$?
-  t1=$(ms_agora)
-  "$SMI" -i "$UUID" --query-gpu=memory.used,memory.total --format=csv,noheader,nounits >> "$SAIDA/gpumem.csv" 2> /dev/null
-  kill "$AMOSTRA" 2> /dev/null; wait "$AMOSTRA" 2> /dev/null
+  t1=$(ms_agora); echo "bin_fim_ms=$t1" >> "$SAIDA/smoke-tempos.txt"
+  para_coletor
+  { echo "$(ms_agora), $("$SMI" -i "$UUID" --query-gpu=memory.used,memory.total --format=csv,noheader,nounits 2> /dev/null)"; } > "$SAIDA/gpumem-pos-saida.csv"
   echo $((t1 - t0)) > "$SAIDA/p1/wall_ms.txt"; echo "$rc" > "$SAIDA/p1/rc.txt"; echo "$rc" > "$SAIDA/rc.txt"
   printf '{"lado": "lastro", "serie": "L100", "smoke": true, "modelo": "%s", "fracao_slots": "1.0", "rc": %s}\n' "$MODELO" "$rc" > "$SAIDA/smoke.json"
   [ "$rc" != 2 ] || exit 2

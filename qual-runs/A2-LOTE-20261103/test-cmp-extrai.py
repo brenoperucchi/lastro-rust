@@ -753,17 +753,22 @@ class BaseD1(Base):
         grava(os.path.join(sd, "rc.txt"), "0\n")
         grava(os.path.join(sd, "p1", "rc.txt"), "0\n")
         grava(os.path.join(sd, "cmdline.txt"), "pp --gera --celula 1b:/m --so-texto curto --fracao-slots 1.0 --saida /s/p1/saida\n")
-        grava(os.path.join(sd, "gpumem.csv"), kw.get("mem", "1000, 24000\n9000, 24000\n"))
+        # intervalo do binário: 1.000.000 a 1.004.000 ms; leituras carimbadas (ts, usada, total); `mem` = lista (ts, usada, total) ou texto cru
+        mem = kw.get("mem", [(1000500, 1000, 24000), (1001500, 9000, 24000), (1002500, 9000, 24000), (1003500, 1000, 24000)])
+        grava(os.path.join(sd, "gpumem.csv"), mem if isinstance(mem, str) else "".join("%d, %s, %s\n" % x for x in mem))
+        if kw.get("tempos", True):
+            grava(os.path.join(sd, "smoke-tempos.txt"), "coletor_inicio_ms=999900\nbin_inicio_ms=1000000\nbin_fim_ms=1004000\ncoletor_fim_ms=1004100\n")
+        grava(os.path.join(sd, "gpumem-pos-saida.csv"), "1004200, 300, 24000\n")
         g = list(GERADOS) if ids_iguais else [x + 1 for x in GERADOS]
         grava(os.path.join(sd, "p1", "saida", "medidas-1b.json"), {"medidas": [{"descartada": False, "falha": None, "gerados": g, "cont": {"needed": kw.get("needed", 100), "cpu": kw.get("cpu", 0), "hits": 100}}]})
-        grava(os.path.join(sd, "p1", "stdout.txt"), kw.get("stdout", "slots 1792\n"))
-        grava(os.path.join(sd, "p1", "stderr.txt"), kw.get("stderr", ""))
+        grava(os.path.join(sd, "p1", "stdout.txt"), kw.get("stdout", ""))
+        grava(os.path.join(sd, "p1", "stderr.txt"), kw.get("stderr", "slots 768 de 768\n"))
         return sd
 
     def avalia(self, sd, m="1b"):
         return X.avalia_smoke(sd, m, self.ids, self.refs, self.textos)
 
-    def lastro100(self, m="1b", t="curto", estado="frio", n=3, cmdline=True, fracao="1.0", **kw):
+    def lastro100(self, m="1b", t="curto", estado="frio", n=3, cmdline=True, fracao="1.0", slots_err="slots 768 de 768\n", **kw):
         kw.setdefault("cpu", 0)
         d = self.lastro(m=m, t=t, estado=estado, n=n, **kw)
         novo = d.replace("-L-", "-L100-")
@@ -776,6 +781,8 @@ class BaseD1(Base):
         if cmdline:
             procs = sorted(x for x in os.listdir(novo) if x.startswith("p") and x[1:].isdigit())
             grava(os.path.join(novo, "cmdline.txt"), "".join("%s: pp --gera --celula %s:/m --so-texto %s --fracao-slots 1.0 --saida x\n" % (p, m, t) for p in procs))
+        for p in sorted(x for x in os.listdir(novo) if x.startswith("p") and x[1:].isdigit()):
+            grava(os.path.join(novo, p, "stderr.txt"), slots_err)
         return novo
 
     def roda1(self):
@@ -792,7 +799,7 @@ class TestDegrau1Smoke(BaseD1):
         self.assertIn("veredito=OK", lin)
         self.assertIn("ids=IGUAIS", lin)
         self.assertIn("gpu_pico_pct=37.5", lin)
-        self.assertTrue(any(x.startswith("slots_impressos=slots 1792") for x in lin))
+        self.assertTrue(any(x.startswith("slots_impressos=slots 768 de 768") for x in lin))
 
     def test_smoke_rc_diferente_de_zero_falha(self):
         sd = self.smoke_ok()
@@ -802,18 +809,90 @@ class TestDegrau1Smoke(BaseD1):
         self.assertTrue(any("código 0" in x for x in lin))
 
     def test_smoke_memoria_acima_de_90_falha(self):
-        ok, lin = self.avalia(self.smoke_ok(mem="22000, 24000\n"))
+        ok, lin = self.avalia(self.smoke_ok(mem=[(1000500 + 1000 * i, 22000, 24000) for i in range(4)]))
         self.assertFalse(ok)
         self.assertTrue(any("90%" in x for x in lin))
-        ok2, _ = self.avalia(self.smoke_ok(mem="21600, 24000\n"))     # exatamente 90%: passa
+        ok2, _ = self.avalia(self.smoke_ok(mem=[(1000500 + 1000 * i, 21600, 24000) for i in range(4)]))     # exatamente 90%: passa
         self.assertTrue(ok2)
+
+    def test_smoke_pico_acima_de_90_so_numa_leitura_viva_falha(self):
+        ok, _ = self.avalia(self.smoke_ok(mem=[(1000500, 1000, 24000), (1001500, 23000, 24000), (1002500, 1000, 24000), (1003500, 1000, 24000)]))
+        self.assertFalse(ok)
 
     def test_smoke_sem_leitura_de_memoria_falha_fechada(self):
         ok, lin = self.avalia(self.smoke_ok(mem="lixo\n"))
         self.assertFalse(ok)
 
+    def test_smoke_sem_amostras_no_intervalo_falha_mesmo_com_pos_saida_boa(self):
+        # monitor que falhou durante toda a execução e só respondeu depois de o binário sair: nada dentro do intervalo
+        ok, lin = self.avalia(self.smoke_ok(mem=[(1004200, 300, 24000), (1004700, 300, 24000), (1005200, 300, 24000)]))
+        self.assertFalse(ok)
+        self.assertTrue(any("durante a execução do binário" in x for x in lin))
+        ok2, _ = self.avalia(self.smoke_ok(mem=[]))
+        self.assertFalse(ok2)
+
+    def test_smoke_menos_de_3_leituras_no_intervalo_falha(self):
+        ok, _ = self.avalia(self.smoke_ok(mem=[(1000500, 1000, 24000), (1003500, 1000, 24000)]))
+        self.assertFalse(ok)
+        ok2, _ = self.avalia(self.smoke_ok(mem=[(1000500, 1000, 24000), (1002000, 1000, 24000), (1003500, 1000, 24000)]))
+        self.assertTrue(ok2)
+
+    def test_smoke_coleta_interrompida_ou_com_lacuna_falha(self):
+        # coletor morreu cedo: 3 leituras no começo, depois nada até o fim (lacuna final > 3 s)
+        ok, lin = self.avalia(self.smoke_ok(mem=[(1000100, 1000, 24000), (1000300, 1000, 24000), (1000600, 1000, 24000)]))
+        self.assertFalse(ok)
+        self.assertTrue(any("não cobrem" in x for x in lin))
+        # lacuna no meio > 3 s (intervalo longo)
+        sd = self.smoke_ok(mem=[(1000500, 1, 24000), (1001000, 1, 24000), (1005000, 1, 24000), (1009500, 1, 24000), (1010000, 1, 24000)])
+        grava(os.path.join(sd, "smoke-tempos.txt"), "bin_inicio_ms=1000000\nbin_fim_ms=1010500\n")
+        ok2, _ = self.avalia(sd)
+        self.assertFalse(ok2)
+        # início tardio (> 3 s depois do começo)
+        ok3, _ = self.avalia(self.smoke_ok(mem=[(1003100, 1, 24000), (1003300, 1, 24000), (1003500, 1, 24000)]))
+        self.assertFalse(ok3)
+        # exatamente 3 s de lacuna: passa
+        ok4, _ = self.avalia(self.smoke_ok(mem=[(1003000, 1, 24000), (1003500, 1, 24000), (1003800, 1, 24000)]))
+        self.assertTrue(ok4)
+
+    def test_smoke_sem_tempos_falha_fechada(self):
+        ok, lin = self.avalia(self.smoke_ok(tempos=False))
+        self.assertFalse(ok)
+        self.assertTrue(any("smoke-tempos" in x for x in lin))
+
+    def test_smoke_pos_saida_e_so_descritiva(self):
+        ok, lin = self.avalia(self.smoke_ok())
+        self.assertTrue(any(x.startswith("gpu_pos_saida_descritiva=1004200, 300, 24000") for x in lin))
+
+    def test_smoke_slots_ausente_ou_diferente_falha_fechada(self):
+        ok, lin = self.avalia(self.smoke_ok(stderr=""))
+        self.assertFalse(ok)
+        self.assertTrue(any("slots" in x and "não imprimiu" in x for x in lin))
+        ok2, lin2 = self.avalia(self.smoke_ok(stderr="slots 77 de 768\n"))
+        self.assertFalse(ok2)
+        self.assertTrue(any("não é 100%" in x for x in lin2))
+        ok3, _ = self.avalia(self.smoke_ok(stderr="", stdout="slots 768 de 768\n"))   # só o stderr conta
+        self.assertFalse(ok3)
+
+    def test_smoke_cpu_ausente_ou_null_falha_e_zero_explicito_passa(self):
+        for mod in ("remove", "null", "needed_remove", "cont_remove"):
+            sd = self.smoke_ok()
+            arq = os.path.join(sd, "p1", "saida", "medidas-1b.json")
+            j = json.load(open(arq, encoding="utf-8"))
+            c = j["medidas"][0]
+            if mod == "remove": del c["cont"]["cpu"]
+            elif mod == "null": c["cont"]["cpu"] = None
+            elif mod == "needed_remove": del c["cont"]["needed"]
+            else: del c["cont"]
+            grava(arq, j)
+            ok, lin = self.avalia(sd)
+            self.assertFalse(ok, mod)
+            self.assertTrue(any("contadores do motor ilegíveis" in x for x in lin), (mod, lin))
+        ok, lin = self.avalia(self.smoke_ok(cpu=0))
+        self.assertTrue(ok, lin)
+        self.assertTrue(any(x.startswith("cpu_needed=0") for x in lin))
+
     def test_smoke_erro_de_alocacao_falha(self):
-        ok, lin = self.avalia(self.smoke_ok(stderr="CUDA error: out of memory\n"))
+        ok, lin = self.avalia(self.smoke_ok(stderr="slots 768 de 768\nCUDA error: out of memory\n"))
         self.assertFalse(ok)
         self.assertTrue(any("alocação" in x for x in lin))
 
@@ -908,6 +987,48 @@ class TestDegrau1Extrator(BaseD1):
         r = self.razao1(self.roda1())
         self.assertEqual(r["status"], "SEM PROVA")
         self.assertTrue(any("não é 100%" in x for x in r["motivos"]))
+
+    def zera(self):
+        import shutil
+        shutil.rmtree(self.saida)
+        os.makedirs(self.saida)
+        self.integra()
+
+    def edita_cont(self, d, f):
+        for p in sorted(x for x in os.listdir(d) if x.startswith("p") and x[1:].isdigit()):
+            arq = os.path.join(d, p, "saida", "medidas-1b.json")
+            j = json.load(open(arq, encoding="utf-8"))
+            for e in j["medidas"]:
+                f(e)
+            grava(arq, j)
+
+    def test_celula_l100_cpu_ausente_ou_null_e_sem_prova_e_zero_explicito_vale(self):
+        def ausente(e): del e["cont"]["cpu"]
+        def nulo(e): e["cont"]["cpu"] = None
+        for nome, f in (("ausente", ausente), ("null", nulo)):
+            self.veredito()
+            d = self.lastro100(estado="frio", n=3)
+            self.llama(estado="frio", serie="S1", n=3)
+            self.edita_cont(d, f)
+            r = self.razao1(self.roda1())
+            self.assertEqual(r["status"], "SEM PROVA", nome)
+            self.assertIsNone(r.get("decode"), nome)
+            self.assertTrue(any("cont.cpu" in x for x in r["motivos"]), (nome, r["motivos"]))
+            self.zera()
+        self.veredito()
+        self.lastro100(estado="frio", n=3, cpu=0)
+        self.llama(estado="frio", serie="S1", n=3)
+        r = self.razao1(self.roda1())
+        self.assertEqual(r["status"], "OK", r.get("motivos"))
+
+    def test_celula_l100_sem_ou_com_slots_diferentes_e_sem_prova(self):
+        for err in ("", "slots 77 de 768\n"):
+            self.veredito()
+            self.lastro100(estado="frio", n=3, slots_err=err)
+            self.llama(estado="frio", serie="S1", n=3)
+            r = self.razao1(self.roda1())
+            self.assertEqual(r["status"], "SEM PROVA", err)
+            self.zera()
 
     def test_celula_sem_cmdline_ou_sem_flag_e_sem_prova(self):
         self.veredito()

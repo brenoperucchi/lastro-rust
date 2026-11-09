@@ -39,14 +39,18 @@ if [ "$1" = --smoke ]; then
   mkdir -p "$saida/p1/saida"
   echo "${FAKE_SMOKE_RC:-0}" > "$saida/rc.txt"; echo "${FAKE_SMOKE_RC:-0}" > "$saida/p1/rc.txt"
   echo "pp --gera --celula $modelo:/m --so-texto curto --fracao-slots 1.0 --saida x" > "$saida/cmdline.txt"
-  echo "${FAKE_SMOKE_MEM:-2000, 24000}" > "$saida/gpumem.csv"
+  # leituras carimbadas dentro do intervalo do binário (1.000.000 a 1.004.000 ms); FAKE_SMOKE_MEM = "usada, total"
+  m=${FAKE_SMOKE_MEM:-2000, 24000}
+  if [ "${FAKE_SMOKE_SEM_LEITURA:-0}" = 1 ]; then : > "$saida/gpumem.csv"; echo "1004200, $m" > "$saida/gpumem-pos-saida.csv"   # só a amostra pós-saída (descritiva)
+  else printf '1000500, %s\n1001500, %s\n1002500, %s\n1003500, %s\n' "$m" "$m" "$m" "$m" > "$saida/gpumem.csv"; fi
+  printf 'coletor_inicio_ms=999900\nbin_inicio_ms=1000000\nbin_fim_ms=1004000\ncoletor_fim_ms=1004100\n' > "$saida/smoke-tempos.txt"
   python3 -I - "$saida" "$modelo" <<'PY'
 import json, os, sys
 saida, m = sys.argv[1:3]
 g = list(range(64)) if os.environ.get("FAKE_SMOKE_IDS", "igual") == "igual" else list(range(1, 65))
 json.dump({"medidas": [{"descartada": False, "falha": None, "gerados": g, "cont": {"needed": 100, "cpu": int(os.environ.get("FAKE_SMOKE_CPU", "0")), "hits": 100}}]}, open(os.path.join(saida, "p1", "saida", "medidas-%s.json" % m), "w"))
 PY
-  echo "slots 1792" > "$saida/p1/stdout.txt"; : > "$saida/p1/stderr.txt"
+  echo "slots 768 de 768" > "$saida/p1/stderr.txt"; : > "$saida/p1/stdout.txt"
   [ "${FAKE_SMOKE_RC:-0}" = 0 ] || exit 1
   exit 0
 fi
@@ -92,6 +96,8 @@ FAKE_SMOKE_CPU=7 interno C 1b 100000 --degrau1
 confere "C: cpu/needed != 0: nenhuma célula roda, decisão 'L100 NÃO SUSTENTA 100%: cpu/needed', sem razão publicada" "[ $RC = 0 ] && [ \$(grep -vc '^SMOKE' $D/log-C) = 0 ] && [ \$(ls $D/si-C/celulas | wc -l) = 0 ] && grep -q '^L100 NÃO SUSTENTA 100%: cpu/needed' $D/si-C/decisao.txt && grep -q 'L100 NÃO SUSTENTA 100%' $D/si-C/orcamento.json && grep -q 'L100 NÃO SUSTENTA 100%' $D/si-C/cmp-resultado.md && ! grep -q '| OK |' $D/si-C/cmp-resultado.md"
 FAKE_SMOKE_MEM="23000, 24000" interno D 1b 100000 --degrau1
 confere "D: GPU > 90%: janela para, 'L100 NÃO SUSTENTA 100%: memória usada da GPU'" "[ \$(ls $D/si-D/celulas | wc -l) = 0 ] && grep -q '^L100 NÃO SUSTENTA 100%: memória usada da GPU' $D/si-D/decisao.txt"
+FAKE_SMOKE_SEM_LEITURA=1 interno D2 1b 100000 --degrau1
+confere "D2: só a amostra pós-saída (sem leitura durante a execução): janela para, nenhuma célula, motivo de memória" "[ \$(ls $D/si-D2/celulas | wc -l) = 0 ] && grep -q '^L100 NÃO SUSTENTA 100%: só 0 leituras válidas de memória' $D/si-D2/decisao.txt"
 FAKE_SMOKE_RC=1 interno E 1b 100000 --degrau1
 confere "E: processo do smoke com código != 0: janela para" "[ \$(ls $D/si-E/celulas | wc -l) = 0 ] && grep -q '^L100 NÃO SUSTENTA 100%: o processo do smoke' $D/si-E/decisao.txt"
 FAKE_SMOKE_RC=2 interno F 1b 100000 --degrau1

@@ -24,6 +24,7 @@ import argparse
 import json
 import math
 import os
+import re
 import statistics
 import sys
 import time
@@ -46,6 +47,8 @@ SERIES = ("S1", "S2", "S3")
 SERIE_L = "L"
 D1 = False                # degrau 1: processa() liga; séries L100 contra S1, rótulo da seção 4
 ROTULO_D1 = "Lastro 100% experts GPU contra llama.cpp S1; KV f32 no Lastro contra f16 no llama.cpp"
+SMOKE_MIN_LEITURAS = 3    # smoke (rev-1 P2 da r116): >= 3 leituras válidas de memória DENTRO do intervalo em que o binário rodou
+SMOKE_TOL_MS = 3000       # lacuna máxima entre leituras e folga do início/fim do intervalo (tolerância declarada, como na emenda 7 do critério base)
 GPU_MAX_FRACAO = 0.90     # seção 3: memória usada da 4090 no smoke
 # seção 5 do critério do degrau 1 (palpites pré-registrados, orientação e nunca decisão)
 FAIXAS_D1 = (
@@ -363,6 +366,32 @@ def base_celula(d, meta):
     return mot + m2, tm
 
 
+def le_linhas_slots(txt):
+    """Linhas reais `slots N de M` que o `--gera` imprime (stderr, uma por processo): [(slots, total)]."""
+    r = []
+    for x in (txt or "").splitlines():
+        m_ = re.fullmatch(r"slots (\d+) de (\d+)", x.strip())
+        if m_:
+            r.append((int(m_.group(1)), int(m_.group(2))))
+    return r
+
+
+def le_cont_l100(cont):
+    """(needed, cpu, hits) de um `cont` do L100: objeto com needed e cpu PRESENTES, numéricos, finitos e >= 0 (ausente ou null NÃO vira zero; r116 rev-1 P2)."""
+    if not isinstance(cont, dict):
+        raise ValueError("cont ausente ou não é objeto")
+    out = []
+    for k in ("needed", "cpu"):
+        if k not in cont or cont[k] is None or isinstance(cont[k], bool):
+            raise ValueError("cont.%s ausente ou null" % k)
+        v = num(cont[k], "cont." + k)
+        if v < 0:
+            raise ValueError("cont.%s negativo" % k)
+        out.append(v)
+    return out[0], out[1]
+
+
+
 def le_celula_lastro(d, meta, refs):
     m, t, est = meta["modelo"], meta["texto"], meta["estado"]
     mot, tm = base_celula(d, meta)
@@ -388,8 +417,12 @@ def le_celula_lastro(d, meta, refs):
             mot.append("%s: execução com erro ou código != 0 (rc=%s)" % (p, "?" if rc is None else int(rc)))
         sd = os.path.join(pd, "saida")
         if D1:
-            for arq in ("stdout.txt", "stderr.txt"):
-                slots_imp += ["%s/%s: %s" % (p, arq, x.strip()[:160]) for x in (le_txt(os.path.join(pd, arq)) or "").splitlines() if "slots" in x.lower()]
+            ls = le_linhas_slots(le_txt(os.path.join(pd, "stderr.txt")))
+            slots_imp += ["%s: slots %d de %d" % (p, a_, b_) for a_, b_ in ls]
+            if not ls:
+                mot.append("%s: sem a linha `slots N de M` no stderr do binário (100%% não provado)" % p)
+            elif any(a_ != b_ or b_ <= 0 for a_, b_ in ls):
+                mot.append("%s: slots diferentes de camadas x experts (%s): o 100%% não é 100%%" % (p, "; ".join("%d de %d" % x for x in ls)))
         mj = le_json(os.path.join(sd, "medidas-%s.json" % m))
         final = le_chave_valor(os.path.join(sd, "gera-final.txt"))
         gj = le_json(os.path.join(sd, "gera-%s.json" % m))
@@ -445,7 +478,11 @@ def le_celula_lastro(d, meta, refs):
                 cont = e.get("cont") or {}
                 if not isinstance(cont, dict):
                     raise ValueError("cont não é objeto")
-                needed, cpu_, hits_ = (num(cont.get(k) or 0, "cont." + k) for k in ("needed", "cpu", "hits"))
+                if D1:
+                    needed, cpu_ = le_cont_l100(e.get("cont"))
+                    hits_ = num(cont.get("hits") or 0, "cont.hits")
+                else:
+                    needed, cpu_, hits_ = (num(cont.get(k) or 0, "cont." + k) for k in ("needed", "cpu", "hits"))
                 guardada = None if e.get("media_por_passo_ms") is None else num(e.get("media_por_passo_ms"), "media_por_passo_ms")
                 if not passo:
                     mp = None
@@ -657,23 +694,44 @@ def avalia_smoke(sdir, modelo, ids_arq, refs_dir, textos_arq):
     info["cmdline"] = cmdl.strip()
     if "--fracao-slots 1.0" not in cmdl:
         falhas.append("linha de comando do smoke sem --fracao-slots 1.0")
-    # memória da GPU
-    usos = []
+    # memória da GPU: só vale leitura carimbada DENTRO do intervalo em que o binário rodou (smoke-tempos.txt); a amostra pós-saída (gpumem-pos-saida.csv) nunca aprova
+    tempos = le_chave_valor(os.path.join(sdir, "smoke-tempos.txt")) or {}
+    try:
+        ini, fim = float(tempos["bin_inicio_ms"]), float(tempos["bin_fim_ms"])
+        if not (math.isfinite(ini) and math.isfinite(fim) and fim > ini):
+            raise ValueError("intervalo inválido")
+    except (KeyError, ValueError, TypeError):
+        ini = fim = None
+        falhas.append("sem smoke-tempos.txt legível (início e fim da execução do binário): a memória não é verificável")
+    leituras = []   # (ts_ms, fração usada)
     for linha in (le_txt(os.path.join(sdir, "gpumem.csv")) or "").splitlines():
         c = [x.strip() for x in linha.split(",")]
         try:
-            u, t = float(c[0]), float(c[1])
+            ts, u, t = float(c[0]), float(c[1]), float(c[2])
         except (ValueError, IndexError):
             continue
-        if math.isfinite(u) and math.isfinite(t) and t > 0:
-            usos.append(u / t)
-    if not usos:
-        falhas.append("sem leitura legível de memória da GPU (gpumem.csv): o limite de 90% não é verificável")
-    else:
-        pico = max(usos)
-        info["gpu_pico_pct"] = "%.1f" % (100 * pico)
-        if pico > GPU_MAX_FRACAO:
-            falhas.append("memória usada da GPU %.1f%% > 90%% da 4090" % (100 * pico))
+        if math.isfinite(ts) and math.isfinite(u) and math.isfinite(t) and t > 0 and u >= 0:
+            leituras.append((ts, u / t))
+    falhas_coleta = len([x for x in (le_txt(os.path.join(sdir, "gpumem-falhas.txt")) or "").splitlines() if x.strip()])
+    info["gpu_falhas_coleta"] = str(falhas_coleta)
+    info["gpu_leituras_total"] = str(len(leituras))
+    if ini is not None:
+        dentro = sorted(x for x in leituras if ini <= x[0] <= fim)
+        info["gpu_leituras_no_intervalo"] = str(len(dentro))
+        if len(dentro) < SMOKE_MIN_LEITURAS:
+            falhas.append("só %d leituras válidas de memória da GPU durante a execução do binário (mínimo %d): o limite de 90%% não é verificável" % (len(dentro), SMOKE_MIN_LEITURAS))
+        else:
+            ts = [x[0] for x in dentro]
+            lac = max([ts[0] - ini, fim - ts[-1]] + [b_ - a_ for a_, b_ in zip(ts, ts[1:])])
+            info["gpu_lacuna_max_s"] = "%.1f" % (lac / 1000)
+            if lac > SMOKE_TOL_MS:
+                falhas.append("leituras de memória não cobrem a execução do binário (lacuna de %.1f s > %d s)" % (lac / 1000, SMOKE_TOL_MS // 1000))
+            pico = max(x[1] for x in dentro)
+            info["gpu_pico_pct"] = "%.1f" % (100 * pico)
+            if pico > GPU_MAX_FRACAO:
+                falhas.append("memória usada da GPU %.1f%% > 90%% da 4090" % (100 * pico))
+    pos = (le_txt(os.path.join(sdir, "gpumem-pos-saida.csv")) or "").strip()
+    info["gpu_pos_saida_descritiva"] = pos.replace("\n", " ") if pos else "nenhuma"
     # cpu/needed e ids
     mj = le_json(os.path.join(sdir, "p1", "saida", "medidas-%s.json" % modelo))
     meds = [e for e in ((mj or {}).get("medidas") or []) if isinstance(e, dict) and not e.get("descartada") and not e.get("falha")]
@@ -682,8 +740,9 @@ def avalia_smoke(sdir, modelo, ids_arq, refs_dir, textos_arq):
         info["ids"] = "SEM MEDIDA"
     else:
         try:
-            needed = sum(num((e.get("cont") or {}).get("needed") or 0, "needed") for e in meds)
-            cpu_ = sum(num((e.get("cont") or {}).get("cpu") or 0, "cpu") for e in meds)
+            pares = [le_cont_l100(e.get("cont")) for e in meds]
+            needed = sum(x[0] for x in pares)
+            cpu_ = sum(x[1] for x in pares)
         except ValueError as ex:
             needed = cpu_ = None
             falhas.append("contadores do motor ilegíveis: %s" % ex)
@@ -701,15 +760,17 @@ def avalia_smoke(sdir, modelo, ids_arq, refs_dir, textos_arq):
         else:
             i = primeira_divergencia(list(g), list(ref["gerados"]))
             info["ids"] = "IGUAIS" if i is None else "DIVERGEM no passo %d (reportado; a janela segue e a célula leva a marca 'sequências diferentes')" % i
-    slots = []
-    for arq in ("stdout.txt", "stderr.txt"):
-        slots += [x.strip()[:160] for x in (le_txt(os.path.join(sdir, "p1", arq)) or "").splitlines() if "slots" in x.lower()]
-    info["slots_impressos"] = " | ".join(slots) if slots else "nenhum"
+    ls = le_linhas_slots(le_txt(os.path.join(sdir, "p1", "stderr.txt")))
+    info["slots_impressos"] = " | ".join("slots %d de %d" % x for x in ls) if ls else "nenhum"
+    if not ls:
+        falhas.append("o binário não imprimiu a linha `slots N de M` (stderr): o 100% não está provado")
+    elif any(a_ != b_ or b_ <= 0 for a_, b_ in ls):
+        falhas.append("slots diferentes de camadas x experts (%s): o 100%% não é 100%%" % "; ".join("%d de %d" % x for x in ls))
     info["modelo"] = modelo
     lin = ["veredito=%s" % ("FALHA" if falhas else "OK")]
     if falhas:
         lin.append("motivo=%s" % "; ".join(falhas))
-    for k in ("modelo", "gpu_pico_pct", "cpu_needed", "ids", "slots_impressos", "cmdline"):
+    for k in ("modelo", "gpu_pico_pct", "gpu_leituras_no_intervalo", "gpu_lacuna_max_s", "gpu_falhas_coleta", "gpu_pos_saida_descritiva", "cpu_needed", "ids", "slots_impressos", "cmdline"):
         if k in info:
             lin.append("%s=%s" % (k, info[k].replace("\n", " ")))
     return not falhas, lin
@@ -1028,7 +1089,7 @@ def relatorio_d1(res):
         L.append("Smoke AUSENTE: nenhuma razão é publicada.")
     else:
         L.append("- veredito: %s%s" % (sm.get("veredito"), ("; motivo: " + sm["motivo"]) if sm.get("motivo") else ""))
-        for k in ("gpu_pico_pct", "cpu_needed", "ids", "slots_impressos", "cmdline"):
+        for k in ("gpu_pico_pct", "gpu_leituras_no_intervalo", "cpu_needed", "ids", "slots_impressos", "cmdline"):
             if k in sm:
                 L.append("- %s: %s" % (k, sm[k]))
     if res.get("resultado_smoke"):

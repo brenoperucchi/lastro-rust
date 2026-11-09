@@ -554,6 +554,11 @@ struct Cenario<'a> {
     fracao: f64,
 }
 
+/// Linha única por processo do `--gera` (stderr): `slots {slots} de {camadas*experts}`; o extrator do degrau 1 lê esta linha (100% = os dois números iguais).
+fn linha_slots(slots: usize, total: usize) -> String {
+    format!("slots {slots} de {total}")
+}
+
 impl Cenario<'_> {
     fn slots_10(&self) -> usize {
         ((self.fracao * (self.cfg.layers * self.cfg.experts) as f64) as usize).max(1)
@@ -853,6 +858,7 @@ fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> (g
         }
         let host = carrega_host(mdir, &cfg)?;
         let c = Cenario { device, host: &host, cfg: &cfg, threads: args.threads, fracao: args.fracao };
+        eprintln!("{}", linha_slots(c.slots_10(), cfg.layers * cfg.experts));
         let mut guardado: MotorG = gr::MotorGeracao::novo();
         let mut parou: Option<String> = None;
         let t_repete = textos.first().map(|x| x.2.clone());
@@ -2008,6 +2014,12 @@ mod tests {
     }
 
     #[test]
+    fn linha_slots_formato() {
+        assert_eq!(linha_slots(768, 768), "slots 768 de 768");
+        assert_eq!(linha_slots(77, 768), "slots 77 de 768");
+    }
+
+    #[test]
     fn gera_fracao_slots() {
         let v = |a: &[&str]| a.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let base = ["--gera", "--celula", "1b:/m", "--so-texto", "curto", "--saida", "/o/p1/saida"];
@@ -2062,7 +2074,14 @@ mod tests {
     fn roteiro_cmp_lastro_monta_argv_que_o_parser_real_aceita() {
         let src = include_str!("../../../../qual-runs/A2-LOTE-20261103/roda-cmp-lastro.sh");
         let linha = src.lines().find(|l| l.trim_start().starts_with("\"$BIN\" --gera")).expect("linha de chamada do binário no roteiro").trim_start();
-        let esperado = "\"$BIN\" --gera --celula \"$MODELO:$MDIR\" --so-texto \"$TEXTO\" \"$@\" --saida \"$pd/saida\"";
+        let esperado = "\"$BIN\" --gera --celula \"$MODELO:$MDIR\" --so-texto \"$TEXTO\" \"${FRACAO_ARGS[@]}\" \"$@\" --saida \"$pd/saida\"";
+        // FRACAO_ARGS só recebe `--fracao-slots 1.0` (degrau 1)
+        let atrib: Vec<&str> = src.lines().filter(|l| l.contains("FRACAO_ARGS=(") && !l.trim_start().starts_with('#')).collect();
+        assert!(atrib.iter().any(|l| l.contains("FRACAO_ARGS=(--fracao-slots 1.0)")), "atribuição de FRACAO_ARGS não achada: {atrib:?}");
+        for l in &atrib {
+            let r = l.replace("FRACAO_ARGS=();", "").replace("FRACAO_ARGS=(--fracao-slots 1.0)", "");
+            assert!(!r.contains("FRACAO_ARGS=("), "FRACAO_ARGS recebe algo além de (--fracao-slots 1.0): {l}");
+        }
         assert!(linha.starts_with(esperado), "o roteiro mudou a chamada; ajuste este teste junto: {linha}");
         assert!(!linha.contains("--novos") && !linha.contains("--data"), "o harness fixa 64 novos e a data: o roteiro não pode passá-los");
         let n_max = REPETE_MAX.min(50).to_string();
@@ -2072,11 +2091,19 @@ mod tests {
                 let frio = ["--gera", "--celula", &format!("{modelo}:/m"), "--so-texto", texto, "--saida", "/o/p1/saida"];
                 let a = parse_args(v(&frio)).unwrap_or_else(|e| panic!("frio {modelo}/{texto} recusado pelo parser real: {e}"));
                 assert_eq!((a.so_texto.as_deref(), a.repete, a.data.is_none(), a.novos.is_none()), (Some(texto), None, true, true));
+                // degrau 1, frio: `--so-texto T --fracao-slots 1.0 --saida …`
+                let frio1 = ["--gera", "--celula", &format!("{modelo}:/m"), "--so-texto", texto, "--fracao-slots", "1.0", "--saida", "/o/p1/saida"];
+                let a = parse_args(v(&frio1)).unwrap_or_else(|e| panic!("frio L100 {modelo}/{texto} recusado pelo parser real: {e}"));
+                assert_eq!((a.so_texto.as_deref(), a.repete, a.fracao), (Some(texto), None, 1.0));
                 // quente: um processo com --repete N (N de 1 a 50 no roteiro)
                 for n in ["1", "3", "5", n_max.as_str()] {
                     let quente = ["--gera", "--celula", &format!("{modelo}:/m"), "--so-texto", texto, "--repete", n, "--saida", "/o/p1/saida"];
                     let a = parse_args(v(&quente)).unwrap_or_else(|e| panic!("quente {modelo}/{texto}/{n} recusado pelo parser real: {e}"));
                     assert_eq!((a.so_texto.as_deref(), a.repete), (Some(texto), Some(n.parse().unwrap())));
+                    // degrau 1, quente: `--so-texto T --fracao-slots 1.0 --repete N --saida …`
+                    let quente1 = ["--gera", "--celula", &format!("{modelo}:/m"), "--so-texto", texto, "--fracao-slots", "1.0", "--repete", n, "--saida", "/o/p1/saida"];
+                    let a = parse_args(v(&quente1)).unwrap_or_else(|e| panic!("quente L100 {modelo}/{texto}/{n} recusado pelo parser real: {e}"));
+                    assert_eq!((a.so_texto.as_deref(), a.repete, a.fracao), (Some(texto), Some(n.parse().unwrap()), 1.0));
                 }
             }
         }
