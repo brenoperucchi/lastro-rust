@@ -1,0 +1,1 @@
+{"lado": "llamacpp", "serie": "S2", "modelo": "3b", "texto": "longo", "estado": "frio", "n_medidas": 3, "portao_ok": true, "portao_motivo": "", "rc": 0, "inicio_epoch": 1794203432, "inicio_coleta_epoch": 1794203437, "fim_epoch": 1794203455, "falhas": "; ", "monitor_falha": "", "desktop_g_sm_antes": 3, "desktop_g_sm_depois": 2, "dmon_sm_antes": 5}

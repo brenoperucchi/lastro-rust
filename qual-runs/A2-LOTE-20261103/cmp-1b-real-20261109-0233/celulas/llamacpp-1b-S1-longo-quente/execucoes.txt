@@ -1,0 +1,1 @@
+servidor 0 pid=1778630 porta=47757

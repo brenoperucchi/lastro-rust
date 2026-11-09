@@ -1,0 +1,49 @@
+cpu_janela_pct=2.05
+cpu_espera_s=3
+loadavg_registrado=5.10 3.53 2.13
+pmon_antes_volta=1
+pmon_antes_rc=0
+pmon_antes_bruto: # gpu         pid   type     sm    mem    enc    dec    jpg    ofa     fb   ccpm    command 
+pmon_antes_bruto: # Idx           #    C/G      %      %      %      %      %      %     MB     MB    name 
+pmon_antes_bruto:     0      41533     G      6      8      -      -      -      -    491      0    Hyprland       
+pmon_antes_bruto:     0      41609     G      -      -      -      -      -      -    769      0    quickshell     
+pmon_antes_bruto:     0      41664     G      -      -      -      -      -      -      8      0    Xwayland       
+pmon_antes_bruto:     0      41675     G      -      -      -      -      -      -     21      0    localsend_app  
+pmon_antes_volta=2
+pmon_antes_rc=0
+pmon_antes_bruto: # gpu         pid   type     sm    mem    enc    dec    jpg    ofa     fb   ccpm    command 
+pmon_antes_bruto: # Idx           #    C/G      %      %      %      %      %      %     MB     MB    name 
+pmon_antes_bruto:     0      41533     G      6      8      -      -      -      -    491      0    Hyprland       
+pmon_antes_bruto:     0      41609     G      -      -      -      -      -      -    769      0    quickshell     
+pmon_antes_bruto:     0      41664     G      -      -      -      -      -      -      8      0    Xwayland       
+pmon_antes_bruto:     0      41675     G      -      -      -      -      -      -     21      0    localsend_app  
+pmon_antes_volta=3
+pmon_antes_rc=0
+pmon_antes_bruto: # gpu         pid   type     sm    mem    enc    dec    jpg    ofa     fb   ccpm    command 
+pmon_antes_bruto: # Idx           #    C/G      %      %      %      %      %      %     MB     MB    name 
+pmon_antes_bruto:     0      41533     G      6      8      -      -      -      -    491      0    Hyprland       
+pmon_antes_bruto:     0      41609     G      -      -      -      -      -      -    769      0    quickshell     
+pmon_antes_bruto:     0      41664     G      -      -      -      -      -      -      8      0    Xwayland       
+pmon_antes_bruto:     0      41675     G      -      -      -      -      -      -     21      0    localsend_app  
+pmon_antes_pid=41533 tipo=G sm=6 mem=8 fb_mb=491 dentro_arvore=0 cmd=Hyprland
+pmon_antes_pid=41609 tipo=G sm=0 mem=0 fb_mb=769 dentro_arvore=0 cmd=quickshell
+pmon_antes_pid=41664 tipo=G sm=0 mem=0 fb_mb=8 dentro_arvore=0 cmd=Xwayland
+pmon_antes_pid=41675 tipo=G sm=0 mem=0 fb_mb=21 dentro_arvore=0 cmd=localsend_app
+pmon_antes_c_fora_sm_max=0
+pmon_antes_g_soma_sm_max=6
+pmon_antes_cg_ociosos=0
+pmon_antes_c_fora_n=0
+pmon_antes_fb_outros_mb=1289
+pmon_antes_linhas=12
+pmon_antes_veredito=OK
+compute_apps_n_registrado=0
+compute_apps_veredito=OK
+gpu_util_pct_registrado=7
+dmon_antes_rc=0
+dmon_antes_bruto: # gpu     sm    mem    enc    dec    jpg    ofa 
+dmon_antes_bruto: # Idx      %      %      %      %      %      % 
+dmon_antes_bruto:     0      7     10      0      0      0      0 
+dmon_antes_bruto:     0      9     13      0      0      0      0 
+dmon_antes_bruto:     0     35     33      0      0      0      0 
+dmon_antes_sm_max=35
+portao=OK

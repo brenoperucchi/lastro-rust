@@ -1,0 +1,40 @@
+integridade antes: binário f0a272db2df8aca6642073b830cc8234f2d2434e01c8ae6ef618886e6e3dc2df; critério 5c 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731; critério 5b 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b; 5 arquivos de entrada
+Absolutely, I'd be happy to help you set up your small vegetable garden. Here's a detailed guide for each vegetable, tailored to your specific conditions:
+
+1. **Tomatoes**: Start with a deep, well-draining potting mix. Tomato
+1b pedido 1 (medio): 170 ids, 64 novos, prefill 3985.8 ms, 21.18 ms por token (mediana), total 8173.4 ms, T_sequencia 2828.210 ms, média por passo 21.574 ms (63 passos)
+Absolutely, I'd be happy to help you set up your small vegetable garden. Here's a detailed guide for each vegetable, tailored to your specific conditions:
+
+1. **Tomatoes**: Start with a deep, well-draining potting mix. Tomato
+1b quente rep 1 (medio): 170 ids, 64 novos, prefill 1546.1 ms, 21.76 ms por token (mediana), total 2959.3 ms, T_sequencia 0.000 ms, média por passo 22.428 ms (63 passos)
+Absolutely, I'd be happy to help you set up your small vegetable garden. Here's a detailed guide for each vegetable, tailored to your specific conditions:
+
+1. **Tomatoes**: Start with a deep, well-draining potting mix. Tomato
+1b quente rep 2 (medio): 170 ids, 64 novos, prefill 1525.6 ms, 21.34 ms por token (mediana), total 2889.6 ms, T_sequencia 0.000 ms, média por passo 21.649 ms (63 passos)
+Absolutely, I'd be happy to help you set up your small vegetable garden. Here's a detailed guide for each vegetable, tailored to your specific conditions:
+
+1. **Tomatoes**: Start with a deep, well-draining potting mix. Tomato
+1b quente rep 3 (medio): 170 ids, 64 novos, prefill 1505.9 ms, 20.87 ms por token (mediana), total 2844.9 ms, T_sequencia 0.000 ms, média por passo 21.251 ms (63 passos)
+Absolutely, I'd be happy to help you set up your small vegetable garden. Here's a detailed guide for each vegetable, tailored to your specific conditions:
+
+1. **Tomatoes**: Start with a deep, well-draining potting mix. Tomato
+1b quente rep 4 (medio): 170 ids, 64 novos, prefill 1521.7 ms, 21.60 ms por token (mediana), total 2907.3 ms, T_sequencia 0.001 ms, média por passo 21.991 ms (63 passos)
+Absolutely, I'd be happy to help you set up your small vegetable garden. Here's a detailed guide for each vegetable, tailored to your specific conditions:
+
+1. **Tomatoes**: Start with a deep, well-draining potting mix. Tomato
+1b quente rep 5 (medio): 170 ids, 64 novos, prefill 1523.9 ms, 20.89 ms por token (mediana), total 2870.0 ms, T_sequencia 0.000 ms, média por passo 21.364 ms (63 passos)
+== geração livre 5c 1b
+empates usados: nenhum
+ms por token do modelo (mediana de todos os passos): NaN
+motivo(s): 0 pedidos (ou fora da ordem curto, medio, longo); esperados 3
+criações do motor: 1 (esperado 1)
+rótulo: SEM PROVA
+integridade conferida no fim do modelo: íntegra
+
+etapa 5c, geração livre curta (critério sha256 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731)
+1b: SEM PROVA
+integridade do conjunto: íntegra
+modelo(s) ausente(s) no conjunto: 3b (o critério exige 1B e 3B; sem os dois não há PASSA)
+ids de prompt diferentes entre o Rust e a referência valem REPROVA (leitura da seção "Regra de rótulo" do critério; a seção "Referência" fala em SEM PROVA)
+rótulo: SEM PROVA
+

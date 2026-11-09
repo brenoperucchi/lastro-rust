@@ -1,0 +1,1 @@
+servidor 0 pid=1759514 porta=39817

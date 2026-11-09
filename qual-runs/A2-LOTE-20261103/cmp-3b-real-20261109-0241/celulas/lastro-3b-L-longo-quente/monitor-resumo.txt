@@ -1,0 +1,1 @@
+amostras=69 temp_max=48 clock_sm_max=2745 clock_mem_max=10251 (clock de memória: registrado, não decisivo)

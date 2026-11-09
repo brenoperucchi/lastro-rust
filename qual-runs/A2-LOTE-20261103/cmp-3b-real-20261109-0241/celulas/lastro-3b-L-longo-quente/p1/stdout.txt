@@ -1,0 +1,46 @@
+integridade antes: binário f0a272db2df8aca6642073b830cc8234f2d2434e01c8ae6ef618886e6e3dc2df; critério 5c 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731; critério 5b 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b; 5 arquivos de entrada
+Absolutely, let's break down the key points and explore some potential changes the library could consider, along with their pros and cons, and a simple way to gather input from everyone involved.
+
+1. **Expanding Weekday Hours:**
+   - *Pros:* More flexibility for working families and
+3b pedido 2 (longo): 364 ids, 64 novos, prefill 8989.5 ms, 39.56 ms por token (mediana), total 17403.4 ms, T_sequencia 5871.715 ms, média por passo 40.349 ms (63 passos)
+Absolutely, let's break down the key points and explore some potential changes the library could consider, along with their pros and cons, and a simple way to gather input from everyone involved.
+
+1. **Expanding Weekday Hours:**
+   - *Pros:* More flexibility for working families and
+3b quente rep 1 (longo): 364 ids, 64 novos, prefill 6245.1 ms, 39.24 ms por token (mediana), total 8784.6 ms, T_sequencia 0.001 ms, média por passo 40.305 ms (63 passos)
+Absolutely, let's break down the key points and explore some potential changes the library could consider, along with their pros and cons, and a simple way to gather input from everyone involved.
+
+1. **Expanding Weekday Hours:**
+   - *Pros:* More flexibility for working families and
+3b quente rep 2 (longo): 364 ids, 64 novos, prefill 6422.5 ms, 40.05 ms por token (mediana), total 8979.0 ms, T_sequencia 0.000 ms, média por passo 40.575 ms (63 passos)
+Absolutely, let's break down the key points and explore some potential changes the library could consider, along with their pros and cons, and a simple way to gather input from everyone involved.
+
+1. **Expanding Weekday Hours:**
+   - *Pros:* More flexibility for working families and
+3b quente rep 3 (longo): 364 ids, 64 novos, prefill 6346.4 ms, 40.19 ms por token (mediana), total 8940.0 ms, T_sequencia 0.000 ms, média por passo 41.164 ms (63 passos)
+Absolutely, let's break down the key points and explore some potential changes the library could consider, along with their pros and cons, and a simple way to gather input from everyone involved.
+
+1. **Expanding Weekday Hours:**
+   - *Pros:* More flexibility for working families and
+3b quente rep 4 (longo): 364 ids, 64 novos, prefill 6331.4 ms, 40.46 ms por token (mediana), total 8918.1 ms, T_sequencia 0.000 ms, média por passo 41.053 ms (63 passos)
+Absolutely, let's break down the key points and explore some potential changes the library could consider, along with their pros and cons, and a simple way to gather input from everyone involved.
+
+1. **Expanding Weekday Hours:**
+   - *Pros:* More flexibility for working families and
+3b quente rep 5 (longo): 364 ids, 64 novos, prefill 6372.8 ms, 40.10 ms por token (mediana), total 8929.9 ms, T_sequencia 0.000 ms, média por passo 40.586 ms (63 passos)
+== geração livre 5c 3b
+empates usados: nenhum
+ms por token do modelo (mediana de todos os passos): NaN
+motivo(s): 0 pedidos (ou fora da ordem curto, medio, longo); esperados 3
+criações do motor: 1 (esperado 1)
+rótulo: SEM PROVA
+integridade conferida no fim do modelo: íntegra
+
+etapa 5c, geração livre curta (critério sha256 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731)
+3b: SEM PROVA
+integridade do conjunto: íntegra
+modelo(s) ausente(s) no conjunto: 1b (o critério exige 1B e 3B; sem os dois não há PASSA)
+ids de prompt diferentes entre o Rust e a referência valem REPROVA (leitura da seção "Regra de rótulo" do critério; a seção "Referência" fala em SEM PROVA)
+rótulo: SEM PROVA
+

@@ -1,0 +1,4 @@
+corte em 3 s: (1) S3 inteira não roda
+NÃO RODOU: llamacpp-3b-S3-curto (frio e quente): S3 cortada ou sem célula do Lastro correspondente
+NÃO RODOU: llamacpp-3b-S3-medio (frio e quente): S3 cortada ou sem célula do Lastro correspondente
+NÃO RODOU: llamacpp-3b-S3-longo (frio e quente): S3 cortada ou sem célula do Lastro correspondente

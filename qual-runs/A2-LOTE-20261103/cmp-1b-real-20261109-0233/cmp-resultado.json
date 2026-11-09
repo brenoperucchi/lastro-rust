@@ -1,0 +1,5025 @@
+{
+ "tipo": "cmp-resultado",
+ "criterio": "criterio-comparacao-llamacpp-20261108.md (emendas 1 a 6)",
+ "descritivo": true,
+ "modelos_da_janela": [
+  "1b"
+ ],
+ "aviso_rotulo": "Toda razão é 'Lastro 10% experts GPU contra llama.cpp <série>'. Nenhuma isola o motor; a fração cpu/needed vem ao lado. Sem meta, sem PASSA/REPROVA.",
+ "integridade_problemas": [],
+ "observacoes_ambiente": [
+  "memória do host (MT/s) não conferida pelo roteiro: declarar à parte"
+ ],
+ "orcamento": {
+  "modelos": [
+   "1b"
+  ],
+  "limite_s": 1800,
+  "folga_s": 180,
+  "decorrido_s": 472,
+  "cortes": [],
+  "reps": {
+   "quente_nominal": 5,
+   "frio_nominal": 3
+  },
+  "reps_finais": {
+   "quente": 5,
+   "frio": 3
+  },
+  "s3_ativa_no_fim": true,
+  "nao_rodou": [],
+  "estimativas_sao_palpites": true
+ },
+ "ordem": [
+  "01 lastro-1b-L-curto-frio n=3 inicio=4s fim=54s rc=0",
+  "02 llamacpp-1b-S1-curto-frio n=3 inicio=54s fim=65s rc=0",
+  "03 llamacpp-1b-S2-curto-frio n=3 inicio=65s fim=81s rc=0",
+  "04 lastro-1b-L-curto-quente n=5 inicio=81s fim=108s rc=0",
+  "05 llamacpp-1b-S1-curto-quente n=5 inicio=108s fim=115s rc=0",
+  "06 llamacpp-1b-S2-curto-quente n=5 inicio=115s fim=132s rc=0",
+  "07 llamacpp-1b-S1-medio-frio n=3 inicio=132s fim=143s rc=0",
+  "08 llamacpp-1b-S2-medio-frio n=3 inicio=143s fim=159s rc=0",
+  "09 lastro-1b-L-medio-frio n=3 inicio=159s fim=209s rc=0",
+  "10 llamacpp-1b-S1-medio-quente n=5 inicio=209s fim=217s rc=0",
+  "11 llamacpp-1b-S2-medio-quente n=5 inicio=217s fim=233s rc=0",
+  "12 lastro-1b-L-medio-quente n=5 inicio=233s fim=264s rc=0",
+  "13 lastro-1b-L-longo-frio n=3 inicio=264s fim=321s rc=0",
+  "14 llamacpp-1b-S1-longo-frio n=3 inicio=321s fim=332s rc=0",
+  "15 llamacpp-1b-S2-longo-frio n=3 inicio=332s fim=348s rc=0",
+  "16 lastro-1b-L-longo-quente n=5 inicio=348s fim=389s rc=0",
+  "17 llamacpp-1b-S1-longo-quente n=5 inicio=389s fim=396s rc=0",
+  "18 llamacpp-1b-S2-longo-quente n=5 inicio=396s fim=413s rc=0",
+  "19 llamacpp-1b-S3-curto-frio n=3 inicio=413s fim=424s rc=0",
+  "20 llamacpp-1b-S3-curto-quente n=5 inicio=424s fim=431s rc=0",
+  "21 llamacpp-1b-S3-medio-frio n=3 inicio=431s fim=442s rc=0",
+  "22 llamacpp-1b-S3-medio-quente n=5 inicio=442s fim=450s rc=0",
+  "23 llamacpp-1b-S3-longo-frio n=3 inicio=450s fim=461s rc=0",
+  "24 llamacpp-1b-S3-longo-quente n=5 inicio=461s fim=469s rc=0"
+ ],
+ "celulas": {
+  "lastro-1b-L-curto-frio": {
+   "chave": "lastro-1b-L-curto-frio",
+   "lado": "lastro",
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "frio",
+   "serie": "L",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 3280.728094,
+    "min": 3232.058055,
+    "max": 5403.277543,
+    "ruidosa": true,
+    "valores": [
+     5403.277543,
+     3280.728094,
+     3232.058055
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 22.800698,
+    "min": 21.955158571428573,
+    "max": 23.207701904761905,
+    "ruidosa": false,
+    "valores": [
+     23.207701904761905,
+     22.800698,
+     21.955158571428573
+    ]
+   },
+   "temp_max": 54.0,
+   "observacoes": [],
+   "dmon_sm_antes": 45,
+   "desktop_g_sm_antes": 18,
+   "desktop_g_sm_depois": 2,
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8902480811403509,
+    "min": 0.8902480811403509,
+    "max": 0.8902480811403509,
+    "ruidosa": false,
+    "valores": [
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.10975191885964912,
+    "min": 0.10975191885964912,
+    "max": 0.10975191885964912,
+    "ruidosa": false,
+    "valores": [
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912
+    ]
+   },
+   "cont_por_medida": [
+    {
+     "cpu": 25981,
+     "hits": 3203,
+     "needed": 29184,
+     "processo": "p1",
+     "rotulo": "frio",
+     "fracao_cpu_needed": 0.8902480811403509
+    },
+    {
+     "cpu": 25981,
+     "hits": 3203,
+     "needed": 29184,
+     "processo": "p2",
+     "rotulo": "frio",
+     "fracao_cpu_needed": 0.8902480811403509
+    },
+    {
+     "cpu": 25981,
+     "hits": 3203,
+     "needed": 29184,
+     "processo": "p3",
+     "rotulo": "frio",
+     "fracao_cpu_needed": 0.8902480811403509
+    }
+   ],
+   "fatias_total_ms": {
+    "prefill_ms": {
+     "n": 3,
+     "mediana": 0.43413535289994815,
+     "min": 0.43110373767513815,
+     "max": 0.5565590160373106,
+     "ruidosa": true,
+     "valores": [
+      0.5565590160373106,
+      0.43110373767513815,
+      0.43413535289994815
+     ]
+    },
+    "soma_passos_ms": {
+     "n": 3,
+     "mediana": 0.18579033921654983,
+     "min": 0.15060057621139578,
+     "max": 0.1887557726240293,
+     "ruidosa": true,
+     "valores": [
+      0.15060057621139578,
+      0.1887557726240293,
+      0.18579033921654983
+     ]
+    },
+    "T_sequencia_ms": {
+     "n": 3,
+     "mediana": 0.3800571400998035,
+     "min": 0.29281927277953695,
+     "max": 0.38012332927250764,
+     "ruidosa": true,
+     "valores": [
+      0.29281927277953695,
+      0.38012332927250764,
+      0.3800571400998035
+     ]
+    }
+   },
+   "carga_lastro_limite_superior_ms": {
+    "n": 3,
+    "mediana": 5999.639144000001,
+    "min": 5589.69734,
+    "max": 6091.432051,
+    "ruidosa": false,
+    "valores": [
+     6091.432051,
+     5589.69734,
+     5999.639144000001
+    ]
+   },
+   "decode_mediana_dos_passos_descritiva": {
+    "n": 3,
+    "mediana": 22.247560999999997,
+    "min": 21.429473,
+    "max": 22.882976,
+    "ruidosa": false,
+    "valores": [
+     22.882976,
+     22.247560999999997,
+     21.429473
+    ]
+   }
+  },
+  "llamacpp-1b-S1-curto-frio": {
+   "chave": "llamacpp-1b-S1-curto-frio",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "frio",
+   "serie": "S1",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 99.539,
+    "min": 98.215,
+    "max": 101.003,
+    "ruidosa": false,
+    "valores": [
+     98.215,
+     101.003,
+     99.539
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 1.8228253968253967,
+    "min": 1.8081904761904761,
+    "max": 1.864857142857143,
+    "ruidosa": false,
+    "valores": [
+     1.8228253968253967,
+     1.864857142857143,
+     1.8081904761904761
+    ]
+   },
+   "temp_max": 56.0,
+   "observacoes": [],
+   "dmon_sm_antes": 23,
+   "desktop_g_sm_antes": 5,
+   "desktop_g_sm_depois": 8,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 845.0,
+    "min": 842.0,
+    "max": 846.0,
+    "ruidosa": false,
+    "valores": [
+     846.0,
+     845.0,
+     842.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.711.029 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S2-curto-frio": {
+   "chave": "llamacpp-1b-S2-curto-frio",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "frio",
+   "serie": "S2",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 322.29,
+    "min": 319.883,
+    "max": 333.795,
+    "ruidosa": false,
+    "valores": [
+     333.795,
+     322.29,
+     319.883
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 21.5865873015873,
+    "min": 21.554666666666666,
+    "max": 22.040269841269843,
+    "ruidosa": false,
+    "valores": [
+     21.554666666666666,
+     22.040269841269843,
+     21.5865873015873
+    ]
+   },
+   "temp_max": 56.0,
+   "observacoes": [],
+   "dmon_sm_antes": 5,
+   "desktop_g_sm_antes": 1,
+   "desktop_g_sm_depois": 7,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 635.0,
+    "min": 632.0,
+    "max": 636.0,
+    "ruidosa": false,
+    "valores": [
+     636.0,
+     632.0,
+     635.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.482.898 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S3-curto-frio": {
+   "chave": "llamacpp-1b-S3-curto-frio",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "frio",
+   "serie": "S3",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 96.776,
+    "min": 95.057,
+    "max": 98.551,
+    "ruidosa": false,
+    "valores": [
+     95.057,
+     98.551,
+     96.776
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 1.901063492063492,
+    "min": 1.900206349206349,
+    "max": 1.914952380952381,
+    "ruidosa": false,
+    "valores": [
+     1.901063492063492,
+     1.900206349206349,
+     1.914952380952381
+    ]
+   },
+   "temp_max": 37.0,
+   "observacoes": [],
+   "dmon_sm_antes": 35,
+   "desktop_g_sm_antes": 6,
+   "desktop_g_sm_depois": 29,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 844.0,
+    "min": 844.0,
+    "max": 848.0,
+    "ruidosa": false,
+    "valores": [
+     844.0,
+     848.0,
+     844.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.743.206 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "lastro-1b-L-curto-quente": {
+   "chave": "lastro-1b-L-curto-quente",
+   "lado": "lastro",
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "quente",
+   "serie": "L",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 794.641221,
+    "min": 764.73772,
+    "max": 810.4804049999999,
+    "ruidosa": false,
+    "valores": [
+     800.7594879999999,
+     810.4804049999999,
+     785.355863,
+     794.641221,
+     764.73772
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 21.261678222222223,
+    "min": 20.955413650793652,
+    "max": 23.09030261904762,
+    "ruidosa": false,
+    "valores": [
+     23.09030261904762,
+     21.775881015873015,
+     20.955413650793652,
+     21.02727706349206,
+     21.261678222222223
+    ]
+   },
+   "temp_max": 56.0,
+   "observacoes": [],
+   "dmon_sm_antes": 69,
+   "desktop_g_sm_antes": 11,
+   "desktop_g_sm_depois": 1,
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8902480811403509,
+    "min": 0.8902480811403509,
+    "max": 0.8902480811403509,
+    "ruidosa": false,
+    "valores": [
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.10975191885964912,
+    "min": 0.10975191885964912,
+    "max": 0.10975191885964912,
+    "ruidosa": false,
+    "valores": [
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912
+    ]
+   },
+   "cont_por_medida": [
+    {
+     "cpu": 25981,
+     "hits": 3203,
+     "needed": 29184,
+     "processo": "p1",
+     "rotulo": "quente rep 1",
+     "fracao_cpu_needed": 0.8902480811403509
+    },
+    {
+     "cpu": 25981,
+     "hits": 3203,
+     "needed": 29184,
+     "processo": "p1",
+     "rotulo": "quente rep 2",
+     "fracao_cpu_needed": 0.8902480811403509
+    },
+    {
+     "cpu": 25981,
+     "hits": 3203,
+     "needed": 29184,
+     "processo": "p1",
+     "rotulo": "quente rep 3",
+     "fracao_cpu_needed": 0.8902480811403509
+    },
+    {
+     "cpu": 25981,
+     "hits": 3203,
+     "needed": 29184,
+     "processo": "p1",
+     "rotulo": "quente rep 4",
+     "fracao_cpu_needed": 0.8902480811403509
+    },
+    {
+     "cpu": 25981,
+     "hits": 3203,
+     "needed": 29184,
+     "processo": "p1",
+     "rotulo": "quente rep 5",
+     "fracao_cpu_needed": 0.8902480811403509
+    }
+   ],
+   "fatias_total_ms": {
+    "prefill_ms": {
+     "n": 5,
+     "mediana": 0.3713519295932928,
+     "min": 0.3550113775885847,
+     "max": 0.3749197884421623,
+     "ruidosa": false,
+     "valores": [
+      0.3550113775885847,
+      0.3713519295932928,
+      0.37296041682658704,
+      0.3749197884421623,
+      0.36340534761093213
+     ]
+    },
+    "soma_passos_ms": {
+     "n": 5,
+     "mediana": 0.6285783952195847,
+     "min": 0.6250156042358493,
+     "max": 0.6449266935550819,
+     "ruidosa": false,
+     "valores": [
+      0.6449266935550819,
+      0.6285783952195847,
+      0.6269501906403082,
+      0.6250156042358493,
+      0.6365270914107944
+     ]
+    },
+    "T_sequencia_ms": {
+     "n": 5,
+     "mediana": 1.7456940883727418e-07,
+     "min": 1.4673295460154902e-07,
+     "max": 3.2408397391009803e-07,
+     "ruidosa": true,
+     "valores": [
+      3.2408397391009803e-07,
+      1.7456940883727418e-07,
+      2.2842378715849527e-07,
+      1.4673295460154902e-07,
+      1.5254003239582482e-07
+     ]
+    }
+   },
+   "carga_lastro_limite_superior_ms": {
+    "n": 1,
+    "mediana": 6014.3251489999975,
+    "min": 6014.3251489999975,
+    "max": 6014.3251489999975,
+    "ruidosa": false,
+    "valores": [
+     6014.3251489999975
+    ]
+   },
+   "decode_mediana_dos_passos_descritiva": {
+    "n": 5,
+    "mediana": 20.981963,
+    "min": 20.741231,
+    "max": 22.768995,
+    "ruidosa": false,
+    "valores": [
+     22.768995,
+     21.26213,
+     20.847471,
+     20.741231,
+     20.981963
+    ]
+   }
+  },
+  "llamacpp-1b-S1-curto-quente": {
+   "chave": "llamacpp-1b-S1-curto-quente",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "quente",
+   "serie": "S1",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 7.289,
+    "min": 7.023,
+    "max": 8.114,
+    "ruidosa": false,
+    "valores": [
+     7.215,
+     7.023,
+     8.114,
+     7.289,
+     7.512
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 1.8083015873015873,
+    "min": 1.7756825396825395,
+    "max": 1.8486507936507937,
+    "ruidosa": false,
+    "valores": [
+     1.8083015873015873,
+     1.8291111111111111,
+     1.779873015873016,
+     1.7756825396825395,
+     1.8486507936507937
+    ]
+   },
+   "temp_max": 63.0,
+   "observacoes": [],
+   "dmon_sm_antes": 64,
+   "desktop_g_sm_antes": 3,
+   "desktop_g_sm_depois": 62,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 846.0,
+    "min": 846.0,
+    "max": 846.0,
+    "ruidosa": false,
+    "valores": [
+     846.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.716.614 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S2-curto-quente": {
+   "chave": "llamacpp-1b-S2-curto-quente",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "quente",
+   "serie": "S2",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 225.479,
+    "min": 222.979,
+    "max": 269.355,
+    "ruidosa": true,
+    "valores": [
+     245.478,
+     269.355,
+     225.479,
+     222.979,
+     224.322
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 21.526063492063493,
+    "min": 21.39742857142857,
+    "max": 21.702333333333335,
+    "ruidosa": false,
+    "valores": [
+     21.39742857142857,
+     21.702333333333335,
+     21.519015873015874,
+     21.65415873015873,
+     21.526063492063493
+    ]
+   },
+   "temp_max": 56.0,
+   "observacoes": [],
+   "dmon_sm_antes": 0,
+   "desktop_g_sm_antes": 1,
+   "desktop_g_sm_depois": 9,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 636.0,
+    "min": 636.0,
+    "max": 636.0,
+    "ruidosa": false,
+    "valores": [
+     636.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.511.760 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S3-curto-quente": {
+   "chave": "llamacpp-1b-S3-curto-quente",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "quente",
+   "serie": "S3",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 7.34,
+    "min": 7.307,
+    "max": 7.632,
+    "ruidosa": false,
+    "valores": [
+     7.632,
+     7.34,
+     7.346,
+     7.313,
+     7.307
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 1.8877460317460317,
+    "min": 1.8557777777777777,
+    "max": 1.9227619047619047,
+    "ruidosa": false,
+    "valores": [
+     1.9039047619047618,
+     1.8574444444444445,
+     1.8877460317460317,
+     1.8557777777777777,
+     1.9227619047619047
+    ]
+   },
+   "temp_max": 39.0,
+   "observacoes": [],
+   "dmon_sm_antes": 15,
+   "desktop_g_sm_antes": 2,
+   "desktop_g_sm_depois": 11,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 845.0,
+    "min": 845.0,
+    "max": 845.0,
+    "ruidosa": false,
+    "valores": [
+     845.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.687.020 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "lastro-1b-L-medio-frio": {
+   "chave": "lastro-1b-L-medio-frio",
+   "lado": "lastro",
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "frio",
+   "serie": "L",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 3967.384042,
+    "min": 3945.995284,
+    "max": 4052.680875,
+    "ruidosa": false,
+    "valores": [
+     3967.384042,
+     3945.995284,
+     4052.680875
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 21.530695206349208,
+    "min": 21.519305365079365,
+    "max": 24.084299698412696,
+    "ruidosa": false,
+    "valores": [
+     21.519305365079365,
+     21.530695206349208,
+     24.084299698412696
+    ]
+   },
+   "temp_max": 45.0,
+   "observacoes": [],
+   "dmon_sm_antes": 1,
+   "desktop_g_sm_antes": 0,
+   "desktop_g_sm_depois": 3,
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8942015379113019,
+    "min": 0.8942015379113019,
+    "max": 0.8942015379113019,
+    "ruidosa": false,
+    "valores": [
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.10579846208869814,
+    "min": 0.10579846208869814,
+    "max": 0.10579846208869814,
+    "ruidosa": false,
+    "valores": [
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814
+    ]
+   },
+   "cont_por_medida": [
+    {
+     "cpu": 40003,
+     "hits": 4733,
+     "needed": 44736,
+     "processo": "p1",
+     "rotulo": "frio",
+     "fracao_cpu_needed": 0.8942015379113019
+    },
+    {
+     "cpu": 40003,
+     "hits": 4733,
+     "needed": 44736,
+     "processo": "p2",
+     "rotulo": "frio",
+     "fracao_cpu_needed": 0.8942015379113019
+    },
+    {
+     "cpu": 40003,
+     "hits": 4733,
+     "needed": 44736,
+     "processo": "p3",
+     "rotulo": "frio",
+     "fracao_cpu_needed": 0.8942015379113019
+    }
+   ],
+   "fatias_total_ms": {
+    "prefill_ms": {
+     "n": 3,
+     "mediana": 0.4852989878805592,
+     "min": 0.4813103352881788,
+     "max": 0.4879048136474737,
+     "ruidosa": false,
+     "valores": [
+      0.4879048136474737,
+      0.4852989878805592,
+      0.4813103352881788
+     ]
+    },
+    "soma_passos_ms": {
+     "n": 3,
+     "mediana": 0.1668212711671307,
+     "min": 0.16672459017272118,
+     "max": 0.18020106477555103,
+     "ruidosa": false,
+     "valores": [
+      0.16672459017272118,
+      0.1668212711671307,
+      0.18020106477555103
+     ]
+    },
+    "T_sequencia_ms": {
+     "n": 3,
+     "mediana": 0.34534881672672546,
+     "min": 0.33846978697550817,
+     "max": 0.3478606039644845,
+     "ruidosa": false,
+     "valores": [
+      0.34534881672672546,
+      0.3478606039644845,
+      0.33846978697550817
+     ]
+    }
+   },
+   "carga_lastro_limite_superior_ms": {
+    "n": 3,
+    "mediana": 5978.415314,
+    "min": 5458.722621000001,
+    "max": 6063.849837,
+    "ruidosa": false,
+    "valores": [
+     5458.722621000001,
+     5978.415314,
+     6063.849837
+    ]
+   },
+   "decode_mediana_dos_passos_descritiva": {
+    "n": 3,
+    "mediana": 21.293152,
+    "min": 21.146306,
+    "max": 23.212252,
+    "ruidosa": false,
+    "valores": [
+     21.293152,
+     21.146306,
+     23.212252
+    ]
+   }
+  },
+  "llamacpp-1b-S1-medio-frio": {
+   "chave": "llamacpp-1b-S1-medio-frio",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "frio",
+   "serie": "S1",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 102.276,
+    "min": 100.507,
+    "max": 103.5,
+    "ruidosa": false,
+    "valores": [
+     100.507,
+     102.276,
+     103.5
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 1.7995714285714286,
+    "min": 1.794888888888889,
+    "max": 1.8243492063492064,
+    "ruidosa": false,
+    "valores": [
+     1.8243492063492064,
+     1.7995714285714286,
+     1.794888888888889
+    ]
+   },
+   "temp_max": 52.0,
+   "observacoes": [],
+   "dmon_sm_antes": 0,
+   "desktop_g_sm_antes": 7,
+   "desktop_g_sm_depois": 18,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 849.0,
+    "min": 845.0,
+    "max": 851.0,
+    "ruidosa": false,
+    "valores": [
+     849.0,
+     845.0,
+     851.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.704.043 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S2-medio-frio": {
+   "chave": "llamacpp-1b-S2-medio-frio",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "frio",
+   "serie": "S2",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 323.929,
+    "min": 320.496,
+    "max": 329.786,
+    "ruidosa": false,
+    "valores": [
+     323.929,
+     320.496,
+     329.786
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 21.586317460317463,
+    "min": 21.532873015873015,
+    "max": 21.677825396825398,
+    "ruidosa": false,
+    "valores": [
+     21.677825396825398,
+     21.532873015873015,
+     21.586317460317463
+    ]
+   },
+   "temp_max": 49.0,
+   "observacoes": [],
+   "dmon_sm_antes": 1,
+   "desktop_g_sm_antes": 0,
+   "desktop_g_sm_depois": 4,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 632.0,
+    "min": 632.0,
+    "max": 633.0,
+    "ruidosa": false,
+    "valores": [
+     633.0,
+     632.0,
+     632.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.480.110 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S3-medio-frio": {
+   "chave": "llamacpp-1b-S3-medio-frio",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "frio",
+   "serie": "S3",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 100.085,
+    "min": 98.7,
+    "max": 102.357,
+    "ruidosa": false,
+    "valores": [
+     102.357,
+     98.7,
+     100.085
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 1.9004126984126983,
+    "min": 1.8810952380952382,
+    "max": 1.905126984126984,
+    "ruidosa": false,
+    "valores": [
+     1.9004126984126983,
+     1.8810952380952382,
+     1.905126984126984
+    ]
+   },
+   "temp_max": 41.0,
+   "observacoes": [],
+   "dmon_sm_antes": 7,
+   "desktop_g_sm_antes": 1,
+   "desktop_g_sm_depois": 20,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 842.0,
+    "min": 840.0,
+    "max": 844.0,
+    "ruidosa": false,
+    "valores": [
+     842.0,
+     844.0,
+     840.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.673.305 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "lastro-1b-L-medio-quente": {
+   "chave": "lastro-1b-L-medio-quente",
+   "lado": "lastro",
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "quente",
+   "serie": "L",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 1523.903266,
+    "min": 1505.881563,
+    "max": 1546.1326560000002,
+    "ruidosa": false,
+    "valores": [
+     1546.1326560000002,
+     1525.575954,
+     1505.881563,
+     1521.7416930000002,
+     1523.903266
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 21.648783873015873,
+    "min": 21.251354904761904,
+    "max": 22.427874825396827,
+    "ruidosa": false,
+    "valores": [
+     22.427874825396827,
+     21.648783873015873,
+     21.251354904761904,
+     21.990760968253966,
+     21.363672523809523
+    ]
+   },
+   "temp_max": 39.0,
+   "observacoes": [],
+   "dmon_sm_antes": 2,
+   "desktop_g_sm_antes": 5,
+   "desktop_g_sm_depois": 3,
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8942015379113019,
+    "min": 0.8942015379113019,
+    "max": 0.8942015379113019,
+    "ruidosa": false,
+    "valores": [
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.10579846208869814,
+    "min": 0.10579846208869814,
+    "max": 0.10579846208869814,
+    "ruidosa": false,
+    "valores": [
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814
+    ]
+   },
+   "cont_por_medida": [
+    {
+     "cpu": 40003,
+     "hits": 4733,
+     "needed": 44736,
+     "processo": "p1",
+     "rotulo": "quente rep 1",
+     "fracao_cpu_needed": 0.8942015379113019
+    },
+    {
+     "cpu": 40003,
+     "hits": 4733,
+     "needed": 44736,
+     "processo": "p1",
+     "rotulo": "quente rep 2",
+     "fracao_cpu_needed": 0.8942015379113019
+    },
+    {
+     "cpu": 40003,
+     "hits": 4733,
+     "needed": 44736,
+     "processo": "p1",
+     "rotulo": "quente rep 3",
+     "fracao_cpu_needed": 0.8942015379113019
+    },
+    {
+     "cpu": 40003,
+     "hits": 4733,
+     "needed": 44736,
+     "processo": "p1",
+     "rotulo": "quente rep 4",
+     "fracao_cpu_needed": 0.8942015379113019
+    },
+    {
+     "cpu": 40003,
+     "hits": 4733,
+     "needed": 44736,
+     "processo": "p1",
+     "rotulo": "quente rep 5",
+     "fracao_cpu_needed": 0.8942015379113019
+    }
+   ],
+   "fatias_total_ms": {
+    "prefill_ms": {
+     "n": 5,
+     "mediana": 0.5279476531900295,
+     "min": 0.5224708054863421,
+     "max": 0.5309787602742001,
+     "ruidosa": false,
+     "valores": [
+      0.5224708054863421,
+      0.5279476531900295,
+      0.529325630436961,
+      0.5234145878033429,
+      0.5309787602742001
+     ]
+    },
+    "soma_passos_ms": {
+     "n": 5,
+     "mediana": 0.4719881369676753,
+     "min": 0.4689604426312526,
+     "max": 0.4774676455694961,
+     "ruidosa": false,
+     "valores": [
+      0.4774676455694961,
+      0.4719881369676753,
+      0.47060797334031107,
+      0.4765250001754871,
+      0.4689604426312526
+     ]
+    },
+    "T_sequencia_ms": {
+     "n": 5,
+     "mediana": 1.5149886440194777e-07,
+     "min": 8.819739994673216e-08,
+     "max": 2.1015808045409354e-07,
+     "ruidosa": true,
+     "valores": [
+      8.819739994673216e-08,
+      1.699176609572495e-07,
+      1.5149886440194777e-07,
+      2.1015808045409354e-07,
+      9.0941111239515e-08
+     ]
+    }
+   },
+   "carga_lastro_limite_superior_ms": {
+    "n": 1,
+    "mediana": 5990.722725000002,
+    "min": 5990.722725000002,
+    "max": 5990.722725000002,
+    "ruidosa": false,
+    "valores": [
+     5990.722725000002
+    ]
+   },
+   "decode_mediana_dos_passos_descritiva": {
+    "n": 5,
+    "mediana": 21.335594999999998,
+    "min": 20.873485000000002,
+    "max": 21.756145,
+    "ruidosa": false,
+    "valores": [
+     21.756145,
+     21.335594999999998,
+     20.873485000000002,
+     21.60387,
+     20.892932
+    ]
+   }
+  },
+  "llamacpp-1b-S1-medio-quente": {
+   "chave": "llamacpp-1b-S1-medio-quente",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "quente",
+   "serie": "S1",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 8.776,
+    "min": 8.75,
+    "max": 9.63,
+    "ruidosa": false,
+    "valores": [
+     8.764,
+     8.894,
+     9.63,
+     8.776,
+     8.75
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 1.7562857142857142,
+    "min": 1.7504126984126984,
+    "max": 1.772857142857143,
+    "ruidosa": false,
+    "valores": [
+     1.764761904761905,
+     1.772857142857143,
+     1.7562857142857142,
+     1.7526190476190477,
+     1.7504126984126984
+    ]
+   },
+   "temp_max": 48.0,
+   "observacoes": [],
+   "dmon_sm_antes": 15,
+   "desktop_g_sm_antes": 5,
+   "desktop_g_sm_depois": 25,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 862.0,
+    "min": 862.0,
+    "max": 862.0,
+    "ruidosa": false,
+    "valores": [
+     862.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.737.597 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S2-medio-quente": {
+   "chave": "llamacpp-1b-S2-medio-quente",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "quente",
+   "serie": "S2",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 238.368,
+    "min": 227.326,
+    "max": 244.945,
+    "ruidosa": false,
+    "valores": [
+     238.368,
+     227.326,
+     233.396,
+     240.878,
+     244.945
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 21.513857142857145,
+    "min": 21.423301587301587,
+    "max": 22.479761904761904,
+    "ruidosa": false,
+    "valores": [
+     22.034285714285716,
+     21.513857142857145,
+     22.479761904761904,
+     21.423301587301587,
+     21.453666666666667
+    ]
+   },
+   "temp_max": 41.0,
+   "observacoes": [],
+   "dmon_sm_antes": 5,
+   "desktop_g_sm_antes": 2,
+   "desktop_g_sm_depois": 4,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 632.0,
+    "min": 632.0,
+    "max": 632.0,
+    "ruidosa": false,
+    "valores": [
+     632.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.491.991 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S3-medio-quente": {
+   "chave": "llamacpp-1b-S3-medio-quente",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "quente",
+   "serie": "S3",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 9.185,
+    "min": 9.053,
+    "max": 11.967,
+    "ruidosa": true,
+    "valores": [
+     9.185,
+     11.967,
+     9.104,
+     9.053,
+     9.697
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 1.8703809523809525,
+    "min": 1.8546190476190476,
+    "max": 1.8878095238095238,
+    "ruidosa": false,
+    "valores": [
+     1.8656984126984126,
+     1.8878095238095238,
+     1.8703809523809525,
+     1.8546190476190476,
+     1.881047619047619
+    ]
+   },
+   "temp_max": 39.0,
+   "observacoes": [],
+   "dmon_sm_antes": 12,
+   "desktop_g_sm_antes": 1,
+   "desktop_g_sm_depois": 48,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 847.0,
+    "min": 847.0,
+    "max": 847.0,
+    "ruidosa": false,
+    "valores": [
+     847.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.680.398 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "lastro-1b-L-longo-frio": {
+   "chave": "lastro-1b-L-longo-frio",
+   "lado": "lastro",
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "frio",
+   "serie": "L",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 5608.845979,
+    "min": 5565.646908,
+    "max": 5650.287617,
+    "ruidosa": false,
+    "valores": [
+     5608.845979,
+     5650.287617,
+     5565.646908
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 21.261533571428572,
+    "min": 21.073476746031744,
+    "max": 21.643654793650793,
+    "ruidosa": false,
+    "valores": [
+     21.643654793650793,
+     21.261533571428572,
+     21.073476746031744
+    ]
+   },
+   "temp_max": 38.0,
+   "observacoes": [],
+   "dmon_sm_antes": 40,
+   "desktop_g_sm_antes": 10,
+   "desktop_g_sm_depois": 0,
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8985655737704918,
+    "min": 0.8985655737704918,
+    "max": 0.8985655737704918,
+    "ruidosa": false,
+    "valores": [
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.1014344262295082,
+    "min": 0.1014344262295082,
+    "max": 0.1014344262295082,
+    "ruidosa": false,
+    "valores": [
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082
+    ]
+   },
+   "cont_por_medida": [
+    {
+     "cpu": 73668,
+     "hits": 8316,
+     "needed": 81984,
+     "processo": "p1",
+     "rotulo": "frio",
+     "fracao_cpu_needed": 0.8985655737704918
+    },
+    {
+     "cpu": 73668,
+     "hits": 8316,
+     "needed": 81984,
+     "processo": "p2",
+     "rotulo": "frio",
+     "fracao_cpu_needed": 0.8985655737704918
+    },
+    {
+     "cpu": 73668,
+     "hits": 8316,
+     "needed": 81984,
+     "processo": "p3",
+     "rotulo": "frio",
+     "fracao_cpu_needed": 0.8985655737704918
+    }
+   ],
+   "fatias_total_ms": {
+    "prefill_ms": {
+     "n": 3,
+     "mediana": 0.5735493849977189,
+     "min": 0.5734442292164529,
+     "max": 0.5766720762088539,
+     "ruidosa": false,
+     "valores": [
+      0.5735493849977189,
+      0.5766720762088539,
+      0.5734442292164529
+     ]
+    },
+    "soma_passos_ms": {
+     "n": 3,
+     "mediana": 0.13678934744614205,
+     "min": 0.1367078656812485,
+     "max": 0.13943392479953934,
+     "ruidosa": false,
+     "valores": [
+      0.13943392479953934,
+      0.1367078656812485,
+      0.13678934744614205
+     ]
+    },
+    "T_sequencia_ms": {
+     "n": 3,
+     "mediana": 0.28699195603714633,
+     "min": 0.2865946931785046,
+     "max": 0.28974140975351087,
+     "ruidosa": false,
+     "valores": [
+      0.28699195603714633,
+      0.2865946931785046,
+      0.28974140975351087
+     ]
+    }
+   },
+   "carga_lastro_limite_superior_ms": {
+    "n": 3,
+    "mediana": 5952.98724,
+    "min": 5916.481284000001,
+    "max": 5985.361888999999,
+    "ruidosa": false,
+    "valores": [
+     5985.361888999999,
+     5952.98724,
+     5916.481284000001
+    ]
+   },
+   "decode_mediana_dos_passos_descritiva": {
+    "n": 3,
+    "mediana": 20.814204999999998,
+    "min": 20.813564,
+    "max": 21.216541,
+    "ruidosa": false,
+    "valores": [
+     21.216541,
+     20.814204999999998,
+     20.813564
+    ]
+   }
+  },
+  "llamacpp-1b-S1-longo-frio": {
+   "chave": "llamacpp-1b-S1-longo-frio",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "frio",
+   "serie": "S1",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 105.513,
+    "min": 103.405,
+    "max": 108.993,
+    "ruidosa": false,
+    "valores": [
+     103.405,
+     105.513,
+     108.993
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 1.8060158730158729,
+    "min": 1.797063492063492,
+    "max": 1.8124126984126985,
+    "ruidosa": false,
+    "valores": [
+     1.8124126984126985,
+     1.797063492063492,
+     1.8060158730158729
+    ]
+   },
+   "temp_max": 42.0,
+   "observacoes": [],
+   "dmon_sm_antes": 3,
+   "desktop_g_sm_antes": 3,
+   "desktop_g_sm_depois": 7,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 843.0,
+    "min": 843.0,
+    "max": 844.0,
+    "ruidosa": false,
+    "valores": [
+     843.0,
+     844.0,
+     843.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.746.683 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S2-longo-frio": {
+   "chave": "llamacpp-1b-S2-longo-frio",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "frio",
+   "serie": "S2",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 325.349,
+    "min": 322.708,
+    "max": 338.71,
+    "ruidosa": false,
+    "valores": [
+     322.708,
+     338.71,
+     325.349
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 21.227619047619047,
+    "min": 21.100444444444445,
+    "max": 21.507492063492062,
+    "ruidosa": false,
+    "valores": [
+     21.227619047619047,
+     21.100444444444445,
+     21.507492063492062
+    ]
+   },
+   "temp_max": 37.0,
+   "observacoes": [],
+   "dmon_sm_antes": 6,
+   "desktop_g_sm_antes": 1,
+   "desktop_g_sm_depois": 3,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 635.0,
+    "min": 630.0,
+    "max": 636.0,
+    "ruidosa": false,
+    "valores": [
+     636.0,
+     630.0,
+     635.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.468.444 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S3-longo-frio": {
+   "chave": "llamacpp-1b-S3-longo-frio",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "frio",
+   "serie": "S3",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 105.363,
+    "min": 102.004,
+    "max": 110.691,
+    "ruidosa": false,
+    "valores": [
+     105.363,
+     110.691,
+     102.004
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 1.9640952380952381,
+    "min": 1.9399523809523809,
+    "max": 2.005777777777778,
+    "ruidosa": false,
+    "valores": [
+     1.9640952380952381,
+     2.005777777777778,
+     1.9399523809523809
+    ]
+   },
+   "temp_max": 41.0,
+   "observacoes": [],
+   "dmon_sm_antes": 14,
+   "desktop_g_sm_antes": 0,
+   "desktop_g_sm_depois": 32,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 848.0,
+    "min": 841.0,
+    "max": 849.0,
+    "ruidosa": false,
+    "valores": [
+     849.0,
+     841.0,
+     848.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.663.424 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "lastro-1b-L-longo-quente": {
+   "chave": "lastro-1b-L-longo-quente",
+   "lado": "lastro",
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "quente",
+   "serie": "L",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 3109.121057,
+    "min": 3081.546227,
+    "max": 3140.0776979999996,
+    "ruidosa": false,
+    "valores": [
+     3109.121057,
+     3084.355785,
+     3140.0776979999996,
+     3122.963988,
+     3081.546227
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 21.540319047619047,
+    "min": 20.975760952380956,
+    "max": 22.678932222222222,
+    "ruidosa": false,
+    "valores": [
+     21.540319047619047,
+     20.975760952380956,
+     21.699387904761902,
+     21.25544726984127,
+     22.678932222222222
+    ]
+   },
+   "temp_max": 36.0,
+   "observacoes": [],
+   "dmon_sm_antes": 6,
+   "desktop_g_sm_antes": 2,
+   "desktop_g_sm_depois": 2,
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8985655737704918,
+    "min": 0.8985655737704918,
+    "max": 0.8985655737704918,
+    "ruidosa": false,
+    "valores": [
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.1014344262295082,
+    "min": 0.1014344262295082,
+    "max": 0.1014344262295082,
+    "ruidosa": false,
+    "valores": [
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082
+    ]
+   },
+   "cont_por_medida": [
+    {
+     "cpu": 73668,
+     "hits": 8316,
+     "needed": 81984,
+     "processo": "p1",
+     "rotulo": "quente rep 1",
+     "fracao_cpu_needed": 0.8985655737704918
+    },
+    {
+     "cpu": 73668,
+     "hits": 8316,
+     "needed": 81984,
+     "processo": "p1",
+     "rotulo": "quente rep 2",
+     "fracao_cpu_needed": 0.8985655737704918
+    },
+    {
+     "cpu": 73668,
+     "hits": 8316,
+     "needed": 81984,
+     "processo": "p1",
+     "rotulo": "quente rep 3",
+     "fracao_cpu_needed": 0.8985655737704918
+    },
+    {
+     "cpu": 73668,
+     "hits": 8316,
+     "needed": 81984,
+     "processo": "p1",
+     "rotulo": "quente rep 4",
+     "fracao_cpu_needed": 0.8985655737704918
+    },
+    {
+     "cpu": 73668,
+     "hits": 8316,
+     "needed": 81984,
+     "processo": "p1",
+     "rotulo": "quente rep 5",
+     "fracao_cpu_needed": 0.8985655737704918
+    }
+   ],
+   "fatias_total_ms": {
+    "prefill_ms": {
+     "n": 5,
+     "mediana": 0.6966420150814303,
+     "min": 0.6831803789902648,
+     "max": 0.6999315124761425,
+     "ruidosa": false,
+     "valores": [
+      0.6961080489343355,
+      0.6999315124761425,
+      0.6966420150814303,
+      0.6998499389914187,
+      0.6831803789902648
+     ]
+    },
+    "soma_passos_ms": {
+     "n": 5,
+     "mediana": 0.3032894490206458,
+     "min": 0.2998812776686509,
+     "max": 0.3167596470303917,
+     "ruidosa": false,
+     "valores": [
+      0.30383073512362613,
+      0.2998812776686509,
+      0.3032894490206458,
+      0.30008808379737395,
+      0.3167596470303917
+     ]
+    },
+    "T_sequencia_ms": {
+     "n": 5,
+     "mediana": 9.780664193940174e-08,
+     "min": 5.400761454343479e-08,
+     "max": 1.7758211081712332e-07,
+     "ruidosa": true,
+     "valores": [
+      1.3478312287486784e-07,
+      9.780664193940174e-08,
+      9.340096537613836e-08,
+      5.400761454343479e-08,
+      1.7758211081712332e-07
+     ]
+    }
+   },
+   "carga_lastro_limite_superior_ms": {
+    "n": 1,
+    "mediana": 5821.390297,
+    "min": 5821.390297,
+    "max": 5821.390297,
+    "ruidosa": false,
+    "valores": [
+     5821.390297
+    ]
+   },
+   "decode_mediana_dos_passos_descritiva": {
+    "n": 5,
+    "mediana": 21.067843999999997,
+    "min": 20.659406,
+    "max": 22.352721,
+    "ruidosa": false,
+    "valores": [
+     21.067843999999997,
+     20.659406,
+     21.1722,
+     20.752271,
+     22.352721
+    ]
+   }
+  },
+  "llamacpp-1b-S1-longo-quente": {
+   "chave": "llamacpp-1b-S1-longo-quente",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "quente",
+   "serie": "S1",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 12.997,
+    "min": 12.738,
+    "max": 14.94,
+    "ruidosa": true,
+    "valores": [
+     14.94,
+     12.738,
+     12.997,
+     12.941,
+     13.115
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 1.779222222222222,
+    "min": 1.7500952380952381,
+    "max": 1.882253968253968,
+    "ruidosa": false,
+    "valores": [
+     1.7856031746031744,
+     1.7500952380952381,
+     1.771920634920635,
+     1.779222222222222,
+     1.882253968253968
+    ]
+   },
+   "temp_max": 40.0,
+   "observacoes": [],
+   "dmon_sm_antes": 14,
+   "desktop_g_sm_antes": 1,
+   "desktop_g_sm_depois": 33,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 847.0,
+    "min": 847.0,
+    "max": 847.0,
+    "ruidosa": false,
+    "valores": [
+     847.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.726.021 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S2-longo-quente": {
+   "chave": "llamacpp-1b-S2-longo-quente",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "quente",
+   "serie": "S2",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 242.978,
+    "min": 227.971,
+    "max": 254.395,
+    "ruidosa": false,
+    "valores": [
+     245.681,
+     254.395,
+     229.038,
+     242.978,
+     227.971
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 21.215650793650795,
+    "min": 21.1471746031746,
+    "max": 21.49214285714286,
+    "ruidosa": false,
+    "valores": [
+     21.1471746031746,
+     21.14847619047619,
+     21.49214285714286,
+     21.215650793650795,
+     21.47242857142857
+    ]
+   },
+   "temp_max": 37.0,
+   "observacoes": [],
+   "dmon_sm_antes": 8,
+   "desktop_g_sm_antes": 2,
+   "desktop_g_sm_depois": 7,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 635.0,
+    "min": 635.0,
+    "max": 635.0,
+    "ruidosa": false,
+    "valores": [
+     635.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.511.453 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-1b-S3-longo-quente": {
+   "chave": "llamacpp-1b-S3-longo-quente",
+   "lado": "llamacpp",
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "quente",
+   "serie": "S3",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 13.944,
+    "min": 13.871,
+    "max": 14.392,
+    "ruidosa": false,
+    "valores": [
+     13.96,
+     13.944,
+     13.909,
+     13.871,
+     14.392
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 1.9234126984126985,
+    "min": 1.9167460317460316,
+    "max": 1.9362857142857144,
+    "ruidosa": false,
+    "valores": [
+     1.9346666666666668,
+     1.9205079365079365,
+     1.9167460317460316,
+     1.9362857142857144,
+     1.9234126984126985
+    ]
+   },
+   "temp_max": 44.0,
+   "observacoes": [],
+   "dmon_sm_antes": 23,
+   "desktop_g_sm_antes": 1,
+   "desktop_g_sm_depois": 3,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 847.0,
+    "min": 847.0,
+    "max": 847.0,
+    "ruidosa": false,
+    "valores": [
+     847.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.00.707.798 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  }
+ },
+ "razoes": [
+  {
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "frio",
+   "serie": "S1",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S1 (tudo na GPU, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 32.95922295783562,
+    "lastro": {
+     "n": 3,
+     "mediana": 3280.728094,
+     "min": 3232.058055,
+     "max": 5403.277543,
+     "ruidosa": true,
+     "valores": [
+      5403.277543,
+      3280.728094,
+      3232.058055
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 99.539,
+     "min": 98.215,
+     "max": 101.003,
+     "ruidosa": false,
+     "valores": [
+      98.215,
+      101.003,
+      99.539
+     ]
+    },
+    "ruidosa": true,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 12.508437747087202,
+    "lastro": {
+     "n": 3,
+     "mediana": 22.800698,
+     "min": 21.955158571428573,
+     "max": 23.207701904761905,
+     "ruidosa": false,
+     "valores": [
+      23.207701904761905,
+      22.800698,
+      21.955158571428573
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 1.8228253968253967,
+     "min": 1.8081904761904761,
+     "max": 1.864857142857143,
+     "ruidosa": false,
+     "valores": [
+      1.8228253968253967,
+      1.864857142857143,
+      1.8081904761904761
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8902480811403509,
+    "min": 0.8902480811403509,
+    "max": 0.8902480811403509,
+    "ruidosa": false,
+    "valores": [
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.10975191885964912,
+    "min": 0.10975191885964912,
+    "max": 0.10975191885964912,
+    "ruidosa": false,
+    "valores": [
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.43413535289994815,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.18579033921654983,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 0.3800571400998035,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": true
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 3,
+     "mediana": 0.8902480811403509,
+     "min": 0.8902480811403509,
+     "max": 0.8902480811403509,
+     "ruidosa": false,
+     "valores": [
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 3,
+     "mediana": 0.10975191885964912,
+     "min": 0.10975191885964912,
+     "max": 0.10975191885964912,
+     "ruidosa": false,
+     "valores": [
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "frio",
+   "serie": "S2",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S2 (--n-cpu-moe 22 no 1B e 29 no 3B, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro; descarregamento de ordem de grandeza parecida, NÃO o mesmo: o Lastro descarrega ~90% dos experts de cada camada, o llama.cpp camadas inteiras; op offload ligado, então o prefill da S2 não deve ser lido como 'experts calculados na CPU')",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 10.179428756709795,
+    "lastro": {
+     "n": 3,
+     "mediana": 3280.728094,
+     "min": 3232.058055,
+     "max": 5403.277543,
+     "ruidosa": true,
+     "valores": [
+      5403.277543,
+      3280.728094,
+      3232.058055
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 322.29,
+     "min": 319.883,
+     "max": 333.795,
+     "ruidosa": false,
+     "valores": [
+      333.795,
+      322.29,
+      319.883
+     ]
+    },
+    "ruidosa": true,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 1.0562437536536136,
+    "lastro": {
+     "n": 3,
+     "mediana": 22.800698,
+     "min": 21.955158571428573,
+     "max": 23.207701904761905,
+     "ruidosa": false,
+     "valores": [
+      23.207701904761905,
+      22.800698,
+      21.955158571428573
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 21.5865873015873,
+     "min": 21.554666666666666,
+     "max": 22.040269841269843,
+     "ruidosa": false,
+     "valores": [
+      21.554666666666666,
+      22.040269841269843,
+      21.5865873015873
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8902480811403509,
+    "min": 0.8902480811403509,
+    "max": 0.8902480811403509,
+    "ruidosa": false,
+    "valores": [
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.10975191885964912,
+    "min": 0.10975191885964912,
+    "max": 0.10975191885964912,
+    "ruidosa": false,
+    "valores": [
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.43413535289994815,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.18579033921654983,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 0.3800571400998035,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": true
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 3,
+     "mediana": 0.8902480811403509,
+     "min": 0.8902480811403509,
+     "max": 0.8902480811403509,
+     "ruidosa": false,
+     "valores": [
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 3,
+     "mediana": 0.10975191885964912,
+     "min": 0.10975191885964912,
+     "max": 0.10975191885964912,
+     "ruidosa": false,
+     "valores": [
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "frio",
+   "serie": "S3",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S3 (KV f32 com -fa off, paridade de armazenamento; configuração prática, sem atribuir a razão só ao motor)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 33.900224167148885,
+    "lastro": {
+     "n": 3,
+     "mediana": 3280.728094,
+     "min": 3232.058055,
+     "max": 5403.277543,
+     "ruidosa": true,
+     "valores": [
+      5403.277543,
+      3280.728094,
+      3232.058055
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 96.776,
+     "min": 95.057,
+     "max": 98.551,
+     "ruidosa": false,
+     "valores": [
+      95.057,
+      98.551,
+      96.776
+     ]
+    },
+    "ruidosa": true,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 11.993654128432707,
+    "lastro": {
+     "n": 3,
+     "mediana": 22.800698,
+     "min": 21.955158571428573,
+     "max": 23.207701904761905,
+     "ruidosa": false,
+     "valores": [
+      23.207701904761905,
+      22.800698,
+      21.955158571428573
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 1.901063492063492,
+     "min": 1.900206349206349,
+     "max": 1.914952380952381,
+     "ruidosa": false,
+     "valores": [
+      1.901063492063492,
+      1.900206349206349,
+      1.914952380952381
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8902480811403509,
+    "min": 0.8902480811403509,
+    "max": 0.8902480811403509,
+    "ruidosa": false,
+    "valores": [
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.10975191885964912,
+    "min": 0.10975191885964912,
+    "max": 0.10975191885964912,
+    "ruidosa": false,
+    "valores": [
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.43413535289994815,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.18579033921654983,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 0.3800571400998035,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": true
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 3,
+     "mediana": 0.8902480811403509,
+     "min": 0.8902480811403509,
+     "max": 0.8902480811403509,
+     "ruidosa": false,
+     "valores": [
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 3,
+     "mediana": 0.10975191885964912,
+     "min": 0.10975191885964912,
+     "max": 0.10975191885964912,
+     "ruidosa": false,
+     "valores": [
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "quente",
+   "serie": "S1",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S1 (tudo na GPU, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 109.01923734394293,
+    "lastro": {
+     "n": 5,
+     "mediana": 794.641221,
+     "min": 764.73772,
+     "max": 810.4804049999999,
+     "ruidosa": false,
+     "valores": [
+      800.7594879999999,
+      810.4804049999999,
+      785.355863,
+      794.641221,
+      764.73772
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 7.289,
+     "min": 7.023,
+     "max": 8.114,
+     "ruidosa": false,
+     "valores": [
+      7.215,
+      7.023,
+      8.114,
+      7.289,
+      7.512
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 11.757816490085409,
+    "lastro": {
+     "n": 5,
+     "mediana": 21.261678222222223,
+     "min": 20.955413650793652,
+     "max": 23.09030261904762,
+     "ruidosa": false,
+     "valores": [
+      23.09030261904762,
+      21.775881015873015,
+      20.955413650793652,
+      21.02727706349206,
+      21.261678222222223
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 1.8083015873015873,
+     "min": 1.7756825396825395,
+     "max": 1.8486507936507937,
+     "ruidosa": false,
+     "valores": [
+      1.8083015873015873,
+      1.8291111111111111,
+      1.779873015873016,
+      1.7756825396825395,
+      1.8486507936507937
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8902480811403509,
+    "min": 0.8902480811403509,
+    "max": 0.8902480811403509,
+    "ruidosa": false,
+    "valores": [
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.10975191885964912,
+    "min": 0.10975191885964912,
+    "max": 0.10975191885964912,
+    "ruidosa": false,
+    "valores": [
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.3713519295932928,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.6285783952195847,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 1.7456940883727418e-07,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 5,
+     "mediana": 0.8902480811403509,
+     "min": 0.8902480811403509,
+     "max": 0.8902480811403509,
+     "ruidosa": false,
+     "valores": [
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 5,
+     "mediana": 0.10975191885964912,
+     "min": 0.10975191885964912,
+     "max": 0.10975191885964912,
+     "ruidosa": false,
+     "valores": [
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "quente",
+   "serie": "S2",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S2 (--n-cpu-moe 22 no 1B e 29 no 3B, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro; descarregamento de ordem de grandeza parecida, NÃO o mesmo: o Lastro descarrega ~90% dos experts de cada camada, o llama.cpp camadas inteiras; op offload ligado, então o prefill da S2 não deve ser lido como 'experts calculados na CPU')",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 3.5242360530248935,
+    "lastro": {
+     "n": 5,
+     "mediana": 794.641221,
+     "min": 764.73772,
+     "max": 810.4804049999999,
+     "ruidosa": false,
+     "valores": [
+      800.7594879999999,
+      810.4804049999999,
+      785.355863,
+      794.641221,
+      764.73772
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 225.479,
+     "min": 222.979,
+     "max": 269.355,
+     "ruidosa": true,
+     "valores": [
+      245.478,
+      269.355,
+      225.479,
+      222.979,
+      224.322
+     ]
+    },
+    "ruidosa": true,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 0.9877178997479615,
+    "lastro": {
+     "n": 5,
+     "mediana": 21.261678222222223,
+     "min": 20.955413650793652,
+     "max": 23.09030261904762,
+     "ruidosa": false,
+     "valores": [
+      23.09030261904762,
+      21.775881015873015,
+      20.955413650793652,
+      21.02727706349206,
+      21.261678222222223
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 21.526063492063493,
+     "min": 21.39742857142857,
+     "max": 21.702333333333335,
+     "ruidosa": false,
+     "valores": [
+      21.39742857142857,
+      21.702333333333335,
+      21.519015873015874,
+      21.65415873015873,
+      21.526063492063493
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8902480811403509,
+    "min": 0.8902480811403509,
+    "max": 0.8902480811403509,
+    "ruidosa": false,
+    "valores": [
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.10975191885964912,
+    "min": 0.10975191885964912,
+    "max": 0.10975191885964912,
+    "ruidosa": false,
+    "valores": [
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.3713519295932928,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.6285783952195847,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 1.7456940883727418e-07,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 5,
+     "mediana": 0.8902480811403509,
+     "min": 0.8902480811403509,
+     "max": 0.8902480811403509,
+     "ruidosa": false,
+     "valores": [
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 5,
+     "mediana": 0.10975191885964912,
+     "min": 0.10975191885964912,
+     "max": 0.10975191885964912,
+     "ruidosa": false,
+     "valores": [
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "curto",
+   "estado": "quente",
+   "serie": "S3",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S3 (KV f32 com -fa off, paridade de armazenamento; configuração prática, sem atribuir a razão só ao motor)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 108.26174673024524,
+    "lastro": {
+     "n": 5,
+     "mediana": 794.641221,
+     "min": 764.73772,
+     "max": 810.4804049999999,
+     "ruidosa": false,
+     "valores": [
+      800.7594879999999,
+      810.4804049999999,
+      785.355863,
+      794.641221,
+      764.73772
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 7.34,
+     "min": 7.307,
+     "max": 7.632,
+     "ruidosa": false,
+     "valores": [
+      7.632,
+      7.34,
+      7.346,
+      7.313,
+      7.307
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 11.2629971747612,
+    "lastro": {
+     "n": 5,
+     "mediana": 21.261678222222223,
+     "min": 20.955413650793652,
+     "max": 23.09030261904762,
+     "ruidosa": false,
+     "valores": [
+      23.09030261904762,
+      21.775881015873015,
+      20.955413650793652,
+      21.02727706349206,
+      21.261678222222223
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 1.8877460317460317,
+     "min": 1.8557777777777777,
+     "max": 1.9227619047619047,
+     "ruidosa": false,
+     "valores": [
+      1.9039047619047618,
+      1.8574444444444445,
+      1.8877460317460317,
+      1.8557777777777777,
+      1.9227619047619047
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8902480811403509,
+    "min": 0.8902480811403509,
+    "max": 0.8902480811403509,
+    "ruidosa": false,
+    "valores": [
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509,
+     0.8902480811403509
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.10975191885964912,
+    "min": 0.10975191885964912,
+    "max": 0.10975191885964912,
+    "ruidosa": false,
+    "valores": [
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912,
+     0.10975191885964912
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.3713519295932928,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.6285783952195847,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 1.7456940883727418e-07,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 5,
+     "mediana": 0.8902480811403509,
+     "min": 0.8902480811403509,
+     "max": 0.8902480811403509,
+     "ruidosa": false,
+     "valores": [
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509,
+      0.8902480811403509
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 5,
+     "mediana": 0.10975191885964912,
+     "min": 0.10975191885964912,
+     "max": 0.10975191885964912,
+     "ruidosa": false,
+     "valores": [
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912,
+      0.10975191885964912
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "frio",
+   "serie": "S1",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S1 (tudo na GPU, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 38.790958211115026,
+    "lastro": {
+     "n": 3,
+     "mediana": 3967.384042,
+     "min": 3945.995284,
+     "max": 4052.680875,
+     "ruidosa": false,
+     "valores": [
+      3967.384042,
+      3945.995284,
+      4052.680875
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 102.276,
+     "min": 100.507,
+     "max": 103.5,
+     "ruidosa": false,
+     "valores": [
+      100.507,
+      102.276,
+      103.5
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 11.964345990667972,
+    "lastro": {
+     "n": 3,
+     "mediana": 21.530695206349208,
+     "min": 21.519305365079365,
+     "max": 24.084299698412696,
+     "ruidosa": false,
+     "valores": [
+      21.519305365079365,
+      21.530695206349208,
+      24.084299698412696
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 1.7995714285714286,
+     "min": 1.794888888888889,
+     "max": 1.8243492063492064,
+     "ruidosa": false,
+     "valores": [
+      1.8243492063492064,
+      1.7995714285714286,
+      1.794888888888889
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8942015379113019,
+    "min": 0.8942015379113019,
+    "max": 0.8942015379113019,
+    "ruidosa": false,
+    "valores": [
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.10579846208869814,
+    "min": 0.10579846208869814,
+    "max": 0.10579846208869814,
+    "ruidosa": false,
+    "valores": [
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.4852989878805592,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.1668212711671307,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 0.34534881672672546,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": true
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 3,
+     "mediana": 0.8942015379113019,
+     "min": 0.8942015379113019,
+     "max": 0.8942015379113019,
+     "ruidosa": false,
+     "valores": [
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 3,
+     "mediana": 0.10579846208869814,
+     "min": 0.10579846208869814,
+     "max": 0.10579846208869814,
+     "ruidosa": false,
+     "valores": [
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "frio",
+   "serie": "S2",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S2 (--n-cpu-moe 22 no 1B e 29 no 3B, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro; descarregamento de ordem de grandeza parecida, NÃO o mesmo: o Lastro descarrega ~90% dos experts de cada camada, o llama.cpp camadas inteiras; op offload ligado, então o prefill da S2 não deve ser lido como 'experts calculados na CPU')",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 12.247696384084168,
+    "lastro": {
+     "n": 3,
+     "mediana": 3967.384042,
+     "min": 3945.995284,
+     "max": 4052.680875,
+     "ruidosa": false,
+     "valores": [
+      3967.384042,
+      3945.995284,
+      4052.680875
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 323.929,
+     "min": 320.496,
+     "max": 329.786,
+     "ruidosa": false,
+     "valores": [
+      323.929,
+      320.496,
+      329.786
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 0.9974232634134791,
+    "lastro": {
+     "n": 3,
+     "mediana": 21.530695206349208,
+     "min": 21.519305365079365,
+     "max": 24.084299698412696,
+     "ruidosa": false,
+     "valores": [
+      21.519305365079365,
+      21.530695206349208,
+      24.084299698412696
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 21.586317460317463,
+     "min": 21.532873015873015,
+     "max": 21.677825396825398,
+     "ruidosa": false,
+     "valores": [
+      21.677825396825398,
+      21.532873015873015,
+      21.586317460317463
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8942015379113019,
+    "min": 0.8942015379113019,
+    "max": 0.8942015379113019,
+    "ruidosa": false,
+    "valores": [
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.10579846208869814,
+    "min": 0.10579846208869814,
+    "max": 0.10579846208869814,
+    "ruidosa": false,
+    "valores": [
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.4852989878805592,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.1668212711671307,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 0.34534881672672546,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": true
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 3,
+     "mediana": 0.8942015379113019,
+     "min": 0.8942015379113019,
+     "max": 0.8942015379113019,
+     "ruidosa": false,
+     "valores": [
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 3,
+     "mediana": 0.10579846208869814,
+     "min": 0.10579846208869814,
+     "max": 0.10579846208869814,
+     "ruidosa": false,
+     "valores": [
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "frio",
+   "serie": "S3",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S3 (KV f32 com -fa off, paridade de armazenamento; configuração prática, sem atribuir a razão só ao motor)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 39.640146295648705,
+    "lastro": {
+     "n": 3,
+     "mediana": 3967.384042,
+     "min": 3945.995284,
+     "max": 4052.680875,
+     "ruidosa": false,
+     "valores": [
+      3967.384042,
+      3945.995284,
+      4052.680875
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 100.085,
+     "min": 98.7,
+     "max": 102.357,
+     "ruidosa": false,
+     "valores": [
+      102.357,
+      98.7,
+      100.085
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 11.329483971735463,
+    "lastro": {
+     "n": 3,
+     "mediana": 21.530695206349208,
+     "min": 21.519305365079365,
+     "max": 24.084299698412696,
+     "ruidosa": false,
+     "valores": [
+      21.519305365079365,
+      21.530695206349208,
+      24.084299698412696
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 1.9004126984126983,
+     "min": 1.8810952380952382,
+     "max": 1.905126984126984,
+     "ruidosa": false,
+     "valores": [
+      1.9004126984126983,
+      1.8810952380952382,
+      1.905126984126984
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8942015379113019,
+    "min": 0.8942015379113019,
+    "max": 0.8942015379113019,
+    "ruidosa": false,
+    "valores": [
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.10579846208869814,
+    "min": 0.10579846208869814,
+    "max": 0.10579846208869814,
+    "ruidosa": false,
+    "valores": [
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.4852989878805592,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.1668212711671307,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 0.34534881672672546,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": true
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 3,
+     "mediana": 0.8942015379113019,
+     "min": 0.8942015379113019,
+     "max": 0.8942015379113019,
+     "ruidosa": false,
+     "valores": [
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 3,
+     "mediana": 0.10579846208869814,
+     "min": 0.10579846208869814,
+     "max": 0.10579846208869814,
+     "ruidosa": false,
+     "valores": [
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "quente",
+   "serie": "S1",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S1 (tudo na GPU, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 173.6444013217867,
+    "lastro": {
+     "n": 5,
+     "mediana": 1523.903266,
+     "min": 1505.881563,
+     "max": 1546.1326560000002,
+     "ruidosa": false,
+     "valores": [
+      1546.1326560000002,
+      1525.575954,
+      1505.881563,
+      1521.7416930000002,
+      1523.903266
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 8.776,
+     "min": 8.75,
+     "max": 9.63,
+     "ruidosa": false,
+     "valores": [
+      8.764,
+      8.894,
+      9.63,
+      8.776,
+      8.75
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 12.326459013430219,
+    "lastro": {
+     "n": 5,
+     "mediana": 21.648783873015873,
+     "min": 21.251354904761904,
+     "max": 22.427874825396827,
+     "ruidosa": false,
+     "valores": [
+      22.427874825396827,
+      21.648783873015873,
+      21.251354904761904,
+      21.990760968253966,
+      21.363672523809523
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 1.7562857142857142,
+     "min": 1.7504126984126984,
+     "max": 1.772857142857143,
+     "ruidosa": false,
+     "valores": [
+      1.764761904761905,
+      1.772857142857143,
+      1.7562857142857142,
+      1.7526190476190477,
+      1.7504126984126984
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8942015379113019,
+    "min": 0.8942015379113019,
+    "max": 0.8942015379113019,
+    "ruidosa": false,
+    "valores": [
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.10579846208869814,
+    "min": 0.10579846208869814,
+    "max": 0.10579846208869814,
+    "ruidosa": false,
+    "valores": [
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.5279476531900295,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.4719881369676753,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 1.5149886440194777e-07,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 5,
+     "mediana": 0.8942015379113019,
+     "min": 0.8942015379113019,
+     "max": 0.8942015379113019,
+     "ruidosa": false,
+     "valores": [
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 5,
+     "mediana": 0.10579846208869814,
+     "min": 0.10579846208869814,
+     "max": 0.10579846208869814,
+     "ruidosa": false,
+     "valores": [
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "quente",
+   "serie": "S2",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S2 (--n-cpu-moe 22 no 1B e 29 no 3B, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro; descarregamento de ordem de grandeza parecida, NÃO o mesmo: o Lastro descarrega ~90% dos experts de cada camada, o llama.cpp camadas inteiras; op offload ligado, então o prefill da S2 não deve ser lido como 'experts calculados na CPU')",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 6.393069816418311,
+    "lastro": {
+     "n": 5,
+     "mediana": 1523.903266,
+     "min": 1505.881563,
+     "max": 1546.1326560000002,
+     "ruidosa": false,
+     "valores": [
+      1546.1326560000002,
+      1525.575954,
+      1505.881563,
+      1521.7416930000002,
+      1523.903266
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 238.368,
+     "min": 227.326,
+     "max": 244.945,
+     "ruidosa": false,
+     "valores": [
+      238.368,
+      227.326,
+      233.396,
+      240.878,
+      244.945
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 1.006271619694357,
+    "lastro": {
+     "n": 5,
+     "mediana": 21.648783873015873,
+     "min": 21.251354904761904,
+     "max": 22.427874825396827,
+     "ruidosa": false,
+     "valores": [
+      22.427874825396827,
+      21.648783873015873,
+      21.251354904761904,
+      21.990760968253966,
+      21.363672523809523
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 21.513857142857145,
+     "min": 21.423301587301587,
+     "max": 22.479761904761904,
+     "ruidosa": false,
+     "valores": [
+      22.034285714285716,
+      21.513857142857145,
+      22.479761904761904,
+      21.423301587301587,
+      21.453666666666667
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8942015379113019,
+    "min": 0.8942015379113019,
+    "max": 0.8942015379113019,
+    "ruidosa": false,
+    "valores": [
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.10579846208869814,
+    "min": 0.10579846208869814,
+    "max": 0.10579846208869814,
+    "ruidosa": false,
+    "valores": [
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.5279476531900295,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.4719881369676753,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 1.5149886440194777e-07,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 5,
+     "mediana": 0.8942015379113019,
+     "min": 0.8942015379113019,
+     "max": 0.8942015379113019,
+     "ruidosa": false,
+     "valores": [
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 5,
+     "mediana": 0.10579846208869814,
+     "min": 0.10579846208869814,
+     "max": 0.10579846208869814,
+     "ruidosa": false,
+     "valores": [
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "medio",
+   "estado": "quente",
+   "serie": "S3",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S3 (KV f32 com -fa off, paridade de armazenamento; configuração prática, sem atribuir a razão só ao motor)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": true,
+    "sequencias_diferentes": false,
+    "divergencias": [],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": true,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "mesma sequência",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 165.91216831790962,
+    "lastro": {
+     "n": 5,
+     "mediana": 1523.903266,
+     "min": 1505.881563,
+     "max": 1546.1326560000002,
+     "ruidosa": false,
+     "valores": [
+      1546.1326560000002,
+      1525.575954,
+      1505.881563,
+      1521.7416930000002,
+      1523.903266
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 9.185,
+     "min": 9.053,
+     "max": 11.967,
+     "ruidosa": true,
+     "valores": [
+      9.185,
+      11.967,
+      9.104,
+      9.053,
+      9.697
+     ]
+    },
+    "ruidosa": true,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 11.574531832917494,
+    "lastro": {
+     "n": 5,
+     "mediana": 21.648783873015873,
+     "min": 21.251354904761904,
+     "max": 22.427874825396827,
+     "ruidosa": false,
+     "valores": [
+      22.427874825396827,
+      21.648783873015873,
+      21.251354904761904,
+      21.990760968253966,
+      21.363672523809523
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 1.8703809523809525,
+     "min": 1.8546190476190476,
+     "max": 1.8878095238095238,
+     "ruidosa": false,
+     "valores": [
+      1.8656984126984126,
+      1.8878095238095238,
+      1.8703809523809525,
+      1.8546190476190476,
+      1.881047619047619
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8942015379113019,
+    "min": 0.8942015379113019,
+    "max": 0.8942015379113019,
+    "ruidosa": false,
+    "valores": [
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019,
+     0.8942015379113019
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.10579846208869814,
+    "min": 0.10579846208869814,
+    "max": 0.10579846208869814,
+    "ruidosa": false,
+    "valores": [
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814,
+     0.10579846208869814
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.5279476531900295,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.4719881369676753,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 1.5149886440194777e-07,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 5,
+     "mediana": 0.8942015379113019,
+     "min": 0.8942015379113019,
+     "max": 0.8942015379113019,
+     "ruidosa": false,
+     "valores": [
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019,
+      0.8942015379113019
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 5,
+     "mediana": 0.10579846208869814,
+     "min": 0.10579846208869814,
+     "max": 0.10579846208869814,
+     "ruidosa": false,
+     "valores": [
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814,
+      0.10579846208869814
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "frio",
+   "serie": "S1",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S1 (tudo na GPU, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": false,
+    "sequencias_diferentes": true,
+    "divergencias": [
+     {
+      "par": "llama.cpp x referência",
+      "passo": 24,
+      "id_a": 17264,
+      "id_b": 8090,
+      "gap_referencia": 0.10790824890136719,
+      "empate": false
+     },
+     {
+      "par": "Lastro x llama.cpp",
+      "passo": 24,
+      "id_a": 8090,
+      "id_b": 17264,
+      "gap_referencia": null,
+      "empate": false
+     }
+    ],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": false,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "sequências diferentes",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 53.15786660411513,
+    "lastro": {
+     "n": 3,
+     "mediana": 5608.845979,
+     "min": 5565.646908,
+     "max": 5650.287617,
+     "ruidosa": false,
+     "valores": [
+      5608.845979,
+      5650.287617,
+      5565.646908
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 105.513,
+     "min": 103.405,
+     "max": 108.993,
+     "ruidosa": false,
+     "valores": [
+      103.405,
+      105.513,
+      108.993
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 11.772617222861864,
+    "lastro": {
+     "n": 3,
+     "mediana": 21.261533571428572,
+     "min": 21.073476746031744,
+     "max": 21.643654793650793,
+     "ruidosa": false,
+     "valores": [
+      21.643654793650793,
+      21.261533571428572,
+      21.073476746031744
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 1.8060158730158729,
+     "min": 1.797063492063492,
+     "max": 1.8124126984126985,
+     "ruidosa": false,
+     "valores": [
+      1.8124126984126985,
+      1.797063492063492,
+      1.8060158730158729
+     ]
+    },
+    "ruidosa": false,
+    "marca": "sequências diferentes"
+   },
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8985655737704918,
+    "min": 0.8985655737704918,
+    "max": 0.8985655737704918,
+    "ruidosa": false,
+    "valores": [
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.1014344262295082,
+    "min": 0.1014344262295082,
+    "max": 0.1014344262295082,
+    "ruidosa": false,
+    "valores": [
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.5735493849977189,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.13678934744614205,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 0.28699195603714633,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 3,
+     "mediana": 0.8985655737704918,
+     "min": 0.8985655737704918,
+     "max": 0.8985655737704918,
+     "ruidosa": false,
+     "valores": [
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 3,
+     "mediana": 0.1014344262295082,
+     "min": 0.1014344262295082,
+     "max": 0.1014344262295082,
+     "ruidosa": false,
+     "valores": [
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "frio",
+   "serie": "S2",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S2 (--n-cpu-moe 22 no 1B e 29 no 3B, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro; descarregamento de ordem de grandeza parecida, NÃO o mesmo: o Lastro descarrega ~90% dos experts de cada camada, o llama.cpp camadas inteiras; op offload ligado, então o prefill da S2 não deve ser lido como 'experts calculados na CPU')",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": false,
+    "sequencias_diferentes": true,
+    "divergencias": [
+     {
+      "par": "llama.cpp x referência",
+      "passo": 24,
+      "id_a": 17264,
+      "id_b": 8090,
+      "gap_referencia": 0.10790824890136719,
+      "empate": false
+     },
+     {
+      "par": "Lastro x llama.cpp",
+      "passo": 24,
+      "id_a": 8090,
+      "id_b": 17264,
+      "gap_referencia": null,
+      "empate": false
+     }
+    ],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": false,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "sequências diferentes",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 17.239475083679373,
+    "lastro": {
+     "n": 3,
+     "mediana": 5608.845979,
+     "min": 5565.646908,
+     "max": 5650.287617,
+     "ruidosa": false,
+     "valores": [
+      5608.845979,
+      5650.287617,
+      5565.646908
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 325.349,
+     "min": 322.708,
+     "max": 338.71,
+     "ruidosa": false,
+     "valores": [
+      322.708,
+      338.71,
+      325.349
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 1.001597660280856,
+    "lastro": {
+     "n": 3,
+     "mediana": 21.261533571428572,
+     "min": 21.073476746031744,
+     "max": 21.643654793650793,
+     "ruidosa": false,
+     "valores": [
+      21.643654793650793,
+      21.261533571428572,
+      21.073476746031744
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 21.227619047619047,
+     "min": 21.100444444444445,
+     "max": 21.507492063492062,
+     "ruidosa": false,
+     "valores": [
+      21.227619047619047,
+      21.100444444444445,
+      21.507492063492062
+     ]
+    },
+    "ruidosa": false,
+    "marca": "sequências diferentes"
+   },
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8985655737704918,
+    "min": 0.8985655737704918,
+    "max": 0.8985655737704918,
+    "ruidosa": false,
+    "valores": [
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.1014344262295082,
+    "min": 0.1014344262295082,
+    "max": 0.1014344262295082,
+    "ruidosa": false,
+    "valores": [
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.5735493849977189,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.13678934744614205,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 0.28699195603714633,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 3,
+     "mediana": 0.8985655737704918,
+     "min": 0.8985655737704918,
+     "max": 0.8985655737704918,
+     "ruidosa": false,
+     "valores": [
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 3,
+     "mediana": 0.1014344262295082,
+     "min": 0.1014344262295082,
+     "max": 0.1014344262295082,
+     "ruidosa": false,
+     "valores": [
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "frio",
+   "serie": "S3",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S3 (KV f32 com -fa off, paridade de armazenamento; configuração prática, sem atribuir a razão só ao motor)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": false,
+    "sequencias_diferentes": true,
+    "divergencias": [
+     {
+      "par": "llama.cpp x referência",
+      "passo": 29,
+      "id_a": 308,
+      "id_b": 623,
+      "gap_referencia": 0.20023155212402344,
+      "empate": false
+     },
+     {
+      "par": "Lastro x llama.cpp",
+      "passo": 29,
+      "id_a": 623,
+      "id_b": 308,
+      "gap_referencia": null,
+      "empate": false
+     }
+    ],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": false,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "sequências diferentes",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 53.23354478327306,
+    "lastro": {
+     "n": 3,
+     "mediana": 5608.845979,
+     "min": 5565.646908,
+     "max": 5650.287617,
+     "ruidosa": false,
+     "valores": [
+      5608.845979,
+      5650.287617,
+      5565.646908
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 105.363,
+     "min": 102.004,
+     "max": 110.691,
+     "ruidosa": false,
+     "valores": [
+      105.363,
+      110.691,
+      102.004
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 10.825103161518692,
+    "lastro": {
+     "n": 3,
+     "mediana": 21.261533571428572,
+     "min": 21.073476746031744,
+     "max": 21.643654793650793,
+     "ruidosa": false,
+     "valores": [
+      21.643654793650793,
+      21.261533571428572,
+      21.073476746031744
+     ]
+    },
+    "llama_cpp": {
+     "n": 3,
+     "mediana": 1.9640952380952381,
+     "min": 1.9399523809523809,
+     "max": 2.005777777777778,
+     "ruidosa": false,
+     "valores": [
+      1.9640952380952381,
+      2.005777777777778,
+      1.9399523809523809
+     ]
+    },
+    "ruidosa": false,
+    "marca": "sequências diferentes"
+   },
+   "fracao_cpu_needed": {
+    "n": 3,
+    "mediana": 0.8985655737704918,
+    "min": 0.8985655737704918,
+    "max": 0.8985655737704918,
+    "ruidosa": false,
+    "valores": [
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 3,
+    "mediana": 0.1014344262295082,
+    "min": 0.1014344262295082,
+    "max": 0.1014344262295082,
+    "ruidosa": false,
+    "valores": [
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.5735493849977189,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.13678934744614205,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 0.28699195603714633,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 3,
+     "mediana": 0.8985655737704918,
+     "min": 0.8985655737704918,
+     "max": 0.8985655737704918,
+     "ruidosa": false,
+     "valores": [
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 3,
+     "mediana": 0.1014344262295082,
+     "min": 0.1014344262295082,
+     "max": 0.1014344262295082,
+     "ruidosa": false,
+     "valores": [
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "quente",
+   "serie": "S1",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S1 (tudo na GPU, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": false,
+    "sequencias_diferentes": true,
+    "divergencias": [
+     {
+      "par": "llama.cpp x referência",
+      "passo": 24,
+      "id_a": 17264,
+      "id_b": 8090,
+      "gap_referencia": 0.10790824890136719,
+      "empate": false
+     },
+     {
+      "par": "Lastro x llama.cpp",
+      "passo": 24,
+      "id_a": 8090,
+      "id_b": 17264,
+      "gap_referencia": null,
+      "empate": false
+     }
+    ],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": false,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "sequências diferentes",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 239.2183624682619,
+    "lastro": {
+     "n": 5,
+     "mediana": 3109.121057,
+     "min": 3081.546227,
+     "max": 3140.0776979999996,
+     "ruidosa": false,
+     "valores": [
+      3109.121057,
+      3084.355785,
+      3140.0776979999996,
+      3122.963988,
+      3081.546227
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 12.997,
+     "min": 12.738,
+     "max": 14.94,
+     "ruidosa": true,
+     "valores": [
+      14.94,
+      12.738,
+      12.997,
+      12.941,
+      13.115
+     ]
+    },
+    "ruidosa": true,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 12.106592857588923,
+    "lastro": {
+     "n": 5,
+     "mediana": 21.540319047619047,
+     "min": 20.975760952380956,
+     "max": 22.678932222222222,
+     "ruidosa": false,
+     "valores": [
+      21.540319047619047,
+      20.975760952380956,
+      21.699387904761902,
+      21.25544726984127,
+      22.678932222222222
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 1.779222222222222,
+     "min": 1.7500952380952381,
+     "max": 1.882253968253968,
+     "ruidosa": false,
+     "valores": [
+      1.7856031746031744,
+      1.7500952380952381,
+      1.771920634920635,
+      1.779222222222222,
+      1.882253968253968
+     ]
+    },
+    "ruidosa": false,
+    "marca": "sequências diferentes"
+   },
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8985655737704918,
+    "min": 0.8985655737704918,
+    "max": 0.8985655737704918,
+    "ruidosa": false,
+    "valores": [
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.1014344262295082,
+    "min": 0.1014344262295082,
+    "max": 0.1014344262295082,
+    "ruidosa": false,
+    "valores": [
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.6966420150814303,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.3032894490206458,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 9.780664193940174e-08,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 5,
+     "mediana": 0.8985655737704918,
+     "min": 0.8985655737704918,
+     "max": 0.8985655737704918,
+     "ruidosa": false,
+     "valores": [
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 5,
+     "mediana": 0.1014344262295082,
+     "min": 0.1014344262295082,
+     "max": 0.1014344262295082,
+     "ruidosa": false,
+     "valores": [
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "quente",
+   "serie": "S2",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S2 (--n-cpu-moe 22 no 1B e 29 no 3B, -ngl 99, -fa on, KV f16 no llama.cpp contra f32 no Lastro; descarregamento de ordem de grandeza parecida, NÃO o mesmo: o Lastro descarrega ~90% dos experts de cada camada, o llama.cpp camadas inteiras; op offload ligado, então o prefill da S2 não deve ser lido como 'experts calculados na CPU')",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": false,
+    "sequencias_diferentes": true,
+    "divergencias": [
+     {
+      "par": "llama.cpp x referência",
+      "passo": 24,
+      "id_a": 17264,
+      "id_b": 8090,
+      "gap_referencia": 0.10790824890136719,
+      "empate": false
+     },
+     {
+      "par": "Lastro x llama.cpp",
+      "passo": 24,
+      "id_a": 8090,
+      "id_b": 17264,
+      "gap_referencia": null,
+      "empate": false
+     }
+    ],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": false,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "sequências diferentes",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 12.795895336203277,
+    "lastro": {
+     "n": 5,
+     "mediana": 3109.121057,
+     "min": 3081.546227,
+     "max": 3140.0776979999996,
+     "ruidosa": false,
+     "valores": [
+      3109.121057,
+      3084.355785,
+      3140.0776979999996,
+      3122.963988,
+      3081.546227
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 242.978,
+     "min": 227.971,
+     "max": 254.395,
+     "ruidosa": false,
+     "valores": [
+      245.681,
+      254.395,
+      229.038,
+      242.978,
+      227.971
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 1.0153032427393374,
+    "lastro": {
+     "n": 5,
+     "mediana": 21.540319047619047,
+     "min": 20.975760952380956,
+     "max": 22.678932222222222,
+     "ruidosa": false,
+     "valores": [
+      21.540319047619047,
+      20.975760952380956,
+      21.699387904761902,
+      21.25544726984127,
+      22.678932222222222
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 21.215650793650795,
+     "min": 21.1471746031746,
+     "max": 21.49214285714286,
+     "ruidosa": false,
+     "valores": [
+      21.1471746031746,
+      21.14847619047619,
+      21.49214285714286,
+      21.215650793650795,
+      21.47242857142857
+     ]
+    },
+    "ruidosa": false,
+    "marca": "sequências diferentes"
+   },
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8985655737704918,
+    "min": 0.8985655737704918,
+    "max": 0.8985655737704918,
+    "ruidosa": false,
+    "valores": [
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.1014344262295082,
+    "min": 0.1014344262295082,
+    "max": 0.1014344262295082,
+    "ruidosa": false,
+    "valores": [
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.6966420150814303,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.3032894490206458,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 9.780664193940174e-08,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 5,
+     "mediana": 0.8985655737704918,
+     "min": 0.8985655737704918,
+     "max": 0.8985655737704918,
+     "ruidosa": false,
+     "valores": [
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 5,
+     "mediana": 0.1014344262295082,
+     "min": 0.1014344262295082,
+     "max": 0.1014344262295082,
+     "ruidosa": false,
+     "valores": [
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  },
+  {
+   "modelo": "1b",
+   "texto": "longo",
+   "estado": "quente",
+   "serie": "S3",
+   "rotulo": "Lastro 10% experts GPU contra llama.cpp S3 (KV f32 com -fa off, paridade de armazenamento; configuração prática, sem atribuir a razão só ao motor)",
+   "status": "OK",
+   "motivos": [],
+   "sequencia": {
+    "mesma_sequencia": false,
+    "sequencias_diferentes": true,
+    "divergencias": [
+     {
+      "par": "llama.cpp x referência",
+      "passo": 29,
+      "id_a": 308,
+      "id_b": 623,
+      "gap_referencia": 0.20023155212402344,
+      "empate": false
+     },
+     {
+      "par": "Lastro x llama.cpp",
+      "passo": 29,
+      "id_a": 623,
+      "id_b": 308,
+      "gap_referencia": null,
+      "empate": false
+     }
+    ],
+    "referencia_disponivel": true
+   },
+   "texto_informativo": {
+    "llama_cpp_igual_a_referencia": false,
+    "lastro": "não disponível no medidas-<nome>.json (informativo)"
+   },
+   "marca_sequencia": "sequências diferentes",
+   "prefill": {
+    "razao_lastro_sobre_llama_cpp": 222.97196335341363,
+    "lastro": {
+     "n": 5,
+     "mediana": 3109.121057,
+     "min": 3081.546227,
+     "max": 3140.0776979999996,
+     "ruidosa": false,
+     "valores": [
+      3109.121057,
+      3084.355785,
+      3140.0776979999996,
+      3122.963988,
+      3081.546227
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 13.944,
+     "min": 13.871,
+     "max": 14.392,
+     "ruidosa": false,
+     "valores": [
+      13.96,
+      13.944,
+      13.909,
+      13.871,
+      14.392
+     ]
+    },
+    "ruidosa": false,
+    "marca": null
+   },
+   "decode": {
+    "razao_lastro_sobre_llama_cpp": 11.199010521972353,
+    "lastro": {
+     "n": 5,
+     "mediana": 21.540319047619047,
+     "min": 20.975760952380956,
+     "max": 22.678932222222222,
+     "ruidosa": false,
+     "valores": [
+      21.540319047619047,
+      20.975760952380956,
+      21.699387904761902,
+      21.25544726984127,
+      22.678932222222222
+     ]
+    },
+    "llama_cpp": {
+     "n": 5,
+     "mediana": 1.9234126984126985,
+     "min": 1.9167460317460316,
+     "max": 1.9362857142857144,
+     "ruidosa": false,
+     "valores": [
+      1.9346666666666668,
+      1.9205079365079365,
+      1.9167460317460316,
+      1.9362857142857144,
+      1.9234126984126985
+     ]
+    },
+    "ruidosa": false,
+    "marca": "sequências diferentes"
+   },
+   "fracao_cpu_needed": {
+    "n": 5,
+    "mediana": 0.8985655737704918,
+    "min": 0.8985655737704918,
+    "max": 0.8985655737704918,
+    "ruidosa": false,
+    "valores": [
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918,
+     0.8985655737704918
+    ]
+   },
+   "fracao_hits_needed": {
+    "n": 5,
+    "mediana": 0.1014344262295082,
+    "min": 0.1014344262295082,
+    "max": 0.1014344262295082,
+    "ruidosa": false,
+    "valores": [
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082,
+     0.1014344262295082
+    ]
+   },
+   "razoes_diferem_mais_de_1_5x": true,
+   "gargalo": {
+    "hipotese_nao_conclusao": true,
+    "fatias_do_lastro": {
+     "prefill_ms": {
+      "fatia_mediana": 0.6966420150814303,
+      "equivalente_llama_cpp": "prompt_ms",
+      "candidata_a_gargalo": false
+     },
+     "soma_passos_ms": {
+      "fatia_mediana": 0.3032894490206458,
+      "equivalente_llama_cpp": "predicted_ms",
+      "candidata_a_gargalo": false
+     },
+     "T_sequencia_ms": {
+      "fatia_mediana": 9.780664193940174e-08,
+      "equivalente_llama_cpp": null,
+      "candidata_a_gargalo": false
+     }
+    },
+    "fracao_cpu_needed": {
+     "n": 5,
+     "mediana": 0.8985655737704918,
+     "min": 0.8985655737704918,
+     "max": 0.8985655737704918,
+     "ruidosa": false,
+     "valores": [
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918,
+      0.8985655737704918
+     ]
+    },
+    "fracao_hits_needed": {
+     "n": 5,
+     "mediana": 0.1014344262295082,
+     "min": 0.1014344262295082,
+     "max": 0.1014344262295082,
+     "ruidosa": false,
+     "valores": [
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082,
+      0.1014344262295082
+     ]
+    },
+    "fase_de_menor_desempenho_relativo": "prefill"
+   }
+  }
+ ]
+}

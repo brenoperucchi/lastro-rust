@@ -1,0 +1,9 @@
+== geração livre 5c 1b
+pedido 0 (curto): 64/64 ids iguais -> PASSA
+  descritivo: prefill 5403.3 ms (89 ids), ms por token (mediana) 22.88, total 9708.4 ms, T_sequencia 2842.796 ms
+empates usados: nenhum
+ms por token do modelo (mediana de todos os passos): 22.88
+motivo(s): 1 pedidos (ou fora da ordem curto, medio, longo); esperados 3
+criações do motor: 1 (esperado 1)
+rótulo: SEM PROVA
+integridade conferida no fim do modelo: íntegra

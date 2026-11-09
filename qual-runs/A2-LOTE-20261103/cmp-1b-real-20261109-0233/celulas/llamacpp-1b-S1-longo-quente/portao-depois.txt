@@ -1,0 +1,35 @@
+pmon_depois_volta=1
+pmon_depois_rc=0
+pmon_depois_bruto: # gpu         pid   type     sm    mem    enc    dec    jpg    ofa     fb   ccpm    command 
+pmon_depois_bruto: # Idx           #    C/G      %      %      %      %      %      %     MB     MB    name 
+pmon_depois_bruto:     0      41533     G     33     17      -      -      -      -    491      0    Hyprland       
+pmon_depois_bruto:     0      41609     G      -      -      -      -      -      -    769      0    quickshell     
+pmon_depois_bruto:     0      41664     G      -      -      -      -      -      -      8      0    Xwayland       
+pmon_depois_bruto:     0      41675     G      -      -      -      -      -      -     21      0    localsend_app  
+pmon_depois_volta=2
+pmon_depois_rc=0
+pmon_depois_bruto: # gpu         pid   type     sm    mem    enc    dec    jpg    ofa     fb   ccpm    command 
+pmon_depois_bruto: # Idx           #    C/G      %      %      %      %      %      %     MB     MB    name 
+pmon_depois_bruto:     0      41533     G     33     17      -      -      -      -    491      0    Hyprland       
+pmon_depois_bruto:     0      41609     G      -      -      -      -      -      -    769      0    quickshell     
+pmon_depois_bruto:     0      41664     G      -      -      -      -      -      -      8      0    Xwayland       
+pmon_depois_bruto:     0      41675     G      -      -      -      -      -      -     21      0    localsend_app  
+pmon_depois_volta=3
+pmon_depois_rc=0
+pmon_depois_bruto: # gpu         pid   type     sm    mem    enc    dec    jpg    ofa     fb   ccpm    command 
+pmon_depois_bruto: # Idx           #    C/G      %      %      %      %      %      %     MB     MB    name 
+pmon_depois_bruto:     0      41533     G     33     17      -      -      -      -    491      0    Hyprland       
+pmon_depois_bruto:     0      41609     G      -      -      -      -      -      -    769      0    quickshell     
+pmon_depois_bruto:     0      41664     G      -      -      -      -      -      -      8      0    Xwayland       
+pmon_depois_bruto:     0      41675     G      -      -      -      -      -      -     21      0    localsend_app  
+pmon_depois_pid=41533 tipo=G sm=33 mem=17 fb_mb=491 dentro_arvore=0 cmd=Hyprland
+pmon_depois_pid=41609 tipo=G sm=0 mem=0 fb_mb=769 dentro_arvore=0 cmd=quickshell
+pmon_depois_pid=41664 tipo=G sm=0 mem=0 fb_mb=8 dentro_arvore=0 cmd=Xwayland
+pmon_depois_pid=41675 tipo=G sm=0 mem=0 fb_mb=21 dentro_arvore=0 cmd=localsend_app
+pmon_depois_c_fora_sm_max=0
+pmon_depois_g_soma_sm_max=33
+pmon_depois_cg_ociosos=0
+pmon_depois_c_fora_n=0
+pmon_depois_fb_outros_mb=1289
+pmon_depois_linhas=12
+pmon_depois_veredito=OK

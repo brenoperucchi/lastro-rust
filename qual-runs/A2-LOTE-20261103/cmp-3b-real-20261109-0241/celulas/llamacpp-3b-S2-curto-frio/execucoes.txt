@@ -1,0 +1,4 @@
+servidor 0 pid=1802866 porta=50275
+servidor 1 pid=1803290 porta=34253
+servidor 2 pid=1803849 porta=56225
+servidor 3 pid=1804285 porta=57653

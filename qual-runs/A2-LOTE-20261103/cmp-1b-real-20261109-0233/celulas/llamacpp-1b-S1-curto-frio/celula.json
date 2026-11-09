@@ -1,0 +1,1 @@
+{"lado": "llamacpp", "serie": "S1", "modelo": "1b", "texto": "curto", "estado": "frio", "n_medidas": 3, "portao_ok": true, "portao_motivo": "", "rc": 0, "inicio_epoch": 1794202449, "inicio_coleta_epoch": 1794202454, "fim_epoch": 1794202460, "falhas": "; ", "monitor_falha": "", "desktop_g_sm_antes": 5, "desktop_g_sm_depois": 8, "dmon_sm_antes": 23}

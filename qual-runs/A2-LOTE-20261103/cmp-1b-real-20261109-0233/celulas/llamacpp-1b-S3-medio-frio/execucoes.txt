@@ -1,0 +1,4 @@
+servidor 0 pid=1783626 porta=49817
+servidor 1 pid=1783822 porta=36537
+servidor 2 pid=1784103 porta=38919
+servidor 3 pid=1784273 porta=54115

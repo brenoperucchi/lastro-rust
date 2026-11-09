@@ -1,0 +1,23 @@
+integridade antes: binário f0a272db2df8aca6642073b830cc8234f2d2434e01c8ae6ef618886e6e3dc2df; critério 5c 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731; critério 5b 4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b; 5 arquivos de entrada
+Absolutely, let's break down the key points and explore some potential changes the library could consider, along with their pros and cons, and a simple way to gather input from everyone involved.
+
+1. **Expanding Weekday Hours:**
+   - *Pros:* More flexibility for working families and
+3b pedido 2 (longo): 364 ids, 64 novos, prefill 8968.0 ms, 39.70 ms por token (mediana), total 17396.4 ms, T_sequencia 5876.336 ms, média por passo 40.504 ms (63 passos)
+== geração livre 5c 3b
+pedido 2 (longo): 64/64 ids iguais -> PASSA
+  descritivo: prefill 8968.0 ms (364 ids), ms por token (mediana) 39.70, total 17396.4 ms, T_sequencia 5876.336 ms
+empates usados: nenhum
+ms por token do modelo (mediana de todos os passos): 39.70
+motivo(s): 1 pedidos (ou fora da ordem curto, medio, longo); esperados 3
+criações do motor: 1 (esperado 1)
+rótulo: SEM PROVA
+integridade conferida no fim do modelo: íntegra
+
+etapa 5c, geração livre curta (critério sha256 9e3299fd9bfaac4b3d8ec2bb5c2ad941c24e2e7124070feb7dc511079a831731)
+3b: SEM PROVA
+integridade do conjunto: íntegra
+modelo(s) ausente(s) no conjunto: 1b (o critério exige 1B e 3B; sem os dois não há PASSA)
+ids de prompt diferentes entre o Rust e a referência valem REPROVA (leitura da seção "Regra de rótulo" do critério; a seção "Referência" fala em SEM PROVA)
+rótulo: SEM PROVA
+
