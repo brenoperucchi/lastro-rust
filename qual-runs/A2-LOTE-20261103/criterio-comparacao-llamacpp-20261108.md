@@ -126,3 +126,17 @@ Vale onde conflitar com a emenda 2 (E2) e com o item (4).
 2. **Regra de "ruidosa" para qualquer número de medidas.** Substitui a frase do item (4): a célula sai marcada "ruidosa" se (max−min)/mediana da média por passo (ou do prefill) passar de 15%, com 2, 3 ou 5 medidas (com 2, a mediana é a média das duas). Continua palpite declarado antes dos dados; o `cmp-extrai.py` aplica a regra e tem teste com 3 medidas dispersas.
 3. **Op offload na S2.** O llama.cpp mantém o op offload ligado por padrão (`no_op_offload = false`): no prefill da S2 os pesos dos experts que estão na CPU podem ser copiados para a GPU por PCIe e calculados lá. `--no-op-offload` NÃO é usado; o relatório registra que o prefill da S2 não deve ser lido como "experts calculados na CPU".
 4. **Integridade do `medidas-<nome>.json`:** o extrator cruza esse arquivo com o `gera-final.txt` e com o envelope da janela antes de aceitar uma célula. Antes da janela, os outros agents do Herdr ficam parados (portão de CPU).
+
+## Emenda 5 de 09/11 (exec, antes de qualquer dado): decisões de implementação dos roteiros
+Registro das escolhas feitas ao escrever os roteiros (o critério era omisso); valem como estão e não são ajustadas depois dos dados.
+1. As estimativas de custo do E8 (`CMP_EST_*`) são palpites declarados, não recalibrados na janela; a projeção usa só elas.
+2. Quente do llama.cpp: um servidor por célula (modelo, texto, estado), com a carga medida em cada uma (os blocos do E8 são por modelo e texto).
+3. Alternância: blocos pares começam pelo Lastro, ímpares pelo llama.cpp; dentro do bloco, frio e depois quente.
+4. O sha256 dos GGUF e dos safetensors roda antes e depois, dentro dos 30 min (custa 1 a 3 min).
+5. A memória do host (2400 MT/s) só é lida com `sudo -n dmidecode`; sem ele fica "não conferida" e não invalida célula.
+6. Aviso no fim da janela: `notify-send` (ou `CMP_AVISO_CMD`) mais arquivo `aviso.txt` na pasta da janela; o exec avisa o coordenador.
+7. Logs de KV e flash attention do llama.cpp são gravados só como informação.
+8. O `medidas-<nome>.json` do Lastro não traz o texto detokenizado: a comparação de texto fica só do lado do llama.cpp; a ponte de correção é a igualdade dos ids.
+9. S1 e S2 passam `--cache-type-k f16 --cache-type-v f16` explícitos (equivalente ao padrão), para a linha gravada documentar o tipo.
+10. A série S3 (opcional) usa as mesmas repetições do Lastro e a razão contra ela é publicada à parte, com rótulo próprio.
+11. Código de saída 2 em qualquer célula (falha de ambiente) interrompe a janela inteira.
