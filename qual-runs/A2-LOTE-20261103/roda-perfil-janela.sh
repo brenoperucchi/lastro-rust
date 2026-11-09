@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Perfil do prefill do Lastro (criterio-perfil-prefill-20261109.md, versão 3, Parte B): UMA janela de até 20 min POR MODELO na 4090, SÓ o Lastro (sem llama.cpp), descritiva.
+# Perfil do prefill do Lastro (criterio-perfil-prefill-20261109.md, versão 3 e Emenda 1, Parte B): UMA janela POR MODELO (duas janelas no total, uma de cada vez), cada uma de até 20 min (estimativa ~7 min no 1B e ~12 min no 3B) na 4090, SÓ o Lastro (sem llama.cpp), descritiva.
 # Derivado de roda-cmp-janela.sh: mesmo envelope (janela-e4b.sh pausa e restaura os timers; roda-com-limite.sh põe o limite; este script em modo interno), mesma falha FECHADA
 # antes de tocar em timers ou na GPU, mesmo FIXO com shas e --verifica-fixos.
 #
@@ -73,9 +73,9 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 # SHAs congelados (valem onde o critério já os fixa; GGUF, config e safetensors dos modelos só precisam ser iguais antes e depois). Os scripts e o binário daqui entram no FIXO.
 # O próprio roda-perfil-janela.sh NÃO pode conter o seu sha: --verifica-fixos o imprime à parte (linha informativa) para conferência por fora.
 declare -A FIXO=(
-  [criterio-perfil]=b6f1c84296cb7f7dabdc2f314edbca9ed2d44bb6023a1b1f32f8ee92d31a4bb5
+  [criterio-perfil]=4fd2e00039cab08196c979776e617ab1b5ad129bf491f81a6ff95c1687f92370
   [binario-lastro]=e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4
-  [script-perfil-extrai]=2ce308c000f8cf251e129cc8048d5fe60e8ba091ebef47b76171767b8a10ae74
+  [script-perfil-extrai]=869cd1f2b27a7ff7b6f872095b2f1d78f3d2444cbb6fc9fe4abf5c1891ee0acc
   [script-amostra-cpu]=de17df09d75015b54bc527954dc54944c465328a9bab1fbce6e20bb5a8adb3f4
   [script-cmp-extrai]=f740d72781c5203a5e6eedf2eaa71840931d756a4f384993bdd496ef4984898c
   [script-lastro]=af62e9c1e9f0312a4b1e917569a9f181ee099d83d20703af742a01e8bc55ae14
@@ -281,15 +281,17 @@ if [ $INTERNO = 1 ]; then
   coleta_shas "$SAIDA/integridade-depois.txt"
   INTEGRO=1; NOTAS=()
   if ! cmp -s "$SAIDA/integridade-antes.txt" "$SAIDA/integridade-depois.txt"; then INTEGRO=0; NOTAS+=("sha mudou entre antes e depois"); fi
-  : > "$SAIDA/integridade-fixos.txt"
+  # manifesto gravado em arquivo temporário e movido de uma vez: a interrupção entre integridade-depois.txt e este arquivo deixa o manifesto AUSENTE (perfil-extrai.py trata como SEM PROVA em tudo), nunca truncado
+  : > "$SAIDA/.integridade-fixos.tmp"
   while read -r k h; do
-    [ -n "$h" ] || { INTEGRO=0; NOTAS+=("$k ilegível"); echo "$k - - FALHA ilegível" >> "$SAIDA/integridade-fixos.txt"; continue; }
+    [ -n "$h" ] || { INTEGRO=0; NOTAS+=("$k ilegível"); echo "$k - - FALHA ilegível" >> "$SAIDA/.integridade-fixos.tmp"; continue; }
     if [ -n "${FIXO[$k]:-}" ]; then
-      if [ "${SEM_SHA_FIXO:-0}" = 1 ]; then echo "$k ${FIXO[$k]} $h NAO-CONFERIDO" >> "$SAIDA/integridade-fixos.txt"
-      elif [ "$h" = "${FIXO[$k]}" ]; then echo "$k ${FIXO[$k]} $h OK" >> "$SAIDA/integridade-fixos.txt"
-      else INTEGRO=0; NOTAS+=("$k com sha $h, não o congelado"); echo "$k ${FIXO[$k]} $h FALHA" >> "$SAIDA/integridade-fixos.txt"; fi
+      if [ "${SEM_SHA_FIXO:-0}" = 1 ]; then echo "$k ${FIXO[$k]} $h NAO-CONFERIDO" >> "$SAIDA/.integridade-fixos.tmp"
+      elif [ "$h" = "${FIXO[$k]}" ]; then echo "$k ${FIXO[$k]} $h OK" >> "$SAIDA/.integridade-fixos.tmp"
+      else INTEGRO=0; NOTAS+=("$k com sha $h, não o congelado"); echo "$k ${FIXO[$k]} $h FALHA" >> "$SAIDA/.integridade-fixos.tmp"; fi
     fi
   done < "$SAIDA/integridade-antes.txt"
+  mv "$SAIDA/.integridade-fixos.tmp" "$SAIDA/integridade-fixos.txt"
   # ---- orçamento declarado
   {
     printf '{"modelos": ["%s"], "limite_s": %s, "folga_s": %s, "decorrido_s": %s, "cortes": [' "$MODELOS" "$LIMITE" "$FOLGA" "$(decorrido)"

@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -25,6 +26,15 @@ SERIES = ("L10", "L100", "LC")
 TEXTOS = ("curto", "medio", "longo")
 DADOS_MODELO = {"1b": {"L": 24, "E": 32, "N": 22}, "3b": {"L": 32, "E": 40, "N": 29}}
 RATIO = {"L10": 0.42, "L100": 0.665, "LC": 0.42}      # razão ms/posição ÷ decode usada nos dados "bons"
+
+
+def ts(t):
+    return time.strftime("%Y/%m/%d %H:%M:%S", time.localtime(t)) + ".500"
+
+
+def le(p):
+    with open(p, encoding="utf-8") as fh:
+        return fh.read()
 
 
 def grava(p, conteudo):
@@ -48,8 +58,11 @@ class Base(unittest.TestCase):
             grava(os.path.join(self.refs, "ref5c-%s.json" % m), {"casos": [{"nome": t, "ids": IDS[t], "gerados": GERADOS, "texto_gerado": "x", "gaps": [5.0] * 64} for t in IDS]})
         self.textos = os.path.join(self.d, "textos.json")
         grava(self.textos, {"textos": [{"nome": t, "ids_com_template": {"1b": NPOS[t], "3b": NPOS[t]}} for t in IDS]})
-        grava(os.path.join(self.saida, "integridade-antes.txt"), "binario abc\ngguf def\n")
-        grava(os.path.join(self.saida, "integridade-depois.txt"), "binario abc\ngguf def\n")
+        # integridade FIXA completa e coerente (cada chave com sha de 64 hex; o binário tem o sha da janela)
+        self.shas = {k: ("%02d" % i) * 32 for i, k in enumerate(P.FIXO_CHAVES + ("tokenizer-%s" % self.modelo,))}
+        self.shas["binario-lastro"] = "e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4"
+        self.shas["gguf-extra"] = "d" * 64
+        self.manifesto()
         grava(os.path.join(self.saida, "orcamento.json"), {"modelos": [self.modelo], "limite_s": 1200, "decorrido_s": 600, "cortes": [], "nao_rodou": []})
         grava(os.path.join(self.saida, "ambiente.txt"), "modelo=%s\nmemoria_mts=2400\n" % self.modelo)
         for s in ("L100", "LC"):
@@ -57,6 +70,20 @@ class Base(unittest.TestCase):
 
     def tearDown(self):
         self._t.cleanup()
+
+    def para_3b(self):
+        self.modelo = "3b"
+        grava(os.path.join(self.saida, "orcamento.json"), {"modelos": ["3b"]})
+        self.shas.pop("tokenizer-1b")
+        self.shas["tokenizer-3b"] = "c" * 64
+        self.manifesto()
+
+    def manifesto(self, chaves=None, estado="OK", depois_igual=True):
+        ks = [k for k in self.shas if k != "gguf-extra"] if chaves is None else chaves
+        antes = "".join("%s %s\n" % (k, h) for k, h in self.shas.items())
+        grava(os.path.join(self.saida, "integridade-antes.txt"), antes)
+        grava(os.path.join(self.saida, "integridade-depois.txt"), antes)
+        grava(os.path.join(self.saida, "integridade-fixos.txt"), "".join("%s %s %s %s\n" % (k, self.shas[k], self.shas[k], estado) for k in ks))
 
     def smoke(self, s, ok, motivo="memória usada da GPU 95% > 90%"):
         grava(os.path.join(self.saida, "smoke-%s" % s, "veredito.txt"), "veredito=OK\n" if ok else "veredito=FALHA\nmotivo=%s\n" % motivo)
@@ -70,7 +97,7 @@ class Base(unittest.TestCase):
         return P.REF_MS_POS[self.modelo][s][t]
 
     def celula(self, s, t, ms_pos=None, decode=None, n=5, prefills=None, cpu=None, needed=None, stderr=None, cmdline=None, serie_meta=None, ids=None, p4=True,
-               gpu=True, falha=None, portao=True, extra_meta=None, m=None):
+               gpu=True, falha=None, portao=True, extra_meta=None, m=None, gerados_reps=None, gpu_linhas=None):
         m = m or self.modelo
         dm = DADOS_MODELO[m]
         if ms_pos is None:
@@ -101,11 +128,11 @@ class Base(unittest.TestCase):
             cpu = {"L10": needed * 9 // 10, "L100": 0, "LC": needed * N // L}[s]
         pref = prefills if prefills is not None else [ms_pos * NPOS[t]] * n
 
-        def entrada(rot, pre, desc):
+        def entrada(rot, pre, desc, i_rep=None):
             ps = [decode] * 63
-            return {"rotulo": rot, "descartada": desc, "ids": ids if ids is not None else IDS[t], "gerados": GERADOS, "passo_ms": ps, "prefill_ms": pre, "total_ms": pre + sum(ps) + 500.0,
+            return {"rotulo": rot, "descartada": desc, "ids": ids if ids is not None else IDS[t], "gerados": (gerados_reps[i_rep] if gerados_reps and i_rep is not None else GERADOS), "passo_ms": ps, "prefill_ms": pre, "total_ms": pre + sum(ps) + 500.0,
                     "T_sequencia_ms": 500.0, "media_por_passo_ms": sum(ps) / len(ps), "cont": {"needed": needed, "hits": 5, "cpu": cpu}, "falha": falha}
-        ents = [entrada("aquecimento", pref[0], True)] + [entrada("quente rep %d" % (i + 1), pref[i], False) for i in range(len(pref))]
+        ents = [entrada("aquecimento", pref[0], True)] + [entrada("quente rep %d" % (i + 1), pref[i], False, i) for i in range(len(pref))]
         pd = os.path.join(d, "p1")
         grava(os.path.join(pd, "rc.txt"), "0\n")
         grava(os.path.join(pd, "wall_ms.txt"), "%d\n" % (sum(e["total_ms"] for e in ents) + 3000))
@@ -118,7 +145,7 @@ class Base(unittest.TestCase):
             if not gpu and os.path.exists(os.path.join(self.saida, "p4", nome + ".gpu.csv")):
                 os.remove(os.path.join(self.saida, "p4", nome + ".gpu.csv"))
             if gpu:
-                grava(os.path.join(self.saida, "p4", nome + ".gpu.csv"), "2026/11/09 04:00:00.000, 10 %\n2026/11/09 04:00:00.100, 90 %\n2026/11/09 04:00:00.200, 50 %\n")
+                grava(os.path.join(self.saida, "p4", nome + ".gpu.csv"), gpu_linhas if gpu_linhas is not None else "%s, 10 %%\n%s, 90 %%\n%s, 50 %%\n" % (ts(EPOCH_INI + 1), ts(EPOCH_INI + 2), ts(EPOCH_INI + 3)))
             grava(os.path.join(self.saida, "p4", nome + ".cpu.csv"), "1794000000000,111,100.0\n1794000000100,111,120.0\n1794000000200,111,110.0\n")
         return d
 
@@ -154,8 +181,7 @@ class TestDentroDaPrevisao(Base):
         self.assertEqual(c["n_medidas"], 5)
 
     def test_3b_com_referencias_do_3b(self):
-        self.modelo = "3b"
-        grava(os.path.join(self.saida, "orcamento.json"), {"modelos": ["3b"]})
+        self.para_3b()
         self.tudo()
         r = self.roda()
         self.assertEqual(r["modelo_da_janela"], "3b")
@@ -310,8 +336,7 @@ class TestValidade(Base):
         self.assertEqual(self.roda()["celulas"]["lastro-1b-L10-curto-quente"]["status"], "OK")
 
     def test_l10_3b_linha_padrao(self):
-        self.modelo = "3b"
-        grava(os.path.join(self.saida, "orcamento.json"), {"modelos": ["3b"]})
+        self.para_3b()
         self.assertEqual(P.linha_slots_padrao("3b"), (128, 1280))
         self.assertEqual(P.linha_slots_padrao("1b"), (76, 768))
         self.celula("L10", "curto", stderr="slots 128 de 1280")
@@ -391,7 +416,7 @@ class TestValidade(Base):
         self.assertTrue(r["integridade_problemas"])
         self.assertTrue(all(c["status"] == "SEM PROVA" for c in r["celulas"].values()))
         self.assertTrue(all(s["status"] == "SEM PROVA" for s in r["series"].values()))
-        grava(os.path.join(self.saida, "integridade-depois.txt"), "binario abc\ngguf def\n")
+        self.manifesto()
         grava(os.path.join(self.saida, "integridade-fixos.txt"), "criterio-perfil aaa bbb FALHA\n")
         r = self.roda()
         self.assertTrue(all(c["status"] == "SEM PROVA" for c in r["celulas"].values()))
@@ -440,7 +465,7 @@ class TestP4(Base):
 
     def test_arquivos_p4_vazios_ou_com_lixo(self):
         self.tudo()
-        grava(os.path.join(self.saida, "p4", "lastro-1b-L10-curto-quente.gpu.csv"), "lixo\n\n,\nnvidia-smi falhou\n2026/11/09 04:00:00.000, 130 %\n")
+        grava(os.path.join(self.saida, "p4", "lastro-1b-L10-curto-quente.gpu.csv"), "lixo\n\n,\nnvidia-smi falhou\n%s, 130 %%\n" % ts(EPOCH_INI + 1))
         grava(os.path.join(self.saida, "p4", "lastro-1b-L10-curto-quente.cpu.csv"), "")
         p4 = self.roda()["celulas"]["lastro-1b-L10-curto-quente"]["p4"]
         self.assertEqual(p4["gpu_util_pct"]["n"], 0)
@@ -453,6 +478,209 @@ class TestP4(Base):
         c = r["celulas"]["lastro-1b-L10-longo-quente"]
         self.assertEqual(c["status"], "OK")
         self.assertTrue(c["p4"]["resolucao"].startswith("sem resolução"))
+
+
+class TestManifestoFixo(Base):
+    def todas_sem_prova(self, r):
+        self.assertTrue(r["integridade_problemas"])
+        self.assertTrue(all(c["status"] == "SEM PROVA" for c in r["celulas"].values()))
+        for s in SERIES:
+            self.assertEqual(r["series"][s]["status"], "SEM PROVA")
+            for p in ("P1", "P2", "P3"):
+                self.assertTrue(r["series"][s]["previsoes"][p]["resultado"].startswith("SEM PROVA"), r["series"][s]["previsoes"][p])
+                self.assertNotIn("desvios", r["series"][s]["previsoes"][p])
+
+    def test_completo_e_coerente_preserva_o_caminho_valido(self):
+        self.tudo()
+        r = self.roda()
+        self.assertEqual(r["integridade_problemas"], [])
+        self.assertTrue(all(c["status"] == "OK" for c in r["celulas"].values()))
+        self.assertEqual(r["series"]["L10"]["previsoes"]["P1"]["resultado"], "dentro da previsão")
+
+    def test_manifesto_ausente(self):
+        self.tudo()
+        os.remove(os.path.join(self.saida, "integridade-fixos.txt"))
+        r = self.roda()
+        self.todas_sem_prova(r)
+        self.assertTrue(any("ausente" in x for x in r["integridade_problemas"]))
+
+    def test_interrupcao_entre_depois_e_fixos(self):
+        # simula a janela morta depois de gravar integridade-depois.txt e antes do manifesto (e do orcamento.json final): sem o manifesto, nada vale
+        self.tudo()
+        self.assertTrue(os.path.exists(os.path.join(self.saida, "integridade-depois.txt")))
+        os.remove(os.path.join(self.saida, "integridade-fixos.txt"))
+        self.todas_sem_prova(self.roda())
+        # o roteiro grava o manifesto em arquivo temporário e o move de uma vez: nunca fica truncado
+        sh = le(os.path.join(AQUI, "roda-perfil-janela.sh"))
+        self.assertIn('mv "$SAIDA/.integridade-fixos.tmp" "$SAIDA/integridade-fixos.txt"', sh)
+        self.assertNotIn('>> "$SAIDA/integridade-fixos.txt"', sh)
+
+    def test_manifesto_vazio(self):
+        self.tudo()
+        grava(os.path.join(self.saida, "integridade-fixos.txt"), "")
+        r = self.roda()
+        self.todas_sem_prova(r)
+        self.assertTrue(any("vazio" in x for x in r["integridade_problemas"]))
+
+    def test_manifesto_truncado(self):
+        self.tudo()
+        arq = os.path.join(self.saida, "integridade-fixos.txt")
+        txt = le(arq)
+        grava(arq, txt[:len(txt) - 40])        # corta no meio de uma linha
+        r = self.roda()
+        self.todas_sem_prova(r)
+        self.assertTrue(any("truncada" in x or "faltando" in x for x in r["integridade_problemas"]))
+        grava(arq, txt[:len(txt) // 2])
+        self.todas_sem_prova(self.roda())
+
+    def test_chave_removida(self):
+        self.tudo()
+        for k in ("binario-lastro", "tokenizer-1b", "criterio-perfil", "ref5c-3b"):
+            self.manifesto(chaves=[x for x in self.shas if x not in ("gguf-extra", k)])
+            r = self.roda()
+            self.todas_sem_prova(r)
+            self.assertTrue(any("faltando" in x and k in x for x in r["integridade_problemas"]), (k, r["integridade_problemas"]))
+
+    def test_nao_conferido(self):
+        self.tudo()
+        self.manifesto(estado="NAO-CONFERIDO")
+        r = self.roda()
+        self.todas_sem_prova(r)
+        self.assertTrue(any("NAO-CONFERIDO" in x for x in r["integridade_problemas"]))
+
+    def test_hash_esperado_diferente_do_observado_ou_ilegivel(self):
+        self.tudo()
+        arq = os.path.join(self.saida, "integridade-fixos.txt")
+        linhas = le(arq).splitlines()
+        k, e, o, st = linhas[0].split()
+        grava(arq, "\n".join(["%s %s %s OK" % (k, e, "f" * 64)] + linhas[1:]) + "\n")
+        self.todas_sem_prova(self.roda())
+        grava(arq, "\n".join(["%s - - FALHA ilegível" % k] + linhas[1:]) + "\n")
+        self.todas_sem_prova(self.roda())
+        grava(arq, "\n".join(["%s curto curto OK" % k] + linhas[1:]) + "\n")
+        self.todas_sem_prova(self.roda())
+
+    def test_sha_do_manifesto_diferente_do_de_antes(self):
+        self.tudo()
+        arq = os.path.join(self.saida, "integridade-fixos.txt")
+        linhas = le(arq).splitlines()
+        k, e, o, st = linhas[0].split()
+        grava(arq, "\n".join(["%s %s %s OK" % (k, "e" * 64, "e" * 64)] + linhas[1:]) + "\n")
+        self.todas_sem_prova(self.roda())
+
+    def test_chaves_do_extrator_batem_com_o_FIXO_do_roteiro(self):
+        sh = le(os.path.join(AQUI, "roda-perfil-janela.sh"))
+        bloco = sh[sh.index("declare -A FIXO=("):]
+        bloco = bloco[:bloco.index("\n)\n")]
+        chaves = re.findall(r"^\s+\[([a-z0-9-]+)\]=", bloco, re.M)
+        esperado = set(P.FIXO_CHAVES) | {"tokenizer-1b", "tokenizer-3b"}
+        self.assertEqual(set(chaves), esperado)
+
+
+class TestSequencia(Base):
+    def test_identica(self):
+        self.tudo()
+        r = self.roda()
+        for s in SERIES:
+            self.assertEqual(r["series"][s]["previsoes"]["P3"]["sequencia"], "mesma sequência da referência 5c nos três textos")
+        sq = r["celulas"]["lastro-1b-L10-curto-quente"]["sequencia"]
+        self.assertTrue(sq["referencia_disponivel"])
+        self.assertFalse(sq["sequencias_diferentes"])
+        self.assertEqual(sq["divergencias"], [])
+
+    def test_uma_repeticao_diverge(self):
+        self.tudo()
+        ruim = list(GERADOS); ruim[7] = 12345
+        self.celula("L10", "curto", gerados_reps=[GERADOS, GERADOS, ruim, GERADOS, GERADOS])
+        r = self.roda()
+        c = r["celulas"]["lastro-1b-L10-curto-quente"]
+        self.assertEqual(c["status"], "OK")                         # tempos mantidos
+        dv = c["sequencia"]["divergencias"]
+        self.assertEqual(len(dv), 1)
+        self.assertEqual((dv[0]["processo"], dv[0]["rotulo"], dv[0]["passo"], dv[0]["id_medido"], dv[0]["id_referencia"], dv[0]["gap_referencia"]), ("p1", "quente rep 3", 7, 12345, GERADOS[7], 5.0))
+        pv = r["series"]["L10"]["previsoes"]["P3"]
+        self.assertEqual(pv["resultado"], "dentro da previsão")
+        self.assertTrue(pv["sequencias_diferentes"])
+        self.assertIn("sequências diferentes", pv["sequencia"])
+        self.assertIn("curto", pv["sequencia"])
+        md = P.relatorio(r)
+        self.assertIn("sequência: sequências diferentes", md)
+        self.assertIn("p1/quente rep 3: primeira divergência no passo 7, id medido 12345, id da referência %d, gap da referência 5.0000" % GERADOS[7], md)
+
+    def test_todas_divergem(self):
+        self.tudo()
+        ruim = list(GERADOS); ruim[0] = 1
+        self.celula("L100", "longo", gerados_reps=[ruim] * 5)
+        c = self.roda()["celulas"]["lastro-1b-L100-longo-quente"]
+        self.assertEqual(c["sequencia"]["n_medidas_divergentes"], 5)
+        self.assertEqual(c["sequencia"]["n_medidas"], 5)
+        self.assertEqual(c["status"], "OK")
+        self.assertIn("5 de 5", c["sequencia"]["marca"])
+
+    def test_999_vezes_64(self):
+        self.tudo()
+        self.celula("LC", "medio", gerados_reps=[[999] * 64] * 5)
+        r = self.roda()
+        c = r["celulas"]["lastro-1b-LC-medio-quente"]
+        dv = c["sequencia"]["divergencias"][0]
+        self.assertEqual((dv["passo"], dv["id_medido"], dv["id_referencia"], dv["gap_referencia"]), (0, 999, GERADOS[0], 5.0))
+        self.assertEqual(c["status"], "OK")
+        self.assertTrue(r["series"]["LC"]["previsoes"]["P3"]["sequencias_diferentes"])
+
+    def test_referencia_ausente_nunca_vira_igualdade(self):
+        self.tudo()
+        for m in ("1b", "3b"):
+            grava(os.path.join(self.refs, "ref5c-%s.json" % m), {"casos": [{"nome": "medio", "ids": IDS["medio"], "gerados": GERADOS, "gaps": [5.0] * 64}, {"nome": "longo", "ids": IDS["longo"], "gerados": GERADOS, "gaps": [5.0] * 64}]})
+        r = self.roda()
+        c = r["celulas"]["lastro-1b-L10-curto-quente"]
+        self.assertFalse(c["sequencia"]["referencia_disponivel"])
+        self.assertIsNone(c["sequencia"]["sequencias_diferentes"])
+        self.assertIn("ausente", c["sequencia"]["marca"])
+        pv = r["series"]["L10"]["previsoes"]["P3"]
+        self.assertIn("NÃO verificada", pv["sequencia"])
+        self.assertNotIn("mesma sequência", pv["sequencia"])
+        self.assertIn("NÃO verificada", P.relatorio(r))
+
+
+class TestP2Binario(Base):
+    def test_md_traz_binarios_e_aviso_fixo(self):
+        self.tudo()
+        r = self.roda()
+        md = P.relatorio(r)
+        self.assertEqual(r["binario_da_janela"], self.shas["binario-lastro"])
+        for s, b in (("L10", "f0a272db2df8aca6642073b830cc8234f2d2434e01c8ae6ef618886e6e3dc2df"), ("L100", "936d0c146d750f4849b7724ba5ae7ddd099618629a4e12bd2984758b801c3551"),
+                     ("LC", "e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4")):
+            self.assertEqual(P.BIN_REF[s], b)
+            self.assertEqual(r["series"][s]["previsoes"]["P2"]["binario_referencia"], b)
+            self.assertIn("binário da janela de referência %s; binário de agora %s" % (b, self.shas["binario-lastro"]), md)
+        self.assertEqual(md.count("P2 compara com binário diferente no L10 e L100 (mudanças aditivas) e com amostragem P4 a 10 Hz; fora da previsão não isola a causa"), 3)
+
+
+class TestGpuIntervalo(Base):
+    def test_amostras_anteriores_ao_inicio_ficam_de_fora_e_sao_contadas(self):
+        self.tudo()
+        linhas = "".join("%s, 0 %%\n" % ts(EPOCH_INI - 5 + i) for i in range(5)) + "%s, 80 %%\n%s, 100 %%\n%s, 0 %%\n" % (ts(EPOCH_INI + 1), ts(EPOCH_FIM - 1), ts(EPOCH_FIM + 3))
+        self.celula("L10", "curto", gpu_linhas=linhas)
+        p4 = self.roda()["celulas"]["lastro-1b-L10-curto-quente"]["p4"]
+        self.assertEqual(p4["gpu_util_pct"]["n"], 2)
+        self.assertAlmostEqual(p4["gpu_util_pct"]["media"], 90.0)         # as 5 do portão ocioso (0%) não entram na média
+        self.assertEqual(p4["gpu_amostras_fora_do_intervalo"], 6)         # 5 antes + 1 depois do fim
+        self.assertEqual(p4["gpu_intervalo_epoch"], [EPOCH_INI, EPOCH_FIM])
+        self.assertIn("(6)", P.relatorio(self.roda()))
+
+    def test_so_amostras_fora_sem_resolucao(self):
+        self.tudo()
+        self.celula("L10", "curto", gpu_linhas="%s, 0 %%\n" % ts(EPOCH_INI - 3))
+        p4 = self.roda()["celulas"]["lastro-1b-L10-curto-quente"]["p4"]
+        self.assertEqual(p4["gpu_util_pct"]["n"], 0)
+        self.assertEqual(p4["gpu_amostras_fora_do_intervalo"], 1)
+        self.assertTrue(p4["resolucao"].startswith("sem resolução"))
+
+    def test_carimbo_ilegivel_conta_como_fora(self):
+        self.tudo()
+        self.celula("L10", "curto", gpu_linhas="ontem, 50 %%\n%s, 20 %%\n" % ts(EPOCH_INI + 2))
+        p4 = self.roda()["celulas"]["lastro-1b-L10-curto-quente"]["p4"]
+        self.assertEqual((p4["gpu_util_pct"]["n"], p4["gpu_amostras_fora_do_intervalo"]), (1, 1))
 
 
 class TestSaida(Base):

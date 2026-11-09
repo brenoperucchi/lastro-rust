@@ -63,6 +63,65 @@ REF_MS_POS = {
 P3_FAIXA = {"L100": (0.66 * (1 - P3_TOL), 0.67 * (1 + P3_TOL)), "L10": (0.41 * (1 - P3_TOL), 0.43 * (1 + P3_TOL)), "LC": (0.41 * (1 - P3_TOL), 0.43 * (1 + P3_TOL))}
 
 
+# integridade FIXA (Emenda 1 do critério): chaves congeladas que o manifesto integridade-fixos.txt TEM de trazer, além do tokenizer do modelo da janela (mesma lista do FIXO de roda-perfil-janela.sh)
+FIXO_CHAVES = ("criterio-perfil", "binario-lastro", "script-perfil-extrai", "script-amostra-cpu", "script-cmp-extrai", "script-lastro", "script-monitor", "script-janela", "script-limite",
+               "criterio-cmp", "criterio-degrau1", "criterio-degrau2", "cmp-ids-prompt", "texto-curto", "texto-medio", "texto-longo", "textos-json", "ref5c-1b", "ref5c-3b")
+# binários das janelas de referência da Parte A (P2): L10 das janelas cmp, L100 das d1, LC das d2 (integridade-antes.txt de cada uma)
+BIN_REF = {"L10": "f0a272db2df8aca6642073b830cc8234f2d2434e01c8ae6ef618886e6e3dc2df", "L100": "936d0c146d750f4849b7724ba5ae7ddd099618629a4e12bd2984758b801c3551",
+           "LC": "e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4"}
+AVISO_P2 = "P2 compara com binário diferente no L10 e L100 (mudanças aditivas) e com amostragem P4 a 10 Hz; fora da previsão não isola a causa"
+
+
+def integridade_fixos(saida, m):
+    """Manifesto FIXO OBRIGATÓRIO: arquivo legível e não vazio, UMA entrada completa (`chave esperado observado OK`) para cada chave congelada da janela, esperado == observado (64 hex),
+    observado == o sha de integridade-antes.txt. Ausente, vazio, truncado, chave faltando, NAO-CONFERIDO, FALHA ou ilegível = problema global (todas as células SEM PROVA)."""
+    arq = os.path.join(saida, "integridade-fixos.txt")
+    txt = X.le_txt(arq)
+    if txt is None:
+        return ["integridade FIXA: manifesto integridade-fixos.txt ausente ou ilegível (janela interrompida antes de gravá-lo?)"]
+    linhas = [x for x in txt.splitlines() if x.strip()]
+    if not linhas:
+        return ["integridade FIXA: manifesto integridade-fixos.txt vazio"]
+    mot, vistas = [], {}
+    antes = X.le_shas(os.path.join(saida, "integridade-antes.txt"))
+    for x in linhas:
+        c = x.split()
+        if len(c) != 4:
+            mot.append("integridade FIXA: linha truncada ou ilegível no manifesto: %r" % x.strip()[:80])
+            continue
+        k, esp, obs, est = c
+        if k in vistas:
+            mot.append("integridade FIXA: chave %s repetida no manifesto" % k)
+        vistas[k] = c
+        if est != "OK":
+            mot.append("integridade FIXA: %s com estado %s (esperado OK)" % (k, est))
+        elif not (re.fullmatch(r"[0-9a-f]{64}", esp) and esp == obs):
+            mot.append("integridade FIXA: %s com sha esperado/observado diferentes ou inválidos" % k)
+        elif antes.get(k) is not None and antes.get(k) != obs:
+            mot.append("integridade FIXA: %s com sha diferente do de integridade-antes.txt" % k)
+    falta = [k for k in FIXO_CHAVES + ("tokenizer-%s" % m,) if k not in vistas]
+    if falta:
+        mot.append("integridade FIXA: chave(s) faltando no manifesto: %s" % ", ".join(falta))
+    return sorted(set(mot))
+
+
+def compara_com_referencia(refs, m, t, meds):
+    """Ids gerados de CADA medida contra a referência 5c, antes de descartar as medidas: primeira divergência, ids medido/referência, gap da referência, processo/repetição.
+    Referência ausente fica registrada explicitamente (nunca igualdade). Só reporta: tempos e P3 seguem (as contagens são conferidas à parte)."""
+    ref = refs.ref(m, t)
+    if not ref or not isinstance(ref.get("gerados"), list):
+        return {"referencia_disponivel": False, "sequencias_diferentes": None, "divergencias": [], "marca": "referência 5c ausente: igualdade de sequência NÃO verificada"}
+    refg, gaps, div = ref["gerados"], ref.get("gaps") or [], []
+    for x in meds:
+        g = x.get("gerados") or []
+        i = X.primeira_divergencia(list(g), list(refg))
+        if i is not None:
+            div.append({"processo": x["processo"], "rotulo": x["rotulo"], "passo": i, "id_medido": g[i] if i < len(g) else None, "id_referencia": refg[i] if i < len(refg) else None,
+                        "gap_referencia": gaps[i] if i < len(gaps) else None})
+    return {"referencia_disponivel": True, "sequencias_diferentes": bool(div), "divergencias": div, "n_medidas_divergentes": len(div), "n_medidas": len(meds),
+            "marca": ("sequências diferentes da referência 5c em %d de %d medidas (tempos e P3 mantidos)" % (len(div), len(meds))) if div else "mesma sequência da referência 5c"}
+
+
 def chave(m, s, t):
     return "lastro-%s-%s-%s-quente" % (m, s, t)
 
@@ -75,12 +134,13 @@ def linha_slots_padrao(m):
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------- P4 (descritivo)
-def le_gpu_util(p):
-    """[(carimbo, % de utilização)] das linhas legíveis de `timestamp, 87 %`; None se o arquivo não existe."""
+def le_gpu_util(p, ini=None, fim=None):
+    """([(carimbo, % de utilização)] DENTRO de [ini, fim] epoch, nº de amostras legíveis FORA do intervalo ou com carimbo ilegível); None se o arquivo não existe.
+    Linhas `timestamp, 87 %`; sem intervalo legível (ini ou fim None) nada é aceito (tudo conta como fora)."""
     t = X.le_txt(p)
     if t is None:
         return None
-    r = []
+    r, fora = [], 0
     for linha in t.splitlines():
         c = [x.strip() for x in linha.split(",")]
         if len(c) < 2:
@@ -90,8 +150,12 @@ def le_gpu_util(p):
             continue
         v = float(m_.group(1))
         if math.isfinite(v) and 0 <= v <= 100:
-            r.append((c[0], v))
-    return r
+            ts = X.ts_epoch(c[0]) if (ini is not None and fim is not None) else None
+            if ts is not None and ini <= ts <= fim:
+                r.append((c[0], v))
+            else:
+                fora += 1
+    return r, fora
 
 
 def le_cpu_amostras(p):
@@ -119,15 +183,17 @@ def resumo_serie(v):
     return {"n": len(v), "media": sum(v) / len(v), "max": max(v), "mediana": statistics.median(v)}
 
 
-def analisa_p4(saida, k, prefill_med_ms):
+def analisa_p4(saida, k, prefill_med_ms, meta=None):
     """P4 da célula: só descrição da célula INTEIRA (carga, criação do motor, prefill, decode), sem atribuir nada ao prefill. Amostras ausentes = sem resolução."""
-    g = le_gpu_util(os.path.join(saida, "p4", k + ".gpu.csv"))
+    meta = meta or {}
+    ini, fim = (meta.get(x) if isinstance(meta.get(x), (int, float)) and not isinstance(meta.get(x), bool) else None for x in ("inicio_coleta_epoch", "fim_epoch"))
+    g, fora = le_gpu_util(os.path.join(saida, "p4", k + ".gpu.csv"), ini, fim) or (None, 0)
     c = le_cpu_amostras(os.path.join(saida, "p4", k + ".cpu.csv"))
     gpu = resumo_serie([x[1] for x in g or []])
     cpu = resumo_serie([x[2] for x in c or []])
     motivos = []
     if gpu["n"] == 0:
-        motivos.append("sem amostras de utilização da GPU (arquivo %s)" % ("ausente" if g is None else "vazio ou ilegível"))
+        motivos.append("sem amostras de utilização da GPU dentro do intervalo de coleta da célula (arquivo %s; %d fora do intervalo)" % ("ausente" if g is None else "vazio ou ilegível", fora))
     if cpu["n"] == 0:
         motivos.append("sem amostras de %%CPU do processo (arquivo %s)" % ("ausente" if c is None else "vazio ou ilegível"))
     if motivos:
@@ -136,7 +202,7 @@ def analisa_p4(saida, k, prefill_med_ms):
         res = "dica: prefill >= ~3 s; a leitura cobre a célula inteira e não separa o prefill"
     else:
         res = "sem resolução: prefill < ~3 s (a leitura cobre a célula inteira, 100 ms é a cadência de consulta, não a resolução do contador)"
-    return {"gpu_util_pct": gpu, "cpu_pct_processo": cpu, "resolucao": res, "cobre": "célula inteira (carga, criação do motor, prefill e decode), sem atribuir causa ao prefill"}
+    return {"gpu_util_pct": gpu, "cpu_pct_processo": cpu, "gpu_amostras_fora_do_intervalo": fora, "gpu_intervalo_epoch": [ini, fim], "resolucao": res, "cobre": "célula inteira (carga, criação do motor, prefill e decode), sem atribuir causa ao prefill"}
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------- células
@@ -203,7 +269,8 @@ def le_celula(saida, m, s, t, refs):
     r["ms_por_posicao"] = (pre / N_POS[t]) if pre is not None else None
     r["decode_ms_passo_mediana"] = dec
     r["razao_p3"] = (r["ms_por_posicao"] / dec) if (r["ms_por_posicao"] is not None and dec) else None
-    r["p4"] = analisa_p4(saida, k, pre)
+    r["p4"] = analisa_p4(saida, k, pre, meta)
+    r["sequencia"] = compara_com_referencia(refs, m, t, meds)
     return r
 
 
@@ -216,7 +283,7 @@ def status_serie(cels):
     return "SEM PROVA" if any(x == "SEM PROVA" for x in st) else "NÃO RODOU"
 
 
-def previsoes(m, s, cels):
+def previsoes(m, s, cels, bin_atual=None):
     """P1, P2 e P3 de uma série (só com as três células OK); 'dentro da previsão' ou 'fora da previsão', sempre com o dado ao lado."""
     st = status_serie(cels)
     if st != "OK":
@@ -230,7 +297,8 @@ def previsoes(m, s, cels):
     ref = REF_MS_POS[m][s]
     d2 = {t: abs(c["ms_por_posicao"] / ref[t] - 1) for t, c in zip(TEXTOS, cels)}
     p2 = {"resultado": "dentro da previsão" if max(d2.values()) <= P2_TOL else "fora da previsão", "tolerancia": P2_TOL, "referencia_ms_por_posicao": dict(ref),
-          "ms_por_posicao": dict(zip(TEXTOS, v)), "desvios": d2, "desvio_max": max(d2.values())}
+          "ms_por_posicao": dict(zip(TEXTOS, v)), "desvios": d2, "desvio_max": max(d2.values()),
+          "binario_referencia": BIN_REF[s], "binario_atual": bin_atual, "aviso": AVISO_P2}
     lo, hi = P3_FAIXA[s]
     rz = [c["razao_p3"] for c in cels]
     if any(x is None for x in rz):
@@ -238,6 +306,16 @@ def previsoes(m, s, cels):
     else:
         p3 = {"resultado": "dentro da previsão" if all(lo <= x <= hi for x in rz) else "fora da previsão", "faixa": [lo, hi], "tolerancia": P3_TOL, "razoes": dict(zip(TEXTOS, rz)),
               "mediana_da_serie": statistics.median(rz), "decode_ms_passo": dict(zip(TEXTOS, [c["decode_ms_passo_mediana"] for c in cels]))}
+    # marca de sequência ao lado de P3 (Emenda 1): vem das células; tempos e P3 seguem mantidos
+    sq = [c["sequencia"] for c in cels]
+    if any(not x["referencia_disponivel"] for x in sq):
+        marca = "referência 5c ausente em %s: igualdade de sequência NÃO verificada" % ", ".join(c["texto"] for c, x in zip(cels, sq) if not x["referencia_disponivel"])
+    elif any(x["sequencias_diferentes"] for x in sq):
+        marca = "sequências diferentes da referência 5c em %s (tempos e P3 mantidos)" % ", ".join(c["texto"] for c, x in zip(cels, sq) if x["sequencias_diferentes"])
+    else:
+        marca = "mesma sequência da referência 5c nos três textos"
+    p3["sequencia"] = marca
+    p3["sequencias_diferentes"] = any(bool(x["sequencias_diferentes"]) for x in sq)
     return {"P1": p1, "P2": p2, "P3": p3}
 
 
@@ -262,6 +340,8 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
     if not (isinstance(decl, list) and len(decl) == 1 and decl[0] in MODELOS):
         raise ValueError("orcamento.json sem um modelo único declarado (\"modelos\": [\"1b\"] ou [\"3b\"]): a janela do perfil é de UM modelo")
     m = decl[0]
+    integ += integridade_fixos(saida, m)
+    bin_atual = X.le_shas(os.path.join(saida, "integridade-antes.txt")).get("binario-lastro") or None
     amb = X.le_chave_valor(os.path.join(saida, "ambiente.txt"))
     obs = []
     mem = amb.get("memoria_mts")
@@ -292,14 +372,14 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
                     c["motivos"] = sorted(set(c["motivos"] + integ))
         for c in cels:
             celulas[c["chave"]] = c
-        series[s] = {"rotulo": ROTULO[s], "status": status_serie(cels), "previsoes": previsoes(m, s, cels)}
+        series[s] = {"rotulo": ROTULO[s], "status": status_serie(cels), "previsoes": previsoes(m, s, cels, bin_atual)}
     ordem = (X.le_txt(os.path.join(saida, "ordem.txt")) or "").splitlines()
     res = {
         "tipo": "perfil-resultado", "criterio": "criterio-perfil-prefill-20261109.md (versão 3; herda o critério base e as Emendas 1 dos degraus 1 e 2 para a validade)", "descritivo": True,
         "modelo_da_janela": m,
         "aviso": "Descritivo: sem meta e sem PASSA. P1, P2 e P3 são previsões pré-registradas, só conferidas ('dentro da previsão' / 'fora da previsão'); nenhuma prova causa. "
                  "P4 descreve a célula inteira (inclui carga e criação do motor) e não atribui nada ao prefill.",
-        "integridade_problemas": integ, "observacoes_ambiente": obs, "smokes": smokes, "orcamento": orc, "ordem": ordem, "celulas": celulas, "series": series,
+        "binario_da_janela": bin_atual, "integridade_problemas": integ, "observacoes_ambiente": obs, "smokes": smokes, "orcamento": orc, "ordem": ordem, "celulas": celulas, "series": series,
     }
     X.limpa_nao_finitos(res)
     return res
@@ -344,14 +424,18 @@ def relatorio(res):
         o.append("- P2 (cada célula dentro de ±10%% do valor da janela anterior): %s" % p2["resultado"])
         if "desvios" in p2:
             o.append("  - " + "; ".join("%s %s contra ref. %s (desvio %s)" % (t, f(p2["ms_por_posicao"][t], 3), f(p2["referencia_ms_por_posicao"][t], 3), pc(p2["desvios"][t])) for t in TEXTOS))
+        o.append("  - binário da janela de referência %s; binário de agora %s" % (BIN_REF[s], res.get("binario_da_janela") or "(ilegível)"))
+        o.append("  - %s" % AVISO_P2)
         o.append("- P3 (razão ms/posição ÷ decode na faixa): %s" % p3["resultado"])
         if "faixa" in p3:
             o.append("  - faixa %s a %s; razões %s; mediana da série %s" % (f(p3["faixa"][0], 3), f(p3["faixa"][1], 3), ", ".join("%s %s" % (t, f(p3["razoes"][t], 3)) for t in TEXTOS), f(p3["mediana_da_serie"], 3)))
+            o.append("  - sequência: %s" % p3["sequencia"])
         o.append("")
     o += ["## P4 (descritivo): utilização da GPU e %CPU do processo, célula inteira", "",
           "A leitura cobre carga, criação do motor, prefill e decode; os carimbos de início e fim do prefill não saem do binário, então nada é atribuído ao prefill. "
+          "A média de GPU só usa amostras dentro de [inicio_coleta_epoch, fim_epoch] da célula (o portão ocioso fica de fora; o nº de descartadas vai entre parênteses). "
           "100 ms é a cadência de consulta, não a resolução do contador. Com prefill >= ~3 s (L10 e LC) é só uma dica; nas demais, sem resolução.", "",
-          "| série | texto | GPU n | GPU média % | GPU máx % | CPU n | CPU média % (1 núcleo = 100) | CPU máx % | leitura |", "|---|---|---|---|---|---|---|---|---|"]
+          "| série | texto | GPU n (fora do intervalo) | GPU média % | GPU máx % | CPU n | CPU média % (1 núcleo = 100) | CPU máx % | leitura |", "|---|---|---|---|---|---|---|---|---|"]
     for s in SERIES:
         for t in TEXTOS:
             c = res["celulas"][chave(m, s, t)]
@@ -360,7 +444,15 @@ def relatorio(res):
                 o.append("| %s | %s | - | - | - | - | - | - | NÃO RODOU |" % (s, t))
                 continue
             g, cp = p4["gpu_util_pct"], p4["cpu_pct_processo"]
-            o.append("| %s | %s | %d | %s | %s | %d | %s | %s | %s |" % (s, t, g["n"], f(g["media"], 1), f(g["max"], 1), cp["n"], f(cp["media"], 1), f(cp["max"], 1), p4["resolucao"]))
+            o.append("| %s | %s | %d (%d) | %s | %s | %d | %s | %s | %s |" % (s, t, g["n"], p4.get("gpu_amostras_fora_do_intervalo", 0), f(g["media"], 1), f(g["max"], 1), cp["n"], f(cp["media"], 1), f(cp["max"], 1), p4["resolucao"]))
+    o += ["", "## Sequência gerada contra a referência 5c (só reportada, sem ajuste nem repetição)", ""]
+    for c in res["celulas"].values():
+        sq = c.get("sequencia")
+        if not sq or c["status"] == "NÃO RODOU":
+            continue
+        o.append("- %s: %s" % (c["chave"], sq["marca"]))
+        for dv in sq["divergencias"]:
+            o.append("  - %s/%s: primeira divergência no passo %s, id medido %s, id da referência %s, gap da referência %s" % (dv["processo"], dv["rotulo"], dv["passo"], dv["id_medido"], dv["id_referencia"], f(dv["gap_referencia"], 4)))
     nao = [c for c in res["celulas"].values() if c["status"] != "OK"]
     if nao:
         o += ["", "## Células sem resultado", ""]
