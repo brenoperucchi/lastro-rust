@@ -83,6 +83,7 @@ confere "frio: sai 0 e roda 4 processos (p0 descartado + p1..p3)" "[ $RC = 0 ] &
 confere "frio: cada processo é --gera --so-texto medio com saída própria, sem --repete, sem --novos nem --data (o harness os fixa; o parser real recusa)" "! grep -q -- --repete $D/log-frio && ! grep -q -- '--novos\|--data' $D/log-frio && [ \$(grep -c -- '--gera --celula 1b:$D/m1b --so-texto medio --saida $D/s-frio/p' $D/log-frio) = 4 ]"
 confere "frio: cada pK tem saida/medidas-1b.json, wall_ms e rc" "[ -s $D/s-frio/p2/saida/medidas-1b.json ] && [ -s $D/s-frio/p2/wall_ms.txt ] && [ \"\$(cat $D/s-frio/p2/rc.txt)\" = 0 ]"
 confere "frio: celula.json com n_medidas 3, portao_ok true, rc 0" "grep -q '\"estado\": \"frio\", \"n_medidas\": 3, \"portao_ok\": true' $D/s-frio/celula.json && grep -q '\"rc\": 0' $D/s-frio/celula.json"
+confere "celula.json grava inicio_coleta_epoch entre inicio_epoch e fim_epoch (emenda 7)" "python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert m['inicio_epoch']<=m['inicio_coleta_epoch']<=m['fim_epoch']\" $D/s-frio/celula.json"
 confere "monitor: portão, amostragem a 1 Hz e parada na ordem" "[ \"\$(cat $D/mon.log | tr '\n' ' ')\" = 'inicia para para ' ] || [ \"\$(cat $D/mon.log | tr '\n' ' ')\" = 'inicia para ' ]"
 # 3. quente: UM processo com --repete N
 roda quente --modelo 3b --texto longo --estado quente --n 5

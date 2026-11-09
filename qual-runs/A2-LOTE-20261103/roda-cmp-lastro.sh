@@ -61,6 +61,7 @@ PORTAO_MOTIVO=$(grep '^portao=FALHA' "$SAIDA/portao.txt" 2> /dev/null | head -n 
 MON_FALHAS=()
 "$MONITOR" inicia --csv "$SAIDA/monitor.csv" --pid-arq "$SAIDA/monitor.pid"; r=$?
 [ $r = 0 ] || MON_FALHAS+=("inicia rc=$r")
+INI_COLETA=$(date +%s)   # emenda 7: marco depois do portão e logo antes da 1ª partida; o extrator exige a 1ª amostra a <= 5 s dele
 SAI_RC=0
 cleanup() { "$MONITOR" para --pid-arq "$SAIDA/monitor.pid" 2> /dev/null; r_para=$?; }
 trap cleanup EXIT
@@ -97,8 +98,8 @@ cleanup
 if [ $r -gt 1 ] || grep -q '^sem amostras' "$SAIDA/monitor-resumo.txt" 2> /dev/null; then MON_FALHAS+=("avalia rc=$r"); fi
 MON_FALHA=$(printf '%s; ' "${MON_FALHAS[@]:-}" | tr -d '"\\' | sed -e 's/; $//')
 {
-  printf '{"lado": "lastro", "serie": "L", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "fim_epoch": %s, "monitor_falha": "%s"}\n' \
-    "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$SAI_RC" "$INI" "$FIM" "$MON_FALHA"
+  printf '{"lado": "lastro", "serie": "L", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "inicio_coleta_epoch": %s, "fim_epoch": %s, "monitor_falha": "%s"}\n' \
+    "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$SAI_RC" "$INI" "$INI_COLETA" "$FIM" "$MON_FALHA"
 } > "$SAIDA/celula.json"
 [ "$SAI_RC" != 2 ] || exit 2
 [ "$SAI_RC" = 0 ] || exit 1

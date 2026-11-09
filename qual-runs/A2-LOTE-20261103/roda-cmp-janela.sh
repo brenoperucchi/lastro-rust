@@ -67,7 +67,7 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados (valem onde o critério já os fixa; binários, GGUF e safetensors só precisam ser iguais antes e depois).
 declare -A FIXO=(
-  [criterio-cmp]=42687887ffe3829d1e382a45a50abe65d7bfddf35235a2979ebdf4102395baae
+  [criterio-cmp]=3c8825b65ef621b66d76dd0ebb508f37f944771369c4c192a1d0a35389d3f72d
   [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
   [texto-curto]=5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d
   [texto-medio]=bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a
@@ -156,10 +156,11 @@ if [ $INTERNO = 1 ]; then
   # Emenda 6 (r111): recalibração do lado Lastro com a evidência da janela 5c (08/11, 19:14:28 a 19:15:17, 1B e 3B, 3 pedidos cada): o motor de cada modelo foi criado em no máximo
   # 3,0 s (1B) e 4,2 s (3B) (tempo do bloco menos a soma dos total_ms dos pedidos); totais por pedido de 2,8 a 7,3 s no 1B e de 5,6 a 11,9 s no 3B, já contando o T_sequencia da 5c que a
   # prova --so-texto não roda; prefill de 1,5 a 3,3 s (1B) e de 2,9 a 6,3 s (3B); decode de 21,4 e 40,3 ms por passo (64 passos = 1,4 s e 2,6 s). Valores abaixo = o pior caso visto
-  # mais margem. O lado llama.cpp NÃO tem evidência (a 5c é só do Lastro): os palpites antigos ficam, declarados como palpite.
+  # mais margem. Emenda 7 (r112): a frase "que a prova --so-texto não roda" estava errada (o T_sequencia roda no --so-texto frio); o frio por processo sobe para 8 s (1B) e 12 s (3B), o pior
+  # total por pedido visto (7,3 e 11,9 s, que já inclui o T_sequencia). O lado llama.cpp NÃO tem evidência (a 5c é só do Lastro): os palpites antigos ficam, declarados como palpite.
   E_PORTAO=$(est PORTAO 8)
   declare -A E_L_CARGA=([1b]=$(est L_CARGA_1B 5) [3b]=$(est L_CARGA_3B 7))
-  declare -A E_L_FRIO=([1b]=$(est L_FRIO_1B 5) [3b]=$(est L_FRIO_3B 9))
+  declare -A E_L_FRIO=([1b]=$(est L_FRIO_1B 8) [3b]=$(est L_FRIO_3B 12))
   declare -A E_L_QUENTE=([1b]=$(est L_QUENTE_1B 5) [3b]=$(est L_QUENTE_3B 9))
   declare -A E_C_CARGA=([1b]=$(est C_CARGA_1B 8) [3b]=$(est C_CARGA_3B 15))
   declare -A E_C_PED=([1b]=$(est C_PED_1B 2) [3b]=$(est C_PED_3B 3))

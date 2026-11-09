@@ -29,6 +29,7 @@ PASSOS = NOVOS - 1
 RUIDOSA = 0.15            # emenda 4, item 2 (palpite declarado antes dos dados)
 TEMP_MAX = 80.0           # item (4) (palpite declarado antes dos dados)
 COBERTURA_TOL = 5.0       # r111: a última amostra do monitor tem de ficar a no máximo 5 s antes do fim da célula
+COBERTURA_INI_TOL = 5.0   # r112 (emenda 7): a 1ª amostra do monitor tem de ficar a no máximo 5 s depois de inicio_coleta_epoch (palpite declarado, igual às outras)
 LACUNA_MAX = 10.0         # r111: intervalo máximo entre amostras consecutivas do monitor (a coleta é a 1 Hz)
 EMPATE = 1e-3             # item (2): gap da referência abaixo disto = empate
 DIFERE_RAZOES = 1.5       # E7
@@ -278,6 +279,11 @@ def analisa_monitor(d, meta):
     except ValueError:
         mot.append("celula.json sem inicio_epoch/fim_epoch legíveis: cobertura do monitor não verificável")
         return mot, tm
+    try:
+        ini_col = num(meta.get("inicio_coleta_epoch"), "inicio_coleta_epoch")
+    except ValueError:
+        mot.append("celula.json sem inicio_coleta_epoch legível: cobertura inicial do monitor não verificável")
+        ini_col = None
     if None in stamps:
         mot.append("carimbos de tempo do monitor.csv ilegíveis: cobertura não verificável")
         return mot, tm
@@ -286,6 +292,8 @@ def analisa_monitor(d, meta):
         mot.append("a coleta do monitor parou %.0f s antes do fim da célula (última amostra antes do fim - %.0f s)" % (fim - ts[-1], COBERTURA_TOL))
     elif ts[0] > fim:
         mot.append("amostras do monitor todas depois do fim da célula")
+    if ini_col is not None and ts[0] > ini_col + COBERTURA_INI_TOL:
+        mot.append("a coleta do monitor só começou %.0f s depois do início da coleta da célula (limite %.0f s)" % (ts[0] - ini_col, COBERTURA_INI_TOL))
     lac = max((b - a for a, b in zip(ts, ts[1:])), default=0.0)
     if lac > LACUNA_MAX:
         mot.append("lacuna de %.0f s na coleta do monitor (máximo %.0f s)" % (lac, LACUNA_MAX))

@@ -54,6 +54,7 @@ class Base(unittest.TestCase):
     def celula_meta(self, nome, **kw):
         kw.setdefault("inicio_epoch", EPOCH_INI)
         kw.setdefault("fim_epoch", EPOCH_FIM)
+        kw.setdefault("inicio_coleta_epoch", EPOCH_INI)
         grava(os.path.join(self.saida, "celulas", nome, "celula.json"), kw)
         d = os.path.join(self.saida, "celulas", nome)
         self.monitor(d, [60.0])
@@ -436,6 +437,44 @@ class TestMonitorFechado(Base):
         grava(os.path.join(d, "celula.json"), dict(json.load(open(os.path.join(d, "celula.json"))), fim_epoch=EPOCH_INI + 40))
         self.monitor(d, [60.0], ini=EPOCH_INI, fim=EPOCH_INI + 40, passo=20)
         self.sem_prova("lacuna")
+
+    def meta_com(self, d, **kw):
+        meta = json.load(open(os.path.join(d, "celula.json")))
+        meta.update(kw)
+        grava(os.path.join(d, "celula.json"), meta)
+
+    def test_unica_amostra_perto_do_fim_de_celula_longa(self):
+        # r112 (rev-1 P2): célula de 100 s, única amostra em 99 s
+        d = self.par()
+        self.meta_com(d, fim_epoch=EPOCH_INI + 100)
+        self.monitor(d, [60.0], ini=EPOCH_INI + 99, fim=EPOCH_INI + 99)
+        self.sem_prova("só começou")
+
+    def test_inicio_tardio_seguido_de_amostras_regulares(self):
+        d = self.par()
+        self.meta_com(d, fim_epoch=EPOCH_INI + 100)
+        self.monitor(d, [60.0], ini=EPOCH_INI + 40, fim=EPOCH_INI + 100)
+        self.sem_prova("só começou")
+
+    def test_portao_longo_antes_da_coleta_continua_valido(self):
+        # inicio_epoch 20 s antes do marco de coleta; a coleta cobre tudo a partir do marco
+        d = self.par()
+        self.meta_com(d, inicio_epoch=EPOCH_INI - 20, inicio_coleta_epoch=EPOCH_INI, fim_epoch=EPOCH_INI + 100)
+        self.monitor(d, [60.0], ini=EPOCH_INI + 1, fim=EPOCH_INI + 100)
+        self.assertEqual(self.razao(self.roda())["status"], "OK")
+
+    def test_primeira_amostra_no_limite_de_5_s(self):
+        d = self.par()
+        self.meta_com(d, fim_epoch=EPOCH_INI + 100)
+        self.monitor(d, [60.0], ini=EPOCH_INI + 5, fim=EPOCH_INI + 100)
+        self.assertEqual(self.razao(self.roda())["status"], "OK")
+
+    def test_sem_marco_de_inicio_da_coleta(self):
+        d = self.par()
+        meta = json.load(open(os.path.join(d, "celula.json")))
+        del meta["inicio_coleta_epoch"]
+        grava(os.path.join(d, "celula.json"), meta)
+        self.sem_prova("inicio_coleta_epoch")
 
     def test_falha_de_coleta_registrada_no_metadata_e_sem_epochs(self):
         d = self.par()

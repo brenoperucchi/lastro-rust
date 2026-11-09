@@ -38,8 +38,8 @@ echo "$chave n=$n" >> "$CMP_FAKE_LOG"
 mult=${CMP_FAKE_MULT:-1}
 if [ "$lado" = lastro ]; then custo=$(( (n + 1) * 10 )); elif [ "$serie" = S2 ]; then custo=$(( (n + 1) * 10 )); else custo=$(( (n + 1) * 5 )); fi
 if [ "${CMP_FAKE_EST:-}" = 1 ]; then
-  # custo = as estimativas FINAIS da emenda 6 (cópia independente das fórmulas do envelope; se os padrões mudarem, o cenário K/L falha de propósito)
-  P=8; if [ "$modelo" = 1b ]; then LC=5; LF=5; LQ=5; CC=8; CP=2; else LC=7; LF=9; LQ=9; CC=15; CP=3; fi; AQ=3; FX=3; m2=1; [ "$serie" = S2 ] && m2=2
+  # custo = as estimativas FINAIS da emenda 7 (cópia independente das fórmulas do envelope; se os padrões mudarem, o cenário K/L falha de propósito)
+  P=8; if [ "$modelo" = 1b ]; then LC=5; LF=8; LQ=5; CC=8; CP=2; else LC=7; LF=12; LQ=9; CC=15; CP=3; fi; AQ=3; FX=3; m2=1; [ "$serie" = S2 ] && m2=2
   if [ "$lado" = lastro ]; then
     if [ "$estado" = frio ]; then custo=$(( P + (n + 1) * (LC + LF) )); else custo=$(( P + LC + (n + 1) * LQ )); fi
   else

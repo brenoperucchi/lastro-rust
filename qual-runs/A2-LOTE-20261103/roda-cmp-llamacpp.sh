@@ -111,6 +111,7 @@ PORTAO_MOTIVO=$(grep '^portao=FALHA' "$SAIDA/portao.txt" 2> /dev/null | head -n 
 MON_FALHAS=()
 "$MONITOR" inicia --csv "$SAIDA/monitor.csv" --pid-arq "$SAIDA/monitor.pid"; r=$?
 [ $r = 0 ] || MON_FALHAS+=("inicia rc=$r")
+INI_COLETA=$(date +%s)   # emenda 7: marco depois do portão e logo antes da 1ª partida; o extrator exige a 1ª amostra a <= 5 s dele
 
 # sobe um servidor (K = número do servidor): define SRV_PID e PORTA; grava servidor-K.log e carga-K.ms; retorna 1 se não ficou pronto
 sobe() {
@@ -176,8 +177,8 @@ if [ $r -gt 1 ] || grep -q '^sem amostras' "$SAIDA/monitor-resumo.txt" 2> /dev/n
 MON_FALHA=$(printf '%s; ' "${MON_FALHAS[@]:-}" | tr -d '"\\' | sed -e 's/; $//')
 "$LLAMA" --version > "$SAIDA/version.txt" 2>&1 < /dev/null || echo "llama-server --version saiu com erro" >> "$SAIDA/version.txt"
 {
-  printf '{"lado": "llamacpp", "serie": "%s", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "fim_epoch": %s, "falhas": "%s", "monitor_falha": "%s"}\n' \
-    "$SERIE" "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$FALHOU" "$INI" "$FIM" "$(printf '%s; ' "${MOTIVOS[@]:-}" | tr -d '"\\')" "$MON_FALHA"
+  printf '{"lado": "llamacpp", "serie": "%s", "modelo": "%s", "texto": "%s", "estado": "%s", "n_medidas": %s, "portao_ok": %s, "portao_motivo": "%s", "rc": %s, "inicio_epoch": %s, "inicio_coleta_epoch": %s, "fim_epoch": %s, "falhas": "%s", "monitor_falha": "%s"}\n' \
+    "$SERIE" "$MODELO" "$TEXTO" "$ESTADO" "$N" "$([ $PORTAO_RC = 0 ] && echo true || echo false)" "$PORTAO_MOTIVO" "$FALHOU" "$INI" "$INI_COLETA" "$FIM" "$(printf '%s; ' "${MOTIVOS[@]:-}" | tr -d '"\\')" "$MON_FALHA"
 } > "$SAIDA/celula.json"
 [ $FALHOU = 0 ] || exit 1
 exit 0
