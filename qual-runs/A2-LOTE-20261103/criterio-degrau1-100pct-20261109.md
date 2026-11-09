@@ -34,3 +34,10 @@ KV f32 contra f16; fronteira do prefill diferente (base); desktop gráfico como 
 
 ## 7. Rito
 Revisão nível 2 deste critério e dos roteiros alterados ANTES da janela; janela com Chrome fechado e voxtype parado e portão de GPU do base; emendas só com nota datada antes dos dados; commits locais, sem push.
+
+## Emenda 1 (09/11/2026, antes de qualquer dado; decisões de implementação das revisões r116 e r117)
+Só aumenta o rigor; vale onde conflita com o texto acima.
+1. O binário imprime no stderr, uma vez por processo, `slots N de M`. A linha é OBRIGATÓRIA no smoke e em cada processo L100, com N = M > 0; ausente ou diferente = smoke falha / célula SEM PROVA.
+2. Memória do smoke: só valem leituras com carimbo de tempo DENTRO do intervalo em que o binário rodou; mínimo de 3 leituras, lacunas e início/fim cobertos com tolerância de 3 s; limite de 90% sobre o máximo dessas leituras. A amostra pós-saída é só descritiva e nunca aprova. Sem cobertura = falha fechada.
+3. `cont.needed` e `cont.cpu` têm de existir, ser numéricos, finitos e não negativos; ausente ou null NUNCA vira zero (smoke falha, célula SEM PROVA). L100 exige needed > 0 e cpu explicitamente 0.
+4. Se o smoke real terminar sem o mínimo de leituras (geração muito curta), vale a falha fechada: a janela do modelo para e o resultado é "L100 NÃO SUSTENTA 100%: leituras insuficientes". Sem repetição automática.

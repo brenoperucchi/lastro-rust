@@ -85,7 +85,7 @@ declare -A FIXO=(
   [ref5c-3b]=968d9b391324a99fbaf5c772a351018b90105f572b32ee2db3140f79da123124
   [tokenizer-1b]=ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654
   [tokenizer-3b]=ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654
-  [criterio-degrau1]=f28cb569e522aea8ad8dee00c2cd139ff653231759a1359b058fcf8e07db5b96
+  [criterio-degrau1]=f7b5d7ebbb5ff3da25013ae95b0f311efc0c18e0331962504bf5dfefd0ba687b
 )
 CHAVES=(); CAMINHOS=()
 monta_lista() {
