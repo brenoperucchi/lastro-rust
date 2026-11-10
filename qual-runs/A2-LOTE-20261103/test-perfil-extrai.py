@@ -78,12 +78,12 @@ class Base(unittest.TestCase):
         self.shas["tokenizer-3b"] = "c" * 64
         self.manifesto()
 
-    def manifesto(self, chaves=None, estado="OK", depois_igual=True):
+    def manifesto(self, chaves=None, estado="OK", depois_igual=True, potencia="potencia 370.00_W 370.00_W OK\n"):
         ks = [k for k in self.shas if k != "gguf-extra"] if chaves is None else chaves
         antes = "".join("%s %s\n" % (k, h) for k, h in self.shas.items())
         grava(os.path.join(self.saida, "integridade-antes.txt"), antes)
         grava(os.path.join(self.saida, "integridade-depois.txt"), antes)
-        grava(os.path.join(self.saida, "integridade-fixos.txt"), "".join("%s %s %s %s\n" % (k, self.shas[k], self.shas[k], estado) for k in ks))
+        grava(os.path.join(self.saida, "integridade-fixos.txt"), "".join("%s %s %s %s\n" % (k, self.shas[k], self.shas[k], estado) for k in ks) + (potencia or ""))
 
     def smoke(self, s, ok, motivo="memória usada da GPU 95% > 90%"):
         grava(os.path.join(self.saida, "smoke-%s" % s, "veredito.txt"), "veredito=OK\n" if ok else "veredito=FALHA\nmotivo=%s\n" % motivo)
@@ -441,6 +441,30 @@ class TestValidade(Base):
         grava(os.path.join(self.saida, "integridade-fixos.txt"), "criterio-perfil aaa bbb FALHA\n")
         r = self.roda()
         self.assertTrue(all(c["status"] == "SEM PROVA" for c in r["celulas"].values()))
+
+    def _sem_prova_potencia(self, potencia, trecho):
+        self.tudo()
+        self.manifesto(potencia=potencia)
+        r = self.roda()
+        self.assertTrue(all(c["status"] == "SEM PROVA" for c in r["celulas"].values()))
+        self.assertTrue(any(trecho in m for m in r["integridade_problemas"]), r["integridade_problemas"])
+        return r
+
+    def test_potencia_estavel_vale(self):
+        self.tudo()
+        r = self.roda()
+        self.assertFalse(r["integridade_problemas"])
+        self.assertTrue(any(c["status"] == "OK" for c in r["celulas"].values()))
+
+    def test_potencia_mudou_ao_fim_sem_prova_e_sem_previsoes(self):
+        r = self._sem_prova_potencia("potencia inicio=370.00_W fim=300.00_W FALHA\n", "power.limit fora de 370.00 W")
+        self.assertTrue(all(s["status"] == "SEM PROVA" for s in r["series"].values()))
+
+    def test_potencia_ilegivel_ao_fim_sem_prova(self):
+        self._sem_prova_potencia("potencia inicio=370.00_W fim=ilegivel FALHA\n", "ilegivel")
+
+    def test_potencia_ausente_do_manifesto_sem_prova(self):
+        self._sem_prova_potencia(None, "potencia")
 
     def test_memoria_do_host_fora_do_nominal(self):
         self.tudo()

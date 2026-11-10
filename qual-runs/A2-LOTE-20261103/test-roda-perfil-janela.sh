@@ -33,6 +33,7 @@ cat > "$D/smi" <<'F'
 [ -z "${SMI_LOG:-}" ] || echo "$*" >> "$SMI_LOG"
 case $* in
   *-lms*) echo "2026/11/09 04:00:00.000, 12 %";;
+  *"--query-gpu=power.limit --format"*) f=${0%/*}/pot-seq; if [ -s "$f" ]; then l=$(head -n 1 "$f"); tail -n +2 "$f" > "$f.t"; mv "$f.t" "$f"; [ "$l" = FALHA ] && exit 1; echo "$l"; else echo "370.00 W"; fi;;
   *"-i GPU-b22d9465-8552-9f97-812e-380b590645f8 --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max"*) echo "370.00 W, 16, 4";;
   *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%]"; echo "GPU-falsa, 1 MiB, 0 %";;
   *pmon*) if [ -n "${FAKE_PMON_ARQ:-}" ]; then cat "$FAKE_PMON_ARQ"; else echo "# gpu pid type sm mem enc dec jpg ofa fb ccpm command"; echo "# Idx # C/G % % % % % % MB MB name"; fi;;
@@ -116,11 +117,21 @@ confere "A: pastas de célula novas (uma por célula) e integridade antes/depois
 confere "A: P4 por célula: arquivos .gpu.csv e .cpu.csv de cada uma das 9 células; nvidia-smi chamado com -i <UUID da 3080 Ti> --query-gpu=timestamp,utilization.gpu --format=csv,noheader -lms 100" "[ \$(ls $D/si-A/p4/*.gpu.csv | wc -l) = 9 ] && [ \$(ls $D/si-A/p4/*.cpu.csv | wc -l) = 9 ] && grep -q -- \"-i $UUID --query-gpu=timestamp,utilization.gpu --format=csv,noheader -lms 100\" $D/smilog-A && grep -q '12 %' $D/si-A/p4/lastro-1b-L10-curto-quente.gpu.csv && ! grep -q dmon $D/smilog-A"
 confere "A: o extrator do perfil rodou (perfil-resultado.json e .md)" "[ -s $D/si-A/perfil-resultado.json ] && [ -s $D/si-A/perfil-resultado.md ] && grep -q 'perfil-extrai: células' $D/si-A/decisao.txt"
 confere "A: nenhuma amostragem órfã de nvidia-smi ou do amostrador depois da janela" "! pgrep -f \"$D/smi -i $UUID\" > /dev/null && ! pgrep -f \"perfil-amostra-cpu.py --raiz\" > /dev/null"
-confere "A: manifesto integridade-fixos.txt gravado de uma vez (sem .tmp), uma entrada por chave congelada; com SEM_SHA_FIXO=1 o extrator o recusa (NAO-CONFERIDO) e nenhuma previsão sai" "[ ! -e $D/si-A/.integridade-fixos.tmp ] && [ \$(grep -c 'NAO-CONFERIDO\$' $D/si-A/integridade-fixos.txt) = \$(wc -l < $D/si-A/integridade-fixos.txt) ] && grep -q '^criterio-perfil ' $D/si-A/integridade-fixos.txt && grep -q '^tokenizer-1b ' $D/si-A/integridade-fixos.txt && python3 -I -c \"import json; r=json.load(open('$D/si-A/perfil-resultado.json')); assert any('NAO-CONFERIDO' in x for x in r['integridade_problemas']); assert all(c['status']=='SEM PROVA' for c in r['celulas'].values()); assert all(s['previsoes']['P1']['resultado'].startswith('SEM PROVA') for s in r['series'].values())\""
+confere "A: manifesto integridade-fixos.txt gravado de uma vez (sem .tmp), uma entrada por chave congelada; com SEM_SHA_FIXO=1 o extrator o recusa (NAO-CONFERIDO) e nenhuma previsão sai" "[ ! -e $D/si-A/.integridade-fixos.tmp ] && [ \$(( \$(grep -c 'NAO-CONFERIDO\$' $D/si-A/integridade-fixos.txt) + 1 )) = \$(wc -l < $D/si-A/integridade-fixos.txt) ] && grep -qx 'potencia 370.00_W 370.00_W OK' $D/si-A/integridade-fixos.txt && grep -q '^criterio-perfil ' $D/si-A/integridade-fixos.txt && grep -q '^tokenizer-1b ' $D/si-A/integridade-fixos.txt && python3 -I -c \"import json; r=json.load(open('$D/si-A/perfil-resultado.json')); assert any('NAO-CONFERIDO' in x for x in r['integridade_problemas']); assert all(c['status']=='SEM PROVA' for c in r['celulas'].values()); assert all(s['previsoes']['P1']['resultado'].startswith('SEM PROVA') for s in r['series'].values())\""
 # A3. janela do 3B: camadas 29
 interno A3 100000 3b
 confere "A3 (3B): células lastro-3b-..., smoke e LC com CMP_CAMADAS_CPU=29, safetensors do 3B e não os do 1B" "[ \$(nceluas A3) = 9 ] && grep -q '^SMOKE 3b FRAC= CAMADAS=29\$' $D/log-A3 && grep -c 'LC-.* CAMADAS=29 ' $D/log-A3 | grep -q '^3\$' && grep -q '^safetensors-3b-2 ' $D/si-A3/integridade-antes.txt && ! grep -q '^safetensors-1b' $D/si-A3/integridade-antes.txt"
 # B. cortes: o ÚNICO corte é quente 5 -> 3; o que não couber é NÃO RODOU
+# power.limit ao fim (Emenda 2/10): a janela roda, mas o limite mudou ou não pôde ser lido = integridade QUEBRADA (SEM PROVA), causa no manifesto, em ambiente.txt, na decisão e no extrator
+rm -f "$D/pot-seq"; interno PE 100000
+confere "PE (370 W estáveis): válido, manifesto com potencia OK, ambiente com potencia_inicio e potencia_fim, integridade íntegra" "[ $RC = 0 ] && grep -qx 'potencia 370.00_W 370.00_W OK' $D/si-PE/integridade-fixos.txt && grep -qx 'potencia_inicio=370.00_W' $D/si-PE/ambiente.txt && grep -qx 'potencia_fim=370.00_W' $D/si-PE/ambiente.txt && grep -q 'integridade: íntegra' $D/si-PE/decisao.txt"
+printf '370.00 W\n300.00 W\n' > "$D/pot-seq"; interno PM 100000
+confere "PM (370 no início, 300 ao fim): a janela roda, manifesto com FALHA, ambiente registra início e fim, decisão QUEBRADA citando power.limit, extrator reporta a causa" "[ $RC = 0 ] && grep -qx 'potencia inicio=370.00_W fim=300.00_W FALHA' $D/si-PM/integridade-fixos.txt && grep -qx 'potencia_fim=300.00_W' $D/si-PM/ambiente.txt && grep -q 'integridade: QUEBRADA' $D/si-PM/decisao.txt && grep -q 'power.limit' $D/si-PM/decisao.txt && grep -q 'potencia inicio=370.00_W fim=300.00_W FALHA\|power.limit fora de 370.00 W' $D/si-PM/perfil-resultado.json"
+printf '370.00 W\nFALHA\n' > "$D/pot-seq"; interno PF 100000
+confere "PF (leitura ausente ao fim): a janela roda, integridade QUEBRADA, fim ilegivel no ambiente e no manifesto, extrator reporta a causa" "[ $RC = 0 ] && grep -qx 'potencia inicio=370.00_W fim=ilegivel FALHA' $D/si-PF/integridade-fixos.txt && grep -qx 'potencia_fim=ilegivel' $D/si-PF/ambiente.txt && grep -q 'integridade: QUEBRADA' $D/si-PF/decisao.txt && grep -q 'ilegivel' $D/si-PF/perfil-resultado.json"
+printf '370.00 W\nN/A\n' > "$D/pot-seq"; interno PI 100000
+confere "PI (leitura ilegível 'N/A' ao fim): integridade QUEBRADA" "[ $RC = 0 ] && grep -q 'integridade: QUEBRADA' $D/si-PI/decisao.txt && grep -q 'FALHA' $D/si-PI/integridade-fixos.txt"
+rm -f "$D/pot-seq"
 interno B 540
 confere "B (limite 540 = exatamente o nominal 9x60): sem corte, 9 células com n=5" "[ \$(cortes B) = 0 ] && [ \$(nceluas B) = 9 ] && [ \$(grep -c ' n=5 ' $D/log-B) = 9 ]"
 interno C 539
@@ -214,6 +225,10 @@ export CUDA_VISIBLE_DEVICES=$UUID
 export PRIMEIRA_PALAVRA_AUTORIZADA=0
 roda portao-zero; confere "portão diferente de 1: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-portao-zero ]"
 export PRIMEIRA_PALAVRA_AUTORIZADA=1
+# power.limit (Emenda 2/10): diferente de 370.00 W no preflight = recusa 2 antes de tocar em timers; leitura ilegível ou ausente também
+printf '300.00 W\n' > "$D/pot-seq"; roda pot-300; confere "power.limit 300 W no preflight: recusa 2 citando o limite, nada tocado (timers, pasta, células)" "[ $RC = 2 ] && grep -q '370.00 W' $D/oute-pot-300 && grep -q \"'300.00 W'\" $D/oute-pot-300 && [ ! -s $D/elog-pot-300 ] && ! grep -q '^stop' $D/pot-300/log && [ ! -e $D/se-pot-300 ] && [ ! -e $D/se-pot-300.timers-antes.txt ]"
+printf 'FALHA\n' > "$D/pot-seq"; roda pot-falha; confere "power.limit ilegível/ausente no preflight (nvidia-smi falha): recusa 2, nada tocado" "[ $RC = 2 ] && grep -q 'ilegível' $D/oute-pot-falha && [ ! -s $D/elog-pot-falha ] && ! grep -q '^stop' $D/pot-falha/log && [ ! -e $D/se-pot-falha ]"
+rm -f "$D/pot-seq"
 mkdir -p "$D/se-ocupada"; echo x > "$D/se-ocupada/a"
 roda ocupada; confere "--saida não vazia: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-ocupada ]"
 # GPU ocupada: voxtype e Chrome (C+G) abertos na 3080 Ti = recusa 2 ANTES de tocar em timers, com a lista; só G passa
@@ -248,7 +263,7 @@ confere "CMP_MODO_TESTE=1 (modo de teste explícito) aceita a variável de teste
 env -i PATH="$PATH" HOME="$HOME" "$J" --verifica-fixos > "$D/fixos.txt" 2>&1; rcf=$?
 nok=$(grep -c ' OK$' "$D/fixos.txt"); nfal=$(grep -c ' FALHA$' "$D/fixos.txt"); naus=$(grep -c ' AUSENTE ' "$D/fixos.txt")
 echo "congelados do FIXO contra os arquivos reais: $nok OK, $nfal FALHA, $naus AUSENTE (código $rcf)"
-confere "--verifica-fixos: código 0 só com tudo OK (nenhum FALHA nem AUSENTE) e os itens essenciais presentes" "[ $rcf = 0 ] && [ $nfal = 0 ] && [ $naus = 0 ] && [ $nok -ge 20 ] && grep -q '^criterio-perfil c006361c.*2c87 OK\$' $D/fixos.txt && grep -q '^binario-lastro .* OK\$' $D/fixos.txt && grep -q '^script-perfil-extrai .* OK\$' $D/fixos.txt && grep -q '^script-lastro .* OK\$' $D/fixos.txt && grep -q '^texto-longo .* OK\$' $D/fixos.txt && grep -q '^ref5c-3b .* OK\$' $D/fixos.txt && grep -q '^tokenizer-3b .* OK\$' $D/fixos.txt"
+confere "--verifica-fixos: código 0 só com tudo OK (nenhum FALHA nem AUSENTE) e os itens essenciais presentes" "[ $rcf = 0 ] && [ $nfal = 0 ] && [ $naus = 0 ] && [ $nok -ge 20 ] && grep -q '^criterio-perfil fd9b6190.*4e9e OK\$' $D/fixos.txt && grep -q '^binario-lastro .* OK\$' $D/fixos.txt && grep -q '^script-perfil-extrai .* OK\$' $D/fixos.txt && grep -q '^script-lastro .* OK\$' $D/fixos.txt && grep -q '^texto-longo .* OK\$' $D/fixos.txt && grep -q '^ref5c-3b .* OK\$' $D/fixos.txt && grep -q '^tokenizer-3b .* OK\$' $D/fixos.txt"
 confere "--verifica-fixos: o sha congelado do critério do perfil é o do arquivo atual (sha256sum direto)" "[ \"\$(grep '^criterio-perfil ' $D/fixos.txt | cut -d' ' -f2)\" = \"\$(sha256sum $AQUI/criterio-perfil-prefill-20261109.md | cut -d' ' -f1)\" ]"
 # arquivo de integridade alterado: FALHA e código 1; arquivo ausente: AUSENTE e código 1
 echo alterado > "$D/crit-perfil-alterado.md"

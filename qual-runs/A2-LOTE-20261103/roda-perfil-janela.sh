@@ -58,6 +58,10 @@ LIMITE_MAX=1200
 SAIDA=; ESTADO=; LIMITE=$LIMITE_MAX; INTERNO=0; MODELOS=; VERIFICA=0
 usa() { echo "uso: roda-perfil-janela.sh --modelos 1b|3b --saida DIR [--estado-janela DIR] [--bin PRIMEIRA_PALAVRA] [--limite S] | --verifica-fixos" >&2; }
 recusa() { echo "roda-perfil-janela: $*" >&2; exit 2; }
+# Portão e registro da potência (Emenda 2 do perfil, Emenda 10 do cmp): le_pot lê só o power.limit da 3080 Ti (vazio se a leitura falhar); tem de ser 370.00 W no preflight (senão recusa 2) e de novo ao fim (senão a janela vira SEM PROVA via manifesto)
+POT_OK="370.00 W"
+le_pot() { "${NVIDIA_SMI:-nvidia-smi}" -i "$UUID" --query-gpu=power.limit --format=csv,noheader 2> /dev/null | head -n 1 | cut -d, -f1 | sed 's/^ *//;s/ *$//'; }
+pot_tok() { local v=${1:-}; [ -n "$v" ] || v=ilegivel; echo "${v// /_}"; }
 while [ $# -gt 0 ]; do
   case $1 in
     --saida) [ $# -ge 2 ] || { usa; exit 2; }; SAIDA=$2; shift 2;;
@@ -75,16 +79,16 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 # SHAs congelados (valem onde o critério já os fixa; GGUF, config e safetensors dos modelos só precisam ser iguais antes e depois). Os scripts e o binário daqui entram no FIXO.
 # O próprio roda-perfil-janela.sh NÃO pode conter o seu sha: --verifica-fixos o imprime à parte (linha informativa) para conferência por fora.
 declare -A FIXO=(
-  [criterio-perfil]=c006361c4447c587a980db5e911eef97161275358768561e92005a3843632c87
+  [criterio-perfil]=fd9b6190773887c436ba3a3293121d4913113d1c995babf7151cab678e8a4e9e
   [binario-lastro]=65faf6e712276b2c6a6029fdd0ac8315fe1f707920f2b18e0205ef511d38a3e4
-  [script-perfil-extrai]=4199484739b7550acf9898391e5b1e982c1e5af33841adeba6c10436c1f5ed8c
+  [script-perfil-extrai]=755e1d7dd622e98dce9513ef30584e21667a5bc9d8c08cce4198090b2c34ba68
   [script-amostra-cpu]=de17df09d75015b54bc527954dc54944c465328a9bab1fbce6e20bb5a8adb3f4
   [script-cmp-extrai]=b02008a850bb034f97b8d0f9bf02d3e12bd515bc783f662c37c9d78de132999c
   [script-lastro]=8e924a36fff414f337857ffc75fc88c5b23e4cf12c3d6314384f3979cab80757
   [script-monitor]=d9d6adc7ccfab15fd87ff64c48e22c3dbda7b6ae4bb24baef48649164a2800dc
   [script-janela]=a168e6672ba87429b8c5ccc0c80ba7daa36335f6a911b91a3744454cf7e63d60
   [script-limite]=196c05649b43e64361766e98e5bab9873636799dfa5d83f70a468436cd4759cc
-  [criterio-cmp]=58dc7a4033272f7b7552d2d1edb26f427bd448ec5d93737e55b162683140e31f
+  [criterio-cmp]=bf3ef09b9c1e915e248050bdf2a509c04aab08c7a5f11db1c335f424d3b2c64f
   [criterio-degrau1]=8c3406a9fd3ba55133dfb2c2d3800076c6ee0a765735edf8be65f6ba1a72c7de
   [criterio-degrau2]=bd8cb0510d5a6c3f55ec320a3177e2bec7ebce7b5776529989f0c45a61599b2a
   [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
@@ -174,6 +178,7 @@ if [ $INTERNO = 1 ]; then
     "$SMI" --query-gpu=name,driver_version,clocks.max.memory --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu=/'
     # Emenda 10/2: limite de potência e link PCIe da placa de medida, registrados (a série vale no limite vigente, hoje 370 W; se mudar, a série é invalidada)
     "$SMI" -i "$UUID" --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu_limites=/'
+    POT_INI=$(le_pot); echo "potencia_inicio=$(pot_tok "$POT_INI")"
     echo "loadavg=$(cut -d' ' -f1-3 < /proc/loadavg 2>/dev/null)"
     if [ "${CMP_SEM_MEMORIA:-0}" != 1 ]; then
       mts=$(sudo -n dmidecode -t memory 2>/dev/null | awk -F': ' '/Configured Memory Speed/ && $2 ~ /[0-9]/ { split($2, a, " "); print a[1]; exit }')
@@ -286,6 +291,7 @@ if [ $INTERNO = 1 ]; then
 
   # ---- integridade depois
   coleta_shas "$SAIDA/integridade-depois.txt"
+  POT_FIM=$(le_pot); echo "potencia_fim=$(pot_tok "$POT_FIM")" >> "$SAIDA/ambiente.txt"
   INTEGRO=1; NOTAS=()
   if ! cmp -s "$SAIDA/integridade-antes.txt" "$SAIDA/integridade-depois.txt"; then INTEGRO=0; NOTAS+=("sha mudou entre antes e depois"); fi
   # manifesto gravado em arquivo temporário e movido de uma vez: a interrupção entre integridade-depois.txt e este arquivo deixa o manifesto AUSENTE (perfil-extrai.py trata como SEM PROVA em tudo), nunca truncado
@@ -298,6 +304,9 @@ if [ $INTERNO = 1 ]; then
       else INTEGRO=0; NOTAS+=("$k com sha $h, não o congelado"); echo "$k ${FIXO[$k]} $h FALHA" >> "$SAIDA/.integridade-fixos.tmp"; fi
     fi
   done < "$SAIDA/integridade-antes.txt"
+  # power.limit: o mesmo 370 W do preflight no início e ao fim; mudança, leitura ausente ou ilegível = integridade QUEBRADA (tudo SEM PROVA, a causa vai no manifesto e em NOTAS)
+  if [ "$POT_INI" = "$POT_OK" ] && [ "$POT_FIM" = "$POT_OK" ]; then echo "potencia ${POT_OK// /_} $(pot_tok "$POT_FIM") OK" >> "$SAIDA/.integridade-fixos.tmp"
+  else INTEGRO=0; NOTAS+=("power.limit fora de $POT_OK ou ilegível (início '${POT_INI:-ilegível}', fim '${POT_FIM:-ilegível}')"); echo "potencia inicio=$(pot_tok "$POT_INI") fim=$(pot_tok "$POT_FIM") FALHA" >> "$SAIDA/.integridade-fixos.tmp"; fi
   mv "$SAIDA/.integridade-fixos.tmp" "$SAIDA/integridade-fixos.txt"
   # ---- orçamento declarado
   {
@@ -353,6 +362,8 @@ for d in "$SAIDA" "$ESTADO"; do
 done
 SAIDA=$(realpath -m "$SAIDA"); BIN=$(realpath "$BIN")
 # falha FECHADA antes de tocar em timers ou na GPU: QUALQUER PID C ou C+G na 3080 Ti (voxtype, processo de GPU do Chrome...) recusa a janela; só PIDs de tipo G (desktop gráfico) são isentos.
+POT_PRE=$(le_pot)
+[ "$POT_PRE" = "$POT_OK" ] || recusa "power.limit da 3080 Ti tem de ser $POT_OK (lido: '${POT_PRE:-ilegível}'); a série vale só no limite vigente; nada foi tocado, não mexa no limite por este roteiro"
 PREFLIGHT=$("$MONITOR" preflight 2>&1) || recusa "processo(s) de compute na 3080 Ti que precisam ser FECHADOS antes da janela (voxtype, processo de GPU do Chrome...): $PREFLIGHT"
 TIMERS=()
 [ -z "${JANELA_TIMERS:-}" ] || TIMERS=(--timers "$JANELA_TIMERS")

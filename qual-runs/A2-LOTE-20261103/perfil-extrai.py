@@ -95,6 +95,11 @@ def integridade_fixos(saida, m):
         if k in vistas:
             mot.append("integridade FIXA: chave %s repetida no manifesto" % k)
         vistas[k] = c
+        if k == "potencia":
+            # power.limit (Emenda 2): 370.00 W no início e ao fim; a linha é `potencia 370.00_W 370.00_W OK`, ou `potencia inicio=X fim=Y FALHA` (mudou, leitura ausente ou ilegível)
+            if est != "OK" or esp != "370.00_W" or obs != "370.00_W":
+                mot.append("integridade FIXA: power.limit fora de 370.00 W ou ilegível (%s %s, estado %s): janela SEM PROVA" % (esp, obs, est))
+            continue
         if est != "OK":
             mot.append("integridade FIXA: %s com estado %s (esperado OK)" % (k, est))
         elif not (re.fullmatch(r"[0-9a-f]{64}", esp) and esp == obs):
@@ -103,7 +108,7 @@ def integridade_fixos(saida, m):
             mot.append("integridade FIXA: %s ausente de integridade-antes.txt (o snapshot inicial tem de ter toda chave obrigatória)" % k)
         elif antes.get(k) != obs:
             mot.append("integridade FIXA: %s com sha diferente do de integridade-antes.txt" % k)
-    falta = [k for k in FIXO_CHAVES + ("tokenizer-%s" % m,) if k not in vistas]
+    falta = [k for k in FIXO_CHAVES + ("tokenizer-%s" % m, "potencia") if k not in vistas]
     if falta:
         mot.append("integridade FIXA: chave(s) faltando no manifesto: %s" % ", ".join(falta))
     return sorted(set(mot))

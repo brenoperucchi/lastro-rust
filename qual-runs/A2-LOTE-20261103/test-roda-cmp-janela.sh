@@ -23,7 +23,7 @@ echo c > "$D/textos/texto-curto.txt"; echo m > "$D/textos/texto-medio.txt"; echo
 echo r1 > "$D/refs/ref5c-1b.json"; echo r3 > "$D/refs/ref5c-3b.json"
 echo '{"modelos": {}}' > "$D/ids.json"; echo criterio > "$D/crit.md"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$D/pp"; chmod +x "$D/pp"
-printf '#!/usr/bin/env bash\ncase $* in *power.limit*) case $* in *"-i GPU-b22d9465-8552-9f97-812e-380b590645f8 "*) echo "370.00 W, 16, 4";; esac;; *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%%]"; echo "GPU-falsa, 1 MiB, 0 %%";; *pmon*) if [ -n "${FAKE_PMON_ARQ:-}" ]; then cat "$FAKE_PMON_ARQ"; else echo "# gpu pid type sm mem enc dec jpg ofa fb ccpm command"; echo "# Idx # C/G %% %% %% %% %% %% MB MB name"; fi;; *) echo;; esac\n' > "$D/smi"; chmod +x "$D/smi"
+printf '#!/usr/bin/env bash\ncase $* in *power.limit*) case $* in *"query-gpu=power.limit --format"*) f=${0%%/*}/pot-seq; if [ -s "$f" ]; then l=$(head -n 1 "$f"); tail -n +2 "$f" > "$f.t"; mv "$f.t" "$f"; [ "$l" = FALHA ] && exit 1; echo "$l"; else echo "370.00 W"; fi;; *"-i GPU-b22d9465-8552-9f97-812e-380b590645f8 "*) echo "370.00 W, 16, 4";; esac;; *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%%]"; echo "GPU-falsa, 1 MiB, 0 %%";; *pmon*) if [ -n "${FAKE_PMON_ARQ:-}" ]; then cat "$FAKE_PMON_ARQ"; else echo "# gpu pid type sm mem enc dec jpg ofa fb ccpm command"; echo "# Idx # C/G %% %% %% %% %% %% MB MB name"; fi;; *) echo;; esac\n' > "$D/smi"; chmod +x "$D/smi"
 # células falsas: avançam o relógio virtual pelo custo (mesma fórmula das estimativas dos testes) e gravam celula.json
 cat > "$D/celula-falsa.sh" <<'F'
 #!/usr/bin/env bash
@@ -85,6 +85,16 @@ confere "A: lados ALTERNADOS: bloco 0 começa pelo Lastro, bloco 1 pelo llama.cp
 confere "A: ambiente.txt registra power.limit, largura e geração do PCIe da placa de medida (consulta com -i UUID)" "grep -qx 'gpu_limites=370.00 W, 16, 4' $D/si-A/ambiente.txt"
 confere "A: pastas de célula novas (uma por célula), integridade antes/depois e ambiente gravados, extrator rodou" "[ \$(ls $D/si-A/celulas | wc -l) = 48 ] && [ -s $D/si-A/integridade-antes.txt ] && cmp -s $D/si-A/integridade-antes.txt $D/si-A/integridade-depois.txt && [ -s $D/si-A/ambiente.txt ] && [ -s $D/si-A/cmp-resultado.json ] && [ -s $D/si-A/cmp-resultado.md ] && grep -q '^llama-lib-libllama.so.0.8.0 ' $D/si-A/integridade-antes.txt && grep -q '^safetensors-3b-2 ' $D/si-A/integridade-antes.txt && grep -q '^gguf-3b ' $D/si-A/integridade-antes.txt"
 # B. S3 não cabe: corte (1) apenas
+# power.limit ao fim (Emenda 2/10): a janela roda, mas o limite mudou ou não pôde ser lido = integridade QUEBRADA (SEM PROVA), causa no manifesto, em ambiente.txt, na decisão e no extrator
+rm -f "$D/pot-seq"; interno PE 100000
+confere "PE (370 W estáveis): válido, manifesto com potencia OK, ambiente com potencia_inicio e potencia_fim, integridade íntegra" "[ $RC = 0 ] && grep -qx 'potencia 370.00_W 370.00_W OK' $D/si-PE/integridade-fixos.txt && grep -qx 'potencia_inicio=370.00_W' $D/si-PE/ambiente.txt && grep -qx 'potencia_fim=370.00_W' $D/si-PE/ambiente.txt && grep -q 'integridade: íntegra' $D/si-PE/decisao.txt"
+printf '370.00 W\n300.00 W\n' > "$D/pot-seq"; interno PM 100000
+confere "PM (370 no início, 300 ao fim): a janela roda, manifesto com FALHA, ambiente registra início e fim, decisão QUEBRADA citando power.limit, extrator reporta a causa" "[ $RC = 0 ] && grep -qx 'potencia inicio=370.00_W fim=300.00_W FALHA' $D/si-PM/integridade-fixos.txt && grep -qx 'potencia_fim=300.00_W' $D/si-PM/ambiente.txt && grep -q 'integridade: QUEBRADA' $D/si-PM/decisao.txt && grep -q 'power.limit' $D/si-PM/decisao.txt && grep -q 'potencia inicio=370.00_W fim=300.00_W FALHA\|power.limit fora de 370.00 W' $D/si-PM/cmp-resultado.json"
+printf '370.00 W\nFALHA\n' > "$D/pot-seq"; interno PF 100000
+confere "PF (leitura ausente ao fim): a janela roda, integridade QUEBRADA, fim ilegivel no ambiente e no manifesto, extrator reporta a causa" "[ $RC = 0 ] && grep -qx 'potencia inicio=370.00_W fim=ilegivel FALHA' $D/si-PF/integridade-fixos.txt && grep -qx 'potencia_fim=ilegivel' $D/si-PF/ambiente.txt && grep -q 'integridade: QUEBRADA' $D/si-PF/decisao.txt && grep -q 'ilegivel' $D/si-PF/cmp-resultado.json"
+printf '370.00 W\nN/A\n' > "$D/pot-seq"; interno PI 100000
+confere "PI (leitura ilegível 'N/A' ao fim): integridade QUEBRADA" "[ $RC = 0 ] && grep -q 'integridade: QUEBRADA' $D/si-PI/decisao.txt && grep -q 'FALHA' $D/si-PI/integridade-fixos.txt"
+rm -f "$D/pot-seq"
 interno B 1500
 confere "B (limite 1500, projeção 1800): só a S3 é cortada (1º corte), 36 células, S3 NÃO RODOU" "[ \$(nceluas B) = 36 ] && [ \$(cortes B) = 1 ] && grep -q '(1) S3 inteira não roda' $D/si-B/orcamento.json && ! grep -q 'S3' $D/si-B/ordem.txt && grep -q 'NÃO RODOU: llamacpp-1b-S3-curto' $D/si-B/orcamento-log.txt"
 # C. 1000: S3, S2 do 3B e S2 do 1B
@@ -191,6 +201,10 @@ export CUDA_VISIBLE_DEVICES=$UUID
 export PRIMEIRA_PALAVRA_AUTORIZADA=0
 roda portao-zero; confere "portão diferente de 1: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-portao-zero ]"
 export PRIMEIRA_PALAVRA_AUTORIZADA=1
+# power.limit (Emenda 2/10): diferente de 370.00 W no preflight = recusa 2 antes de tocar em timers; leitura ilegível ou ausente também
+printf '300.00 W\n' > "$D/pot-seq"; roda pot-300; confere "power.limit 300 W no preflight: recusa 2 citando o limite, nada tocado (timers, pasta, células)" "[ $RC = 2 ] && grep -q '370.00 W' $D/oute-pot-300 && grep -q \"'300.00 W'\" $D/oute-pot-300 && [ ! -s $D/elog-pot-300 ] && ! grep -q '^stop' $D/pot-300/log && [ ! -e $D/se-pot-300 ] && [ ! -e $D/se-pot-300.timers-antes.txt ]"
+printf 'FALHA\n' > "$D/pot-seq"; roda pot-falha; confere "power.limit ilegível/ausente no preflight (nvidia-smi falha): recusa 2, nada tocado" "[ $RC = 2 ] && grep -q 'ilegível' $D/oute-pot-falha && [ ! -s $D/elog-pot-falha ] && ! grep -q '^stop' $D/pot-falha/log && [ ! -e $D/se-pot-falha ]"
+rm -f "$D/pot-seq"
 mkdir -p "$D/se-ocupada"; echo x > "$D/se-ocupada/a"
 roda ocupada; confere "--saida não vazia: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-ocupada ]"
 # emenda 9: voxtype e Chrome (C+G) abertos na 4090 = recusa 2 ANTES de tocar em timers, com a lista; só G passa
