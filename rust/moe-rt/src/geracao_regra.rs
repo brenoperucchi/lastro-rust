@@ -239,7 +239,7 @@ where
     let total_ms = ms(t_entrada.elapsed());
     // Fora dos cronômetros: o merge entre host e serviço do instrumento (espera pelo registro do último bloco do serviço, se preciso).
     if pf.ativo() {
-        let d = DadosPedido { indice: perfil.len(), aquecimento: *aquecimento, n: ids.len(), plano, prefill_ms, decode_passo_ms_mediana: mediana(&passo_ms) };
+        let d = DadosPedido { modelo: String::new(), indice: perfil.len(), aquecimento: *aquecimento, n: ids.len(), plano, prefill_ms, decode_passo_ms_mediana: mediana(&passo_ms) };
         perfil.extend(pf.fecha(d));
     }
     // Fora dos cronômetros: a posição tem de ser a do prompt mais os tokens realimentados.

@@ -468,7 +468,7 @@ fn roda_perfil(n: usize, perfil: bool, decode: usize) -> (Vec<(u64, Vec<usize>)>
     for k in 0..decode {
         le_ids(&mut eng, &prep, &[(k * 5 + 1) % VOCAB]).unwrap();
     }
-    let d = DadosPedido { indice: 0, aquecimento: false, n, plano: plano_blocos(n, 8), prefill_ms: 0.0, decode_passo_ms_mediana: 1.0 };
+    let d = DadosPedido { modelo: String::new(), indice: 0, aquecimento: false, n, plano: plano_blocos(n, 8), prefill_ms: 0.0, decode_passo_ms_mediana: 1.0 };
     let mut e = pf.fecha_com(d, &mut || {
         let _ = super::backend::Backend::relax(&*gpu);
     });

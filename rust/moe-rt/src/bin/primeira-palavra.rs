@@ -947,7 +947,10 @@ fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>, perfi
             medidas.extend(serie);
         }
         rec.criacoes = guardado.criacoes;
-        perfil.extend(std::mem::take(&mut guardado.perfil));
+        perfil.extend(std::mem::take(&mut guardado.perfil).into_iter().map(|mut e| {
+            e.modelo = nome.to_string();
+            e
+        }));
         guardado.encerra().map_err(|e| format!("encerramento do motor reutilizado: {e}"))
     })();
     if let Err(e) = r {

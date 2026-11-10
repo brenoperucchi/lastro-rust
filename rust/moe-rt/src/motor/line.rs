@@ -289,6 +289,8 @@ impl<B: Backend> Service<B> {
                       sides: [Pinned<[AtomicU32]>; 2]) -> Self {
         let keys = cfg.layers * cfg.experts;
         let [s0, s1] = sides;
+        // Capacidade das operações de um bloco (até ~10 por camada), reservada só com o instrumento ligado: o caminho quente não aloca.
+        let acc = if sh.pf.is_some() { crate::perfil_bloco::AccServ::com_capacidade(cfg.layers * 10 + 8) } else { Default::default() };
         Self {
             b,
             sh,
@@ -304,23 +306,40 @@ impl<B: Backend> Service<B> {
             late_record: Vec::new(),
             sides: [Some(s0), Some(s1)],
             stats: Stats::default(),
-            acc: Default::default(),
+            acc,
             cfg,
         }
     }
 
-    /// Fecha a fase `i` do instrumento no instante de agora (nada com o instrumento ausente).
+    /// Carimbo de INÍCIO de uma operação nomeada do instrumento (0, sem ler relógio, com o instrumento ausente).
     #[inline]
-    fn pf_fase(&mut self, i: usize) {
+    fn pf_t(&self) -> u64 {
         if self.sh.pf.is_some() {
-            self.acc.fase(i, crate::perfil_bloco::agora_ns());
+            crate::perfil_bloco::agora_ns()
+        } else {
+            0
         }
     }
 
-    /// Fim do bloco do serviço: guarda o intervalo se o bloco nasceu armado (decidido na camada 0).
+    /// FIM da operação nomeada `i`, iniciada em `t0`: registra o intervalo [t0, agora] e devolve o carimbo de agora, que serve de início
+    /// à próxima operação quando ela começa na hora. Tempo entre duas operações (diagnóstico, laço) NÃO é absorvido: vira `S_fora`.
+    #[inline]
+    fn pf_op(&mut self, i: usize, t0: u64) -> u64 {
+        if self.sh.pf.is_some() {
+            let agora = crate::perfil_bloco::agora_ns();
+            self.acc.op(i, t0, agora);
+            agora
+        } else {
+            0
+        }
+    }
+
+    /// Fim do bloco do serviço: o limite de I_g é o carimbo de agora (independente das operações); guarda o registro se o bloco nasceu
+    /// armado (decidido na camada 0).
     fn pf_fecha_bloco(&mut self, gen: u32) {
         if let Some(pf) = &self.sh.pf {
-            if let Some(r) = self.acc.fecha(gen) {
+            let fim = crate::perfil_bloco::agora_ns();
+            if let Some(r) = self.acc.fecha(gen, fim) {
                 pf.registra_servico(r);
             }
         }
@@ -454,10 +473,11 @@ impl<B: Backend> Service<B> {
     /// Espera `seq[l] >= t`, solta as cópias guardadas da camada anterior e lê ids e `x` publicados pela GPU.
     pub fn serve_layer<'t>(&mut self, epoch: &'t TokenEpoch, l: usize) -> R<LayerView<'t>, B> {
         let t = epoch.t;
+        let t_esp = self.pf_t();
         let LayerRead { m, ids, w, x } = self.wait_layer(l, t)?;
         if let Some(pf) = &self.sh.pf {
             // O armamento é lido DEPOIS de ver `seq[0]`: o host armou antes de enfileirar o bloco.
-            self.acc.apos_espera(l, crate::perfil_bloco::agora_ns(), pf.armado_acq(), pf.t_armado());
+            self.acc.apos_espera(l, t_esp, crate::perfil_bloco::agora_ns(), pf.armado_acq(), pf.t_armado());
         }
         // O `m` é o mesmo em todas as camadas do passo: fixado na camada 0 e conferido nas seguintes.
         if l == 0 {
@@ -467,9 +487,10 @@ impl<B: Backend> Service<B> {
             Some(prev) if prev != m => return Err(Error::Config("m diferente entre as camadas do passo")),
             _ => self.step_m = Some(m),
         }
+        let mut t_monta = self.pf_t();
         if let Some(k) = release_layer(l, self.cfg.is(Mutant::HeldOneLayerEarly)) {
             self.release_held(k, true)?;
-            self.pf_fase(crate::perfil_bloco::S_LIVRO);
+            t_monta = self.pf_op(crate::perfil_bloco::S_LIVRO, t_monta);
         }
         let io = self.sh.io[l].clone();
         let topk = self.cfg.topk;
@@ -513,7 +534,7 @@ impl<B: Backend> Service<B> {
             }
         }
         let flag = self.sh.flag[l].clone();
-        self.pf_fase(crate::perfil_bloco::S_MONTA);
+        self.pf_op(crate::perfil_bloco::S_MONTA, t_monta);
         Ok(LayerView { epoch, layer: l, keys, n_e, misses, m, positions, pweights, x, io, flag, flag_first: self.cfg.is(Mutant::FlagBeforeY) })
     }
 
@@ -612,8 +633,9 @@ impl<B: Backend> Service<B> {
     /// depois de sincronizar a stream de cópia), monta a tabela do token seguinte e manda o `Published`.
     pub fn end_token(&mut self, epoch: TokenEpoch) -> R<TokenEpoch, B> {
         let l_end = self.cfg.layers;
+        let t_ini = self.pf_t();
         self.wait_seq(l_end, epoch.t)?;
-        self.pf_fase(crate::perfil_bloco::S_END_ESPERA);
+        let t_trab = self.pf_op(crate::perfil_bloco::S_END_ESPERA, t_ini);
         let late = self.cfg.is(Mutant::PublishedBeforeRecord) || self.cfg.is(Mutant::QueryBeforeRecord);
         if !self.cfg.is(Mutant::HeldOneLayerEarly) {
             self.release_held(l_end - 1, !late)?;
@@ -645,7 +667,7 @@ impl<B: Backend> Service<B> {
         if self.cfg.is(Mutant::PublishedBeforeRecord) {
             self.record_late()?;
         }
-        self.pf_fase(crate::perfil_bloco::S_END_TRAB);
+        self.pf_op(crate::perfil_bloco::S_END_TRAB, t_trab);
         Ok(TokenEpoch { t, table })
     }
 }
@@ -739,25 +761,28 @@ fn run<B: Backend, C: HostExperts>(svc: &mut Service<B>, cpu: &mut C) -> R<(), B
     loop {
         for l in 0..layers {
             let view = svc.serve_layer(&epoch, l)?;
+            let t = svc.pf_t();
             let mut y = vec![0u32; view.m() * width];
             let step = view.cpu_step(width);
             let has_cpu = !step.groups.is_empty();
-            svc.pf_fase(crate::perfil_bloco::S_MONTA);
+            let t = svc.pf_op(crate::perfil_bloco::S_MONTA, t);
             cpu.compute_step(l, &step, view.x(), &mut y).map_err(|e| Error::Cpu(format!("{e:?}")))?;
-            svc.pf_fase(crate::perfil_bloco::S_COMPUTE);
+            let t = svc.pf_op(crate::perfil_bloco::S_COMPUTE, t);
             let served = answer(view, &y);
-            svc.pf_fase(crate::perfil_bloco::S_ANSWER);
+            svc.pf_op(crate::perfil_bloco::S_ANSWER, t);
             crate::diag::answered();
             if has_cpu {
                 crate::diag::inject(crate::diag::Site::Livro);
             }
+            // O diagnóstico acima fica fora de qualquer operação nomeada: o carimbo de `S_LIVRO` começa depois dele.
+            let t = svc.pf_t();
             let pins = svc.pin_layer(&served);
             for &key in served.misses() {
                 if let Some(v) = svc.victim(&served, &pins, key)? {
                     svc.copy_after_reader(v, key, &served)?;
                 }
             }
-            svc.pf_fase(crate::perfil_bloco::S_LIVRO);
+            svc.pf_op(crate::perfil_bloco::S_LIVRO, t);
             crate::diag::layer_end(has_cpu);
             if has_cpu {
                 crate::diag::inject(crate::diag::Site::AntesDoWait);
