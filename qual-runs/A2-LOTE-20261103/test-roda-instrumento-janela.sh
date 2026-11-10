@@ -84,7 +84,7 @@ chmod +x "$D/lastro-falso.sh"
 export CMP_EST_PORTAO=0 CMP_EST_CARGA_1B=0 CMP_EST_CARGA_3B=0 CMP_EST_QUENTE_1B=10 CMP_EST_QUENTE_3B=10 CMP_EST_SMOKE_1B=0 CMP_EST_SMOKE_3B=0
 export NVIDIA_SMI=$D/smi LASTRO_SH_CMP=$D/lastro-falso.sh MODELO_1B=$D/m/1b MODELO_3B=$D/m/3b PROC_LISTA=$D/proc-vazia
 export TEXTOS_5C=$D/textos REF_5C=$D/refs IDS_CMP=$D/ids.json CRITERIO_CMP=$D/crit.md CRITERIO_D1=$D/crit-d1.md CRITERIO_D2=$D/crit-d2.md CRITERIO_INSTR=$D/crit-instr.md PLANO_INSTR=$D/plano.md
-export SEM_SHA_FIXO=1 CMP_SEM_MEMORIA=1 CMP_FOLGA=0
+export SEM_SHA_FIXO=1 CMP_SEM_MEMORIA=1 CMP_FOLGA=0 CMP_MODO_TESTE=1
 interno() { # nome limite [modelo=1b]; define RC; relógio virtual zerado
   local n=$1 lim=$2 mod=${3:-1b}
   echo 0 > "$D/clock"; : > "$D/log-$n"
@@ -97,6 +97,21 @@ nproc() { grep -c '^[0-9][0-9] ' "$D/si-$1/ordem.txt"; }
 echo "== Parte 1: modo interno"
 "$J" --interno --modelos 1b --saida "$D/si-sem" --bin "$D/pp" --limite 100 > "$D/outi-sem" 2>&1
 confere "modo interno sem portão/UUID: recusa 2, nada criado" "[ $? = 2 ] && [ ! -e $D/si-sem/ordem.txt ]"
+# A0 (rodada 140): modo interno em modo real (sem CMP_MODO_TESTE) recusa variável de teste e binário fora do FIXO ANTES de criar saída, smoke ou célula
+echo 0 > "$D/clock"
+env -i PATH="$PATH" HOME="$HOME" SEM_SHA_FIXO=1 PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID "$J" --interno --modelos 1b --saida "$D/si-real1" --bin "$D/pp" --limite 100 > "$D/outi-real1" 2>&1
+RC=$?
+confere "interno + binário fora do FIXO + SEM_SHA_FIXO=1 sem CMP_MODO_TESTE: recusa 2, nada criado" "[ $RC = 2 ] && grep -q 'variável só de teste presente no modo real: SEM_SHA_FIXO' $D/outi-real1 && [ ! -e $D/si-real1 ]"
+env -i PATH="$PATH" HOME="$HOME" PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID "$J" --interno --modelos 1b --saida "$D/si-real2" --bin "$D/pp" --limite 100 > "$D/outi-real2" 2>&1
+RC=$?
+confere "interno real sem SEM_SHA_FIXO e binário falso: recusa 2 por sha do FIXO, nada criado" "[ $RC = 2 ] && grep -q 'sha diferente do FIXO' $D/outi-real2 && [ ! -e $D/si-real2 ]"
+BIN_REAL=/home/brenoperucchi/Devs/lastro-rust/.herdr/binarios/primeira-palavra-instr-ae14cbde
+if [ -x "$BIN_REAL" ]; then
+  cp "$BIN_REAL" "$D/copia-real"
+  env -i PATH="$PATH" HOME="$HOME" PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID "$J" --interno --modelos 1b --saida /proc/nao-cria/si --bin "$D/copia-real" --limite 100 > "$D/outi-real3" 2>&1
+  RC=$?
+  confere "cópia congelada real passa o portão do modo real (a recusa vem só depois, ao criar a saída em /proc; sem GPU)" "[ $RC = 2 ] && ! grep -q 'sha diferente' $D/outi-real3 && ! grep -q 'variável só de teste' $D/outi-real3"
+else echo "ok: (binário congelado ausente nesta máquina; teste da cópia real pulado)"; fi
 # A. folgado, com a variável EXPORTADA no ambiente pai: os D continuam sem ela
 LASTRO_PERFIL_BLOCO=1 interno A 100000
 confere "A: sai 0, decisao.txt, 19 processos (12 de controle, 4 obrigatórias, 3 LC)" "[ $RC = 0 ] && [ -s $D/si-A/decisao.txt ] && [ \$(nproc A) = 19 ]"

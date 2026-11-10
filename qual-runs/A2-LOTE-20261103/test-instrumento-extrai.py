@@ -577,6 +577,107 @@ class TestProcessa(Base):
         self.assertEqual(r["hipoteses"]["medio"]["H2"], "fora")                   # F3/passo(D) = 0,12 < 1,5
 
 
+    # ---- rodada 140
+    def medidas_json(self, pasta):
+        return os.path.join(self.saida, "celulas", pasta, "p1", "saida", "medidas-1b.json")
+
+    def tira_aquecimento(self, pasta):
+        p = self.medidas_json(pasta)
+        with open(p, encoding="utf-8") as fh:
+            j = json.load(fh)
+        antes = len(j["medidas"])
+        j["medidas"] = [e for e in j["medidas"] if not e.get("descartada")]
+        self.assertEqual(len(j["medidas"]), antes - 1)
+        grava(p, j)
+
+    def test_sem_aquecimento_so_num_d_e_controle_incompleto_mesmo_com_perfil_no_l(self):
+        self.tudo()
+        self.tira_aquecimento("ctrl-1b-L100-medio-01-D")
+        r = self.roda()["series"]["L100"]
+        self.assertEqual(r["controle"]["classe"], "controle incompleto")
+        self.assertEqual(self.roda()["series"]["L10"]["controle"]["classe"], "comprovada")
+
+    def test_sem_aquecimento_so_num_l_com_perfil_presente_e_controle_incompleto(self):
+        self.tudo()
+        self.assertTrue(os.path.exists(os.path.join(self.saida, "celulas", "ctrl-1b-L10-medio-02-L", "p1", "saida", "perfil-bloco.json")))
+        self.tira_aquecimento("ctrl-1b-L10-medio-02-L")
+        r = self.roda()["series"]["L10"]
+        self.assertEqual(r["controle"]["classe"], "controle incompleto")
+        self.assertTrue(any("aquecimento" in x for x in r["controle"]["processos"][1]["motivos_temporais"]))
+
+    def test_medianas_do_controle_usam_so_as_n_medidas(self):
+        self.tudo()
+        p = self.medidas_json("ctrl-1b-L100-medio-01-D")
+        with open(p, encoding="utf-8") as fh:
+            j = json.load(fh)
+        meds = [e["prefill_ms"] for e in j["medidas"] if not e.get("descartada")]
+        for e in j["medidas"]:
+            if e.get("descartada"):
+                e["prefill_ms"] = 99999.0
+        grava(p, j)
+        r = self.roda()["series"]["L100"]["controle"]
+        self.assertEqual(len(meds), 3)
+        self.assertAlmostEqual(r["processos"][0]["prefill_ms_mediana"], sorted(meds)[1])
+
+    def test_lc_com_manifesto_falha_fica_sem_prova_com_medidas_preservadas(self):
+        self.tudo()
+        self.principal("LC", "curto", n=3)
+        self.manifesto(estado="FALHA")
+        r = self.roda()["series"]["LC"]
+        self.assertTrue(all(x == "SEM PROVA" for x in r["hipoteses"]["curto"].values()))
+        self.assertTrue(any("integridade" in x for x in r["bloqueios"]))
+        self.assertTrue(r["textos"]["curto"]["medidas"])
+        self.assertNotIn("tudo SEM PROVA", E.relatorio(self.roda()))
+
+    def test_lc_com_smoke_reprovado_fica_sem_prova(self):
+        self.tudo()
+        self.principal("LC", "curto", n=3)
+        self.smoke("LC", False)
+        r = self.roda()["series"]
+        self.assertTrue(all(x == "SEM PROVA" for x in r["LC"]["hipoteses"]["curto"].values()))
+        self.assertTrue(r["LC"]["textos"]["curto"]["medidas"])
+        self.assertNotEqual(r["L10"]["hipoteses"]["medio"]["H5"], "SEM PROVA")
+
+    def test_lc_integra_com_ids_divergentes_segue_descritiva_com_divergencia_reportada(self):
+        self.tudo()
+        d = self.principal("LC", "curto", n=3)
+        p = os.path.join(d, "p1", "saida", "medidas-1b.json")
+        with open(p, encoding="utf-8") as fh:
+            j = json.load(fh)
+        for e in j["medidas"]:
+            e["gerados"] = [x + 1 for x in e["gerados"]]
+        grava(p, j)
+        r = self.roda()["series"]["LC"]
+        self.assertEqual(r["hipoteses"]["curto"]["H1"], "descritivo")
+        self.assertTrue(r["divergencias_5c_serie"])
+        self.assertEqual(r["bloqueios"], [])
+
+    def test_referencia_so_do_texto_curto_ausente_bloqueia_a_serie_com_o_texto_no_motivo(self):
+        self.tudo()
+        ref = os.path.join(self.refs, "ref5c-1b.json")
+        with open(ref, encoding="utf-8") as fh:
+            j = json.load(fh)
+        j["casos"] = [c for c in j["casos"] if c.get("nome") != "curto"]
+        grava(ref, j)
+        self.shas["ref5c-1b"] = E.sha_arq(ref)
+        self.manifesto()
+        r = self.roda()["series"]
+        for s in ("L10", "L100"):
+            self.assertEqual(r[s]["controle"]["classe"], "SEM PROVA")
+            self.assertTrue(any("curto" in x and "referência 5c indisponível" in x for x in r[s]["bloqueios"]))
+            self.assertTrue(all(x == "SEM PROVA" for x in r[s]["hipoteses"]["medio"].values()))
+
+    def test_celula_curta_nao_rodada_por_orcamento_nao_bloqueia_o_medio(self):
+        self.tudo()
+        for s in ("L10", "L100"):
+            os.rename(os.path.join(self.saida, "celulas", "lastro-1b-%s-curto-quente" % s), os.path.join(self.saida, "nao-rodou-%s-curto" % s))
+        r = self.roda()["series"]
+        for s in ("L10", "L100"):
+            self.assertEqual(r[s]["controle"]["classe"], "comprovada")
+            self.assertEqual(r[s]["bloqueios"], [])
+        self.assertEqual(r["L100"]["hipoteses"]["medio"]["H1"], "dentro")
+
+
 class TestRecusa(Base):
     def test_potencia_mudou_recusa(self):
         self.tudo()

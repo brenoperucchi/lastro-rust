@@ -290,6 +290,21 @@ def compara5c(d, m, t, refs):
     return {"referencia_disponivel": disp, "divergencias": div, "n_divergentes_no_aquecimento": sum(1 for x in div if x["aquecimento"])}
 
 
+def confere_cardinalidade(d, m, t, n_prev, refs, mot):
+    """No bruto de CADA processo (D ou L, com ou sem perfil): exatamente 1 aquecimento (o primeiro) seguido de n_prev medidas, ids dos n_prev+1 pedidos conferidos por compara5c (aquecimento incluído); as medianas usam só as n_prev."""
+    ps = sorted(x for x in os.listdir(d) if x.startswith("p") and x[1:].isdigit())
+    if not ps:
+        mot.append("sem pasta de processo (p1) com o bruto de medidas")
+    for p in ps:
+        mj = X.le_json(os.path.join(d, p, "saida", "medidas-%s.json" % m))
+        ent = [e for e in ((mj or {}).get("medidas") or []) if isinstance(e, dict)] if isinstance(mj, dict) else []
+        aq = [bool(e.get("descartada")) for e in ent]
+        if len(ent) != n_prev + 1 or not aq or aq[0] is not True or any(aq[1:]):
+            mot.append("%s: bruto com %d entradas (%d aquecimentos), esperados 1 aquecimento seguido de %d medidas" % (p, len(ent), sum(aq), n_prev))
+        if any(e.get("falha") for e in ent):
+            mot.append("%s: pedido com falha no bruto" % p)
+
+
 def le_dir_celula(saida, nome, m, s, t, n_prev, refs, bin_ref=None):
     """Lê UMA pasta de processo/célula (controle ou principal). Devolve dict com `status` (OK|SEM PROVA|NÃO RODOU, o conjunto), `status_temporal` (só rc, portão, medidas, ids, linha, D sem perfil: é o que vale
     para o PROCESSO de controle) e `status_perfil` (só o conteúdo de perfil-bloco.json: marca a célula, nunca o controle), motivos de cada um, meds, pedidos medidos, linha, tem_perfil e a comparação com a 5c."""
@@ -321,6 +336,7 @@ def le_dir_celula(saida, nome, m, s, t, n_prev, refs, bin_ref=None):
     for x in meds:
         if x["ids_n"] != N_POS[t]:
             mot.append("%s/%s: prompt com %d posições, esperado %d" % (x["processo"], x["rotulo"], x["ids_n"], N_POS[t]))
+    confere_cardinalidade(d, m, t, n_prev, refs, mot)
     estado, mot3 = le_linha_perfil(d)
     mot += mot3
     perfis = acha_perfis(d)
@@ -632,32 +648,32 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
         div_serie, ref_ausente_serie = [], []
         for (_, b, nome, c) in procs_ctrl:
             div_serie += [dict(x, pasta=nome, braco=b) for x in c["seq"]["divergencias"]]
-            if not c["seq"]["referencia_disponivel"]:
-                ref_ausente_serie.append(nome)
+            if c["status"] != "NÃO RODOU" and not c["seq"]["referencia_disponivel"]:
+                ref_ausente_serie.append((nome, "medio"))
         for t in TEXTOS:
             for nome in cels.get((s, t), []):
                 c = leituras.get(nome) or {}
                 div_serie += [dict(x, pasta=nome, texto=t) for x in (c.get("seq") or {}).get("divergencias", [])]
-                if c and not (c.get("seq") or {}).get("referencia_disponivel"):
-                    ref_ausente_serie.append(nome)
+                if c and c.get("status") != "NÃO RODOU" and not (c.get("seq") or {}).get("referencia_disponivel"):
+                    ref_ausente_serie.append((nome, t))
         ids_l_d = None
         if procs_ctrl:
             gl = {tuple(x["gerados"]) for (_, b, _, c) in procs_ctrl if b == "L" for x in c.get("meds") or []}
             gd = {tuple(x["gerados"]) for (_, b, _, c) in procs_ctrl if b == "D" for x in c.get("meds") or []}
             ids_l_d = bool(gl) and bool(gd) and gl == gd and len(gl) == 1
-        # bloqueios da série (L10 e L100; na LC os dados ficam como descrição): valem para a classe EFETIVA do controle e do custo, e para as H
+        # bloqueios da série (todas, LC inclusive: integridade, smoke e referências; a LC só escapa dos ids contra a 5c e da falta de controle; medidas brutas preservadas): valem para a classe EFETIVA do controle e do custo, e para as H
         bloq = []
-        if s != "LC":
-            if integ:
-                bloq.append("integridade quebrada")
-            if not sm_ok:
-                bloq.append(sm_mot)
+        if integ:
+            bloq.append("integridade quebrada")
+        if not sm_ok:
+            bloq.append(sm_mot)
+        if ref_prob:
+            bloq.append("; ".join(ref_prob))
+        if s != "LC":   # exceção da LC: só a comparação de ids com a 5c e a falta de controle (reportadas, sem bloquear)
             if div_serie:
                 bloq.append("ids diferentes da referência 5c (instrumento inválido nesta série; inclui o aquecimento)")
-            if ref_prob:
-                bloq.append("; ".join(ref_prob))
-            if any(x.startswith("ctrl-") for x in ref_ausente_serie):
-                bloq.append("referência 5c indisponível para um processo do controle")
+            if ref_ausente_serie:
+                bloq.append("referência 5c indisponível para texto com dados submetidos: " + ", ".join(sorted({"%s (%s)" % (t_, n_) for (n_, t_) in ref_ausente_serie})))
         if s in SERIES_CONTROLE and bloq and controle_permite(ctl["classe"]):
             ctl = dict(ctl, classe_calculada=ctl["classe"], classe="SEM PROVA", motivo="bloqueio da série: " + "; ".join(bloq) + " (as medidas calculadas ficam só como descrição)")
         hs = {}
@@ -669,10 +685,13 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
                 if pt["status"] != "OK" or not pt["medidas"]:
                     r[h] = "sem dado" if pt["status"] == "NÃO RODOU" else "SEM PROVA"
                     continue
+                if bloq:
+                    r[h] = "SEM PROVA"
+                    continue
                 if s == "LC":
                     r[h] = "descritivo"
                     continue
-                if bloq or pt["ref_ausente"] or not extra["textos"][t]["ok"]:
+                if pt["ref_ausente"] or not extra["textos"][t]["ok"]:
                     r[h] = "SEM PROVA"
                     continue
                 mm = dict(pt["medidas"])
@@ -711,9 +730,9 @@ def relatorio(res):
     m = res["modelo_da_janela"]
     o = ["# Instrumento de prefill do Lastro, janela do modelo %s (criterio-instrumento-prefill-20261110.md)" % m.upper(), "", res["aviso"], ""]
     if res.get("referencia_problemas"):
-        o += ["**Referência 5c sem prova (bloqueia L10 e L100):**", ""] + ["- %s" % x for x in res["referencia_problemas"]] + [""]
+        o += ["**Referência 5c sem prova (bloqueia todas as séries):**", ""] + ["- %s" % x for x in res["referencia_problemas"]] + [""]
     if res["integridade_problemas"]:
-        o += ["**Integridade QUEBRADA: tudo SEM PROVA (dados brutos preservados como descrição).**", ""] + ["- %s" % x for x in res["integridade_problemas"]] + [""]
+        o += ["**Integridade QUEBRADA: todas as séries SEM PROVA, inclusive a LC (medidas brutas preservadas só como descrição, com o motivo).**", ""] + ["- %s" % x for x in res["integridade_problemas"]] + [""]
     for s, sr in res["series"].items():
         c = sr["controle"]
         o += ["## Série %s" % s, ""]

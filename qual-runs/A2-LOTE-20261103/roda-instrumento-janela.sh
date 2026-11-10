@@ -76,14 +76,25 @@ while [ $# -gt 0 ]; do
     *) usa; exit 2;;
   esac
 done
+# variáveis só de teste no ambiente do modo real OU interno = recusa 2 (validado logo após os argumentos, antes de consumir qualquer override); só CMP_MODO_TESTE=1 as aceita. `compgen -e` lista só as EXPORTADAS. LASTRO_PERFIL_BLOCO está na lista: a variável liga só por processo L, nunca herdada.
+if [ "${VERIFICA:-0}" != 1 ] && [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
+  for v in $(compgen -e); do
+    case $v in
+      LASTRO_PERFIL_BLOCO|CMP_FRACAO_SLOTS|CMP_CAMADAS_CPU|CRITERIO_INSTR|PLANO_INSTR|CRITERIO_D1|CRITERIO_D2|SEM_SHA_FIXO|MONITOR_SH|LASTRO_SH_CMP|EXTRAI_PY|PERFIL_EXTRAI_PY|INSTR_EXTRAI_PY|CMP_RELOGIO_ARQ|NVIDIA_SMI|MODELO_1B|MODELO_3B|TEXTOS_5C|REF_5C|IDS_CMP|CRITERIO_CMP \
+      |PROC_STAT|CMP_CPU_JANELA|CMP_CPU_ESPERA|CMP_FOLGA|CMP_SEM_MEMORIA|ESPERA_PRONTO|LOADAVG_ARQ|SYSTEMCTL|SYSTEMD_RUN|PENDENTE|CGROUP_RAIZ|PROC_LISTA \
+      |CMP_EST_*|CMP_FAKE_*|JANELA_*|LIMITE_*)
+        recusa "variável só de teste presente no modo real: $v (só CMP_MODO_TESTE=1, o modo de teste explícito, a aceita); limpe o ambiente de quem chama";;
+    esac
+  done
+fi
 sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados. O próprio roda-instrumento-janela.sh NÃO pode conter o seu sha (nem o critério o do roteiro: o roteiro guarda o sha do critério): --verifica-fixos imprime o do roteiro à parte (linha informativa).
 declare -A FIXO=(
-  [criterio-instrumento]=4d7fd8a9a647334625700fbc3f1ba98a63abfd46bc4f9fb238659e72cb13da9e
+  [criterio-instrumento]=da160eccdda92db5239f64f6cf41742f7c0d4e5e63a40bdf84df7abf3f08df88
   [plano-instrumento]=39fbab0335ed40f9c75b19815db5194c09ae6e5aa8566e8b13977a97eaf7f8a4
   [binario-instr]=ae14cbde3965493808818f3aa4a8e7665b6397531e36c2abf020c35fc4f3d969
-  [script-instrumento-extrai]=c88bb8345ae34322f264fa578102cb4422378547a83500d13633c0d10611799d
+  [script-instrumento-extrai]=19bf1b04078671fa8e1c1e693dfea940c325e245c8d796b12b3a670e05e60039
   [script-perfil-extrai]=755e1d7dd622e98dce9513ef30584e21667a5bc9d8c08cce4198090b2c34ba68
   [script-cmp-extrai]=22d32816ca9b298eb1ca63b3079ea9a6c681519224726b285153bec697f58865
   [script-lastro]=8e924a36fff414f337857ffc75fc88c5b23e4cf12c3d6314384f3979cab80757
@@ -381,7 +392,7 @@ if [ $INTERNO = 1 ]; then
     for s in L100 LC; do [ -z "${SERIE_FALHA[$s]:-}" ] || echo "SEM PROVA (série $s): ${SERIE_FALHA[$s]}"; done
     echo "variável do instrumento: ${NINC:-0} processo(s) INCOERENTE(S) em prova-variavel.txt (D tem de imprimir desligado e L ligado)"
     if [ $INTEGRO = 1 ]; then echo "integridade: íntegra (binário, scripts, GGUF/safetensors do modelo, textos, referências, ids e critérios iguais antes e depois$([ "${SEM_SHA_FIXO:-0}" = 1 ] && echo '; congelados NÃO conferidos: SEM_SHA_FIXO=1' || echo ' e aos congelados onde há'))"
-    else echo "integridade: QUEBRADA: tudo SEM PROVA (e o extrator recusa sem a prova de potência)"; for n in "${NOTAS[@]}"; do echo "  $n"; done; fi
+    else echo "integridade: QUEBRADA: TODAS as séries SEM PROVA, inclusive a LC, com as medidas brutas preservadas (e o extrator recusa sem a prova de potência)"; for n in "${NOTAS[@]}"; do echo "  $n"; done; fi
     echo "cortes de orçamento: ${CORTES[*]:-nenhum}"
     echo "repetições finais: quente $REPS_Q; decorrido $(decorrido) s de $LIMITE s"
     echo "não rodou: ${#NAO_RODOU[@]} item(ns); ver orcamento.json"
@@ -397,17 +408,6 @@ case $LIMITE in ''|*[!0-9]*) recusa "limite inválido: $LIMITE";; esac
 [ "$LIMITE" -ge 1 ] && [ "$LIMITE" -le $LIMITE_MAX ] || recusa "limite fora de 1..$LIMITE_MAX s: $LIMITE"
 [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] || recusa "portão fechado: sem PRIMEIRA_PALAVRA_AUTORIZADA=1 (o 'autorizo' do Breno que nomeia a janela)"
 [ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a 3080 Ti; a 4090 e a 5090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
-# variáveis só de teste no ambiente do modo real = recusa 2; só CMP_MODO_TESTE=1 as aceita. `compgen -e` lista só as EXPORTADAS. LASTRO_PERFIL_BLOCO está na lista: a variável liga só por processo L, nunca herdada.
-if [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
-  for v in $(compgen -e); do
-    case $v in
-      LASTRO_PERFIL_BLOCO|CMP_FRACAO_SLOTS|CMP_CAMADAS_CPU|CRITERIO_INSTR|PLANO_INSTR|CRITERIO_D1|CRITERIO_D2|SEM_SHA_FIXO|MONITOR_SH|LASTRO_SH_CMP|EXTRAI_PY|PERFIL_EXTRAI_PY|INSTR_EXTRAI_PY|CMP_RELOGIO_ARQ|NVIDIA_SMI|MODELO_1B|MODELO_3B|TEXTOS_5C|REF_5C|IDS_CMP|CRITERIO_CMP \
-      |PROC_STAT|CMP_CPU_JANELA|CMP_CPU_ESPERA|CMP_FOLGA|CMP_SEM_MEMORIA|ESPERA_PRONTO|LOADAVG_ARQ|SYSTEMCTL|SYSTEMD_RUN|PENDENTE|CGROUP_RAIZ|PROC_LISTA \
-      |CMP_EST_*|CMP_FAKE_*|JANELA_*|LIMITE_*)
-        recusa "variável só de teste presente no modo real: $v (só CMP_MODO_TESTE=1, o modo de teste explícito, a aceita); limpe o ambiente de quem chama";;
-    esac
-  done
-fi
 [ -x "$BIN" ] || recusa "binário não executável: $BIN"
 [ -x "$JANELA" ] && [ -x "$LIMITE_SH" ] && [ -x "$LASTRO_SH" ] && [ -x "$MONITOR" ] || recusa "faltam janela-e4b.sh, roda-com-limite.sh, roda-cmp-lastro.sh ou roda-cmp-monitor.sh executáveis"
 [ -f "$EXTRAI" ] && [ -f "$PERFIL_EXTRAI" ] && [ -f "$INSTR_EXTRAI" ] || recusa "faltam cmp-extrai.py, perfil-extrai.py ou instrumento-extrai.py"
@@ -447,7 +447,7 @@ coleta() {
   } > "$2" 2>&1 || true
 }
 PASSA=("CUDA_VISIBLE_DEVICES=$UUID" PRIMEIRA_PALAVRA_AUTORIZADA=1)
-for v in MODELO_1B MODELO_3B TEXTOS_5C REF_5C IDS_CMP CRITERIO_INSTR PLANO_INSTR CRITERIO_CMP CRITERIO_D1 CRITERIO_D2 SEM_SHA_FIXO NVIDIA_SMI PROC_STAT CMP_CPU_JANELA CMP_CPU_ESPERA LASTRO_SH_CMP EXTRAI_PY PERFIL_EXTRAI_PY INSTR_EXTRAI_PY \
+for v in MODELO_1B MODELO_3B TEXTOS_5C REF_5C IDS_CMP CRITERIO_INSTR PLANO_INSTR CRITERIO_CMP CRITERIO_D1 CRITERIO_D2 SEM_SHA_FIXO CMP_MODO_TESTE NVIDIA_SMI PROC_STAT CMP_CPU_JANELA CMP_CPU_ESPERA LASTRO_SH_CMP EXTRAI_PY PERFIL_EXTRAI_PY INSTR_EXTRAI_PY \
          CMP_RELOGIO_ARQ CMP_FOLGA CMP_SEM_MEMORIA MONITOR_SH ESPERA_PRONTO LOADAVG_ARQ PROC_LISTA LASTRO_PERFIL_BLOCO $(compgen -v | grep -E '^CMP_(EST|FAKE)_' || true); do
   [ -z "${!v+x}" ] || PASSA+=("$v=${!v}")
 done
