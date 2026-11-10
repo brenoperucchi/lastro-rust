@@ -198,3 +198,13 @@ Escrita antes de qualquer dado da série nova.
 5. **O que pode não caber em 12 GB.** A S1 com `-ngl 99` e o `--n-cpu-moe` no 3B podem não caber. O smoke de carga existe só do lado do Lastro (degraus 1 e 2, `roda-cmp-lastro.sh --smoke`); não há smoke de carga do llama.cpp. Célula S1 ou S2 do llama.cpp que não carregar é erro de célula: fica SEM PROVA, sem ajuste de parâmetro e sem repetição, e a janela segue (cada célula pode tentar a carga uma vez).
 6. **Potência.** A série nova roda no limite de potência vigente da placa, hoje 370 W (o padrão), sem o serviço de 300 W. O valor (`power.limit`, além de `pcie.link.width.current` e `pcie.link.gen.max`) é registrado no `ambiente.txt` de cada janela. O roteiro recusa (código 2, antes de tocar em timers) se o limite não for 370.00 W no início e lê o valor de novo ao fim da janela: se tiver mudado, ou se a leitura falhar ou for ilegível, a janela é invalidada (SEM PROVA, pelo manifesto de integridade, com previsões e razões suprimidas). Início e fim ficam no `ambiente.txt`.
 7. **Sha congelado.** O sha deste critério no `FIXO` dos roteiros foi recalculado com esta emenda; os dos critérios dos degraus também, pelas emendas curtas deles.
+
+## Emenda 11 (10/11/2026, antes de qualquer dado válido): build do llama.cpp com kernels para a 3080 Ti
+
+1. **O que a linha 2 dizia.** O critério dizia "NÃO altero o llama.cpp". O código-fonte continua o mesmo, commit 0893ec9, sem nenhuma edição.
+2. **O que mudou.** Só as flags de compilação e o compilador host. O build anterior de `/home/brenoperucchi/Devs/GitHub/llama.cpp/build` tinha apenas `CMAKE_CUDA_ARCHITECTURES=89` e não trazia kernels para a 3080 Ti. O build foi refeito com `-DCMAKE_CUDA_ARCHITECTURES="86;89"` e `-DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++` (GNU 16.2.1, CUDA 13.4, porque o g++-15 da configuração antiga não existe mais). O resto do cache é igual (Release, `GGML_CUDA=ON`, `GGML_NATIVE=ON`). O build antigo (sm_89) foi guardado em `llama.cpp/build-bin-sm89-backup-20261110`.
+3. **Janela de 10/11 às 16:26.** Todas as células do llama.cpp abortaram com `CUDA error: no kernel image is available for execution on the device`. A janela foi invalidada (llama.cpp sem kernel) e não produziu dado válido.
+4. **Comparabilidade.** Os números do build antigo e os da 4090 não são comparáveis e não entram nesta série.
+5. **Integridade.** Os shas dos binários e das bibliotecas do llama.cpp continuam sendo conferidos antes e depois da janela, e precisam ser iguais entre si. Nenhum valor para eles é congelado no `FIXO`.
+6. **Sem repetição automática.** As janelas novas são novas execuções, autorizadas pela decisão do Breno, e não repetição da janela invalidada.
+7. **Sha congelado.** O sha deste critério no `FIXO` foi recalculado com esta emenda.

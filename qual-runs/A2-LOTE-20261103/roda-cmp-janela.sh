@@ -89,7 +89,7 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados (valem onde o critério já os fixa; binários, GGUF e safetensors só precisam ser iguais antes e depois).
 declare -A FIXO=(
-  [criterio-cmp]=bf3ef09b9c1e915e248050bdf2a509c04aab08c7a5f11db1c335f424d3b2c64f
+  [criterio-cmp]=954ec594ec51d1ccff3239c8dba33f86a01363b82330181b2a9ced918abdcd5f
   [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
   [texto-curto]=5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d
   [texto-medio]=bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a
