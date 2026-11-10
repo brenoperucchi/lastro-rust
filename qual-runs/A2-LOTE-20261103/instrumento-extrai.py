@@ -661,7 +661,7 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
             gl = {tuple(x["gerados"]) for (_, b, _, c) in procs_ctrl if b == "L" for x in c.get("meds") or []}
             gd = {tuple(x["gerados"]) for (_, b, _, c) in procs_ctrl if b == "D" for x in c.get("meds") or []}
             ids_l_d = bool(gl) and bool(gd) and gl == gd and len(gl) == 1
-        # bloqueios da série (todas, LC inclusive: integridade, smoke e referências; a LC só escapa dos ids contra a 5c e da falta de controle; medidas brutas preservadas): valem para a classe EFETIVA do controle e do custo, e para as H
+        # bloqueios da série (todas, LC inclusive: integridade, smoke e referências; a LC só escapa da comparação de ids contra a 5c e da falta de controle; medidas brutas preservadas): valem para a classe EFETIVA do controle e do custo, e para as H
         bloq = []
         if integ:
             bloq.append("integridade quebrada")
@@ -669,11 +669,10 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
             bloq.append(sm_mot)
         if ref_prob:
             bloq.append("; ".join(ref_prob))
-        if s != "LC":   # exceção da LC: só a comparação de ids com a 5c e a falta de controle (reportadas, sem bloquear)
-            if div_serie:
-                bloq.append("ids diferentes da referência 5c (instrumento inválido nesta série; inclui o aquecimento)")
-            if ref_ausente_serie:
-                bloq.append("referência 5c indisponível para texto com dados submetidos: " + ", ".join(sorted({"%s (%s)" % (t_, n_) for (n_, t_) in ref_ausente_serie})))
+        if ref_ausente_serie:
+            bloq.append("referência 5c indisponível para texto com dados submetidos: " + ", ".join(sorted({"%s (%s)" % (t_, n_) for (n_, t_) in ref_ausente_serie})))
+        if s != "LC" and div_serie:   # exceção da LC: só a comparação de ids com a 5c (reportada, sem bloquear) e a falta de controle
+            bloq.append("ids diferentes da referência 5c (instrumento inválido nesta série; inclui o aquecimento)")
         if s in SERIES_CONTROLE and bloq and controle_permite(ctl["classe"]):
             ctl = dict(ctl, classe_calculada=ctl["classe"], classe="SEM PROVA", motivo="bloqueio da série: " + "; ".join(bloq) + " (as medidas calculadas ficam só como descrição)")
         hs = {}

@@ -678,6 +678,60 @@ class TestProcessa(Base):
         self.assertEqual(r["L100"]["hipoteses"]["medio"]["H1"], "dentro")
 
 
+    # ---- rodada 141
+    def tira_curto_da_referencia(self):
+        ref = os.path.join(self.refs, "ref5c-1b.json")
+        with open(ref, encoding="utf-8") as fh:
+            j = json.load(fh)
+        j["casos"] = [c for c in j["casos"] if c.get("nome") != "curto"]
+        grava(ref, j)
+        self.shas["ref5c-1b"] = E.sha_arq(ref)
+        self.manifesto()
+
+    def test_lc_curta_com_referencia_sem_o_curto_fica_sem_prova_com_o_texto_no_motivo(self):
+        self.tudo()
+        self.principal("LC", "curto", n=3)
+        self.tira_curto_da_referencia()
+        r = self.roda()["series"]["LC"]
+        self.assertTrue(all(x == "SEM PROVA" for x in r["hipoteses"]["curto"].values()))
+        self.assertTrue(any("curto" in x and "referência 5c indisponível" in x for x in r["bloqueios"]))
+        self.assertTrue(r["textos"]["curto"]["medidas"])
+
+    def test_sha_de_referencia_divergente_com_lc_com_dados_deixa_a_lc_sem_prova(self):
+        self.tudo()
+        self.principal("LC", "curto", n=3)
+        ref = os.path.join(self.refs, "ref5c-1b.json")
+        with open(ref, encoding="utf-8") as fh:
+            j = json.load(fh)
+        j["observacao"] = "diferente do registrado"
+        grava(ref, j)
+        r = self.roda()
+        self.assertTrue(r["referencia_problemas"])
+        self.assertTrue(all(x == "SEM PROVA" for x in r["series"]["LC"]["hipoteses"]["curto"].values()))
+        self.assertTrue(r["series"]["LC"]["textos"]["curto"]["medidas"])
+
+    def test_pasta_sem_celula_json_em_texto_sem_referencia_nao_bloqueia(self):
+        self.tudo()
+        self.tira_curto_da_referencia()
+        for s in ("L10", "L100"):
+            d = os.path.join(self.saida, "celulas", "lastro-1b-%s-curto-quente" % s)
+            os.rename(os.path.join(d, "celula.json"), os.path.join(d, "celula-renomeada.json"))
+        r = self.roda()["series"]
+        for s in ("L10", "L100"):
+            self.assertEqual(r[s]["bloqueios"], [])
+            self.assertEqual(r[s]["controle"]["classe"], "comprovada")
+
+    def test_aquecimento_na_segunda_posicao_de_quatro_entradas_e_controle_incompleto(self):
+        self.tudo()
+        p = self.medidas_json("ctrl-1b-L100-medio-01-D")
+        with open(p, encoding="utf-8") as fh:
+            j = json.load(fh)
+        self.assertEqual(len(j["medidas"]), 4)
+        j["medidas"][0], j["medidas"][1] = j["medidas"][1], j["medidas"][0]
+        grava(p, j)
+        self.assertEqual(self.roda()["series"]["L100"]["controle"]["classe"], "controle incompleto")
+
+
 class TestRecusa(Base):
     def test_potencia_mudou_recusa(self):
         self.tudo()

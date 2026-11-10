@@ -107,11 +107,15 @@ RC=$?
 confere "interno real sem SEM_SHA_FIXO e binário falso: recusa 2 por sha do FIXO, nada criado" "[ $RC = 2 ] && grep -q 'sha diferente do FIXO' $D/outi-real2 && [ ! -e $D/si-real2 ]"
 BIN_REAL=/home/brenoperucchi/Devs/lastro-rust/.herdr/binarios/primeira-palavra-instr-ae14cbde
 if [ -x "$BIN_REAL" ]; then
+  # prova que NÃO arma nada: só --verifica-fixos (sem autorização, sem UUID, sem GPU) com a cópia do binário congelado
   cp "$BIN_REAL" "$D/copia-real"
-  env -i PATH="$PATH" HOME="$HOME" PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID "$J" --interno --modelos 1b --saida /proc/nao-cria/si --bin "$D/copia-real" --limite 100 > "$D/outi-real3" 2>&1
-  RC=$?
-  confere "cópia congelada real passa o portão do modo real (a recusa vem só depois, ao criar a saída em /proc; sem GPU)" "[ $RC = 2 ] && ! grep -q 'sha diferente' $D/outi-real3 && ! grep -q 'variável só de teste' $D/outi-real3"
-else echo "ok: (binário congelado ausente nesta máquina; teste da cópia real pulado)"; fi
+  env -i PATH="$PATH" HOME="$HOME" "$J" --verifica-fixos --bin "$D/copia-real" > "$D/outv-real" 2>&1
+  confere "cópia congelada real: --verifica-fixos --bin confere binario-instr OK" "grep -q '^binario-instr .* OK\$' $D/outv-real"
+  cp "$BIN_REAL" "$D/copia-alterada"; chmod u+w "$D/copia-alterada"; printf 'x' >> "$D/copia-alterada"
+  env -i PATH="$PATH" HOME="$HOME" "$J" --verifica-fixos --bin "$D/copia-alterada" > "$D/outv-alt" 2>&1
+  RCV=$?
+  confere "cópia com o sha alterado: --verifica-fixos falha e marca binario-instr FALHA" "[ $RCV != 0 ] && grep -q '^binario-instr .* FALHA\$' $D/outv-alt"
+else echo "ok: (binário congelado ausente nesta máquina; prova da cópia real pulada)"; fi
 # A. folgado, com a variável EXPORTADA no ambiente pai: os D continuam sem ela
 LASTRO_PERFIL_BLOCO=1 interno A 100000
 confere "A: sai 0, decisao.txt, 19 processos (12 de controle, 4 obrigatórias, 3 LC)" "[ $RC = 0 ] && [ -s $D/si-A/decisao.txt ] && [ \$(nproc A) = 19 ]"
@@ -207,12 +211,14 @@ printf '300.00 W\n' > "$D/pot-seq"; roda pot-300; confere "power.limit 300 W no 
 printf 'FALHA\n' > "$D/pot-seq"; roda pot-falha; confere "power.limit ilegível no preflight: recusa 2, nada tocado" "[ $RC = 2 ] && grep -q 'ilegível' $D/oute-pot-falha && ! grep -q '^stop' $D/pot-falha/log && [ ! -e $D/se-pot-falha ]"
 : > "$D/pot-seq"
 # cargo test e processos CUDA
-for caso in "cargo test --lib foo" "/usr/bin/cargo +nightly -q test" "bash -c 'cargo nextest run'" "/r/target/debug/deps/moe_rt-0123456789abcdef --nocapture" "/b/primeira-palavra --gera --celula 1b:/m" "llama-server -m x.gguf"; do
+for caso in "cargo test --lib foo" "/usr/bin/cargo +nightly -q test" "/x/.cargo/bin/cargo +nightly test --lib" "cargo-nextest run" "/r/target/debug/deps/moe_rt-0123456789abcdef --nocapture" "/b/primeira-palavra --gera --celula 1b:/m" "llama-server -m x.gguf"; do
   printf '4242 %s\n' "$caso" > "$D/proc-x"
   PROC_LISTA=$D/proc-x roda cargo-x; confere "processo em execução '$caso': recusa 2 antes de timers, GPU e pasta" "[ $RC = 2 ] && grep -q 'processo que pode usar a 3080 Ti' $D/oute-cargo-x && [ ! -s $D/elog-cargo-x ] && ! grep -q '^stop' $D/cargo-x/log && [ ! -e $D/se-cargo-x ]"
 done
 printf '4242 cargo build --release --bin primeira-palavra\n4343 vim cargo.toml\n' > "$D/proc-x"
 PROC_LISTA=$D/proc-x LIM=1200 roda build-ok; confere "cargo build e editor NÃO recusam (a janela segue até o fim)" "[ $RC = 0 ] && ! grep -q 'processo que pode usar' $D/oute-build-ok"
+printf '4242 dispatcher --descricao cargo test --lib\n4343 grep -r cargo test src\n4444 bash -c cargo nextest run\n' > "$D/proc-x"
+PROC_LISTA=$D/proc-x LIM=1200 roda texto-cargo; confere "linhas que só CITAM cargo test (dispatcher, grep, bash -c) NÃO recusam" "[ $RC = 0 ] && ! grep -q 'processo que pode usar' $D/oute-texto-cargo"
 mkdir -p "$D/se-ocupada"; echo x > "$D/se-ocupada/a"
 roda ocupada; confere "--saida não vazia: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-ocupada ]"
 printf '# gpu pid type sm mem enc dec jpg ofa fb ccpm command\n    0 1352017   C+G      -      -      -      -      -      -    997      0    voxtype\n' > "$D/pmon-cg.txt"

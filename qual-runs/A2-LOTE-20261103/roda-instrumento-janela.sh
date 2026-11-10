@@ -91,10 +91,10 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados. O próprio roda-instrumento-janela.sh NÃO pode conter o seu sha (nem o critério o do roteiro: o roteiro guarda o sha do critério): --verifica-fixos imprime o do roteiro à parte (linha informativa).
 declare -A FIXO=(
-  [criterio-instrumento]=da160eccdda92db5239f64f6cf41742f7c0d4e5e63a40bdf84df7abf3f08df88
+  [criterio-instrumento]=0206811f33f3bce90e624134d3be580e6873aced4367811a7ede75c6268b7bdc
   [plano-instrumento]=39fbab0335ed40f9c75b19815db5194c09ae6e5aa8566e8b13977a97eaf7f8a4
   [binario-instr]=ae14cbde3965493808818f3aa4a8e7665b6397531e36c2abf020c35fc4f3d969
-  [script-instrumento-extrai]=19bf1b04078671fa8e1c1e693dfea940c325e245c8d796b12b3a670e05e60039
+  [script-instrumento-extrai]=6f7169d4bcfa5946b15801543b783b702ead6e16e39b3014293aaa59c76f23d7
   [script-perfil-extrai]=755e1d7dd622e98dce9513ef30584e21667a5bc9d8c08cce4198090b2c34ba68
   [script-cmp-extrai]=22d32816ca9b298eb1ca63b3079ea9a6c681519224726b285153bec697f58865
   [script-lastro]=8e924a36fff414f337857ffc75fc88c5b23e4cf12c3d6314384f3979cab80757
@@ -148,16 +148,17 @@ coleta_shas() {
 # Processos que recusam a janela (incidente do rev-2 da rodada 137): `cargo test`/`cargo nextest`/`cargo bench` (o subcomando é a primeira palavra depois de `cargo` que não começa com - nem +), binário de teste do
 # cargo (target/<perfil>/deps/<nome>-<hash de 16 hex>), primeira-palavra, llama.*. Lista = `ps -eo pid=,args=` (ou o arquivo PROC_LISTA, só em teste: linhas "PID ARGS"); este script e os ancestrais dele ficam de fora.
 # Imprime uma linha por processo encontrado; código 0 = nenhum.
-cargo_teste() { # "args": 0 se a linha de comando tem `cargo <opções> test|t|nextest|bench`
-  local w base achou=0
+cargo_teste() { # "args": 0 só se o EXECUTÁVEL (primeira palavra, basename) é `cargo` com `test|t|nextest|bench` como subcomando, ou `cargo-nextest`; descrição de dispatcher, grep, bash -c etc. não contam
+  local w base first=1 achou=0
   for w in $1; do
     base=${w##*/}; base=${base//[\"\']/}
-    if [ $achou = 1 ]; then
-      case $w in -*|+*) continue;; esac
-      case $w in test|t|nextest|bench) return 0;; esac
-      achou=0
+    if [ $first = 1 ]; then
+      first=0
+      case $base in cargo) achou=1; continue;; cargo-nextest) return 0;; *) return 1;; esac
     fi
-    case $base in cargo) achou=1;; cargo-nextest) return 0;; esac
+    case $w in -*|+*) continue;; esac
+    case $w in test|t|nextest|bench) return 0;; esac
+    return 1
   done
   return 1
 }
@@ -217,8 +218,8 @@ bloco_par_s() { echo $(( E_SMOKE[$MODELOS] + 12 * $(est_celula 3) + FOLGA )); }
 # ---------------------------------------------------------------- modo interno (dentro da janela, com o portão e o UUID no ambiente)
 if [ $INTERNO = 1 ]; then
   [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] && [ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "modo interno sem portão ou UUID"
-  PROIB_I=$(proc_proibidos) || recusa "cargo test, processo CUDA em execução ou lista de processos ilegível (modo interno): $(echo "$PROIB_I" | head -n 3 | tr '\n' ' ')"
   confere_binario || recusa "binário com sha diferente do FIXO (${FIXO[binario-instr]}): $BIN (modo interno)"
+  PROIB_I=$(proc_proibidos) || recusa "cargo test, processo CUDA em execução ou lista de processos ilegível (modo interno): $(echo "$PROIB_I" | head -n 3 | tr '\n' ' ')"
   mkdir -p "$SAIDA/celulas" || exit 2
   # a variável do instrumento NÃO é limpa aqui: cada processo recebe o seu ambiente explícito (D: env -u LASTRO_PERFIL_BLOCO; L: LASTRO_PERFIL_BLOCO=1; smoke: -u); o que o ambiente de quem chama trouxer não vale
   unset CMP_FRACAO_SLOTS CMP_CAMADAS_CPU
