@@ -2,7 +2,7 @@
 //! `qual-runs/A2-LOTE-20261103/criterio-5b-primeira-palavra.txt` (congelado antes de qualquer dado de GPU). NÃO RODA SEM AUTORIZAÇÃO.
 //!
 //! Só abre a GPU com `PRIMEIRA_PALAVRA_AUTORIZADA=1` (variável própria: nenhuma guarda antiga abre este programa) e com `CUDA_VISIBLE_DEVICES`
-//! igual ao UUID combinado da 4090. A 5090 nunca. `--ensaio` imprime o plano, confere hashes e conta os ids dos textos SEM abrir o device e sem a
+//! igual ao UUID combinado da RTX 3080 Ti. A 4090, a 5090 e qualquer outra nunca. `--ensaio` imprime o plano, confere hashes e conta os ids dos textos SEM abrir o device e sem a
 //! variável. `--consolida` só lê resultados já gravados (sem GPU, sem a variável).
 //!
 //! Modos:
@@ -47,8 +47,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 const VARIAVEL: &str = "PRIMEIRA_PALAVRA_AUTORIZADA";
-/// O UUID da RTX 4090 combinado para a janela: `CUDA_VISIBLE_DEVICES` tem de ser exatamente isto.
-const UUID_4090: &str = "GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd";
+/// O UUID da RTX 3080 Ti combinada para a janela: `CUDA_VISIBLE_DEVICES` tem de ser exatamente isto.
+const UUID_3080TI: &str = "GPU-b22d9465-8552-9f97-812e-380b590645f8";
 /// O hash do critério aprovado e congelado: um `--criterio` com outro conteúdo recusa antes de abrir a GPU.
 const CRITERIO_SHA: &str = "4fa895887a12ed2cdbcc1b132e568fe62c46b37c231b7158c33947ba042c5a4b";
 const FRACAO_SLOTS: f64 = 0.10;
@@ -450,11 +450,11 @@ fn exige_autorizacao(valor: Option<&str>) -> Result<(), String> {
     }
 }
 
-/// O UUID da GPU: `CUDA_VISIBLE_DEVICES` tem de ser exatamente o da 4090 combinada.
+/// O UUID da GPU: `CUDA_VISIBLE_DEVICES` tem de ser exatamente o da 3080 Ti combinada.
 fn exige_uuid(valor: Option<&str>) -> Result<(), String> {
     match valor {
-        Some(UUID_4090) => Ok(()),
-        outro => Err(format!("CUDA_VISIBLE_DEVICES tem de ser {UUID_4090} (a 4090 combinada); veio {outro:?}")),
+        Some(UUID_3080TI) => Ok(()),
+        outro => Err(format!("CUDA_VISIBLE_DEVICES tem de ser {UUID_3080TI} (a 3080 Ti combinada); veio {outro:?}")),
     }
 }
 
@@ -1806,7 +1806,7 @@ mod tests {
     }
 
     #[test]
-    fn portao_proprio_e_uuid_da_4090() {
+    fn portao_proprio_e_uuid_da_3080ti() {
         assert!(exige_autorizacao(None).is_err());
         for x in ["0", "", "true", "2"] {
             assert!(exige_autorizacao(Some(x)).is_err(), "{x}");
@@ -1816,11 +1816,12 @@ mod tests {
         for velha in ["LEITURA_VELOCIDADE_AUTORIZADA", "LEITURA_CORRECAO_AUTORIZADA", "E4B_MEDIDA_AUTORIZADA", "E4B_GPU_AUTORIZADO"] {
             assert_ne!(VARIAVEL, velha, "variável própria: nenhuma guarda antiga abre este programa");
         }
-        assert_eq!(UUID_4090, "GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd");
-        assert!(exige_uuid(Some(UUID_4090)).is_ok());
+        assert_eq!(UUID_3080TI, "GPU-b22d9465-8552-9f97-812e-380b590645f8");
+        assert!(exige_uuid(Some(UUID_3080TI)).is_ok());
         assert!(exige_uuid(None).is_err() && exige_uuid(Some("")).is_err() && exige_uuid(Some("0")).is_err());
         assert!(exige_uuid(Some("GPU-00000000-0000-0000-0000-000000000000")).is_err(), "a 5090 e qualquer outra GPU nunca");
-        assert!(exige_uuid(Some(&format!("{UUID_4090},0"))).is_err());
+        assert!(exige_uuid(Some("GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd")).is_err(), "a 4090 antiga nunca");
+        assert!(exige_uuid(Some(&format!("{UUID_3080TI},0"))).is_err());
     }
 
     #[test]

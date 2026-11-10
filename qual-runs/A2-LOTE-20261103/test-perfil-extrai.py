@@ -60,7 +60,7 @@ class Base(unittest.TestCase):
         grava(self.textos, {"textos": [{"nome": t, "ids_com_template": {"1b": NPOS[t], "3b": NPOS[t]}} for t in IDS]})
         # integridade FIXA completa e coerente (cada chave com sha de 64 hex; o binário tem o sha da janela)
         self.shas = {k: ("%02d" % i) * 32 for i, k in enumerate(P.FIXO_CHAVES + ("tokenizer-%s" % self.modelo,))}
-        self.shas["binario-lastro"] = "e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4"
+        self.shas["binario-lastro"] = "65faf6e712276b2c6a6029fdd0ac8315fe1f707920f2b18e0205ef511d38a3e4"
         self.shas["gguf-extra"] = "d" * 64
         self.manifesto()
         grava(os.path.join(self.saida, "orcamento.json"), {"modelos": [self.modelo], "limite_s": 1200, "decorrido_s": 600, "cortes": [], "nao_rodou": []})
@@ -410,6 +410,26 @@ class TestValidade(Base):
         self.assertTrue(any("smoke ausente" in x for x in r["celulas"]["lastro-1b-LC-curto-quente"]["motivos"]))
         self.assertEqual(r["series"]["L10"]["status"], "OK")       # o L10 não exige smoke
 
+    def test_smoke_reprovado_sem_celulas_da_serie_e_sem_prova_nao_nao_rodou(self):
+        # smoke por série: L100 reprovou (veredito gravado) e a janela não rodou nenhuma célula L100; L10 e LC rodaram
+        for s in ("L10", "LC"):
+            for t in ("curto", "medio", "longo"):
+                self.celula(s, t)
+        self.smoke("L100", False, motivo="falha de alocação de memória na GPU")
+        r = self.roda()
+        self.assertEqual(r["series"]["L100"]["status"], "SEM PROVA")
+        for t in ("curto", "medio", "longo"):
+            c = r["celulas"]["lastro-1b-L100-%s-quente" % t]
+            self.assertEqual(c["status"], "SEM PROVA")
+            self.assertTrue(any("falha de alocação de memória" in x for x in c["motivos"]))
+        self.assertEqual(r["series"]["L100"]["previsoes"]["P3"]["resultado"].startswith("SEM PROVA"), True)
+        self.assertEqual(r["series"]["L10"]["status"], "OK")
+        self.assertEqual(r["series"]["LC"]["status"], "OK")
+        # smoke ausente (a janela não chegou a rodá-lo): as células ausentes seguem NÃO RODOU
+        os.remove(os.path.join(self.saida, "smoke-L100", "veredito.txt"))
+        r = self.roda()
+        self.assertEqual(r["celulas"]["lastro-1b-L100-curto-quente"]["status"], "NÃO RODOU")
+
     def test_integridade_quebrada_sem_prova_em_tudo(self):
         self.tudo()
         grava(os.path.join(self.saida, "integridade-depois.txt"), "binario ZZZ\ngguf def\n")
@@ -685,6 +705,25 @@ class TestP2Binario(Base):
             self.assertEqual(r["series"][s]["previsoes"]["P2"]["binario_referencia"], b)
             self.assertIn("binário da janela de referência %s; binário de agora %s" % (b, self.shas["binario-lastro"]), md)
         self.assertEqual(md.count("P2 compara com binário diferente no L10 e L100 (mudanças aditivas) e com amostragem P4 a 10 Hz; fora da previsão não isola a causa"), 3)
+
+
+class TestAvisosEmenda2(Base):
+    def test_p3_traz_o_aviso_da_4090_no_json_e_no_md(self):
+        self.tudo()
+        r = self.roda()
+        md = P.relatorio(r)
+        frase = "a faixa de P3 vem da RTX 4090; na 3080 Ti, 'fora da previsão' em P3 não isola a causa (placa ou motor), principalmente no L100. P1 não depende da placa"
+        for s in ("L10", "L100", "LC"):
+            self.assertIn(frase, r["series"][s]["previsoes"]["P3"]["aviso"])
+        self.assertEqual(md.count(frase), 3)
+
+    def test_aviso_geral_e_criterio_atualizados(self):
+        self.tudo()
+        r = self.roda()
+        self.assertNotIn("P1, P2 e P3 são previsões", r["aviso"])
+        self.assertIn("P1 e P3 são previsões pré-registradas", r["aviso"])
+        self.assertIn("P2 é descritivo na 3080 Ti (Emenda 2)", r["aviso"])
+        self.assertIn("Emenda 2", r["criterio"])
 
 
 class TestGpuIntervalo(Base):

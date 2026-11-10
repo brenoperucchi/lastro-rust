@@ -33,6 +33,7 @@ cat > "$D/smi" <<'F'
 [ -z "${SMI_LOG:-}" ] || echo "$*" >> "$SMI_LOG"
 case $* in
   *-lms*) echo "2026/11/09 04:00:00.000, 12 %";;
+  *"-i GPU-b22d9465-8552-9f97-812e-380b590645f8 --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max"*) echo "370.00 W, 16, 4";;
   *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%]"; echo "GPU-falsa, 1 MiB, 0 %";;
   *pmon*) if [ -n "${FAKE_PMON_ARQ:-}" ]; then cat "$FAKE_PMON_ARQ"; else echo "# gpu pid type sm mem enc dec jpg ofa fb ccpm command"; echo "# Idx # C/G % % % % % % MB MB name"; fi;;
   *) echo;;
@@ -107,6 +108,7 @@ confere "modo interno sem portão/UUID: recusa 2, nada criado" "[ $? = 2 ] && [ 
 CMP_FAKE_SLEEP=0.4 interno A 100000
 confere "A (folgado, 1B): sai 0, decisao.txt, 9 células quentes, nenhum corte" "[ $RC = 0 ] && [ -s $D/si-A/decisao.txt ] && [ \$(nceluas A) = 9 ] && [ \$(cortes A) = 0 ] && grep -q 'cortes de orçamento: nenhum' $D/si-A/decisao.txt"
 confere "A: ordem das células = plano gravado = L10, L100, LC, cada uma com curto, medio, longo" "[ \"\$(grep -o 'lastro-[^ ]*' $D/si-A/ordem.txt | tr '\n' ' ' | sed 's/ \$//')\" = \"$ESPERADA_1B\" ] && [ \"\$(grep -o 'lastro-[^ ]*' $D/si-A/plano.txt | tr '\n' ' ' | sed 's/ \$//')\" = \"$ESPERADA_1B\" ]"
+confere "A: ambiente.txt registra power.limit, largura e geração do PCIe (nvidia-smi -i UUID)" "grep -qx 'gpu_limites=370.00 W, 16, 4' $D/si-A/ambiente.txt && grep -q -- '-i GPU-b22d9465-8552-9f97-812e-380b590645f8 --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max' $D/smilog-A"
 confere "A: smoke L100 e depois smoke LC, ANTES de qualquer célula (ordem.txt)" "[ \"\$(sed -n 1p $D/si-A/ordem.txt | cut -d' ' -f1)\" = smoke-L100 ] && [ \"\$(sed -n 2p $D/si-A/ordem.txt | cut -d' ' -f1)\" = smoke-LC ] && [ \"\$(sed -n 3p $D/si-A/ordem.txt | cut -d' ' -f2)\" = lastro-1b-L10-curto-quente ]"
 confere "A: smokes com CMP_FRACAO_SLOTS=1.0 (L100) e CMP_CAMADAS_CPU=22 (LC), um só por série" "[ \"\$(grep -c '^SMOKE' $D/log-A)\" = 2 ] && grep -q '^SMOKE 1b FRAC=1.0 CAMADAS=\$' $D/log-A && grep -q '^SMOKE 1b FRAC= CAMADAS=22\$' $D/log-A && grep -q 'veredito=OK' $D/si-A/smoke-L100/veredito.txt && grep -q 'veredito=OK' $D/si-A/smoke-LC/veredito.txt"
 confere "A: L10 sem variável de série; L100 com FRACAO 1.0; LC com CAMADAS 22; só --estado quente --n 5 (nenhuma célula fria)" "grep -c 'L10-.* FRAC= CAMADAS= ' $D/log-A | grep -q '^3\$' && grep -c 'L100-.* FRAC=1.0 CAMADAS= ' $D/log-A | grep -q '^3\$' && grep -c 'LC-.* FRAC= CAMADAS=22 ' $D/log-A | grep -q '^3\$' && [ \$(grep -c ' n=5 ' $D/log-A) = 9 ] && ! grep -q 'frio' $D/si-A/ordem.txt"
@@ -131,12 +133,16 @@ confere "E (limite 30, nem 1 célula de 40 s cabe): 0 células, tudo NÃO RODOU,
 # F. células 2x mais lentas que o estimado: corte dinâmico pelo relógio no meio da janela
 CMP_FAKE_MULT=2 interno F 700
 confere "F (células 2x mais lentas, limite 700): corte no meio da janela (tempo > 0), as primeiras células com n=5 e as seguintes com n=3" "[ \$(cortes F) = 1 ] && grep -q '^corte em [1-9][0-9]* s: quente cai' $D/si-F/orcamento-log.txt && sed -n 3p $D/si-F/ordem.txt | grep -q 'n=5' && grep -q ' n=3 ' $D/si-F/ordem.txt"
-# G. smoke falho PARA a janela do modelo
+# G. smoke por série: L100 falha por memória/CPU (código 0) e LC passa: SÓ L100 fica SEM PROVA, a janela segue com L10 e LC
 FAKE_SMOKE_FALHA=L100 interno G 100000
-confere "G (smoke L100 falha): janela parada, o smoke LC nem roda, nenhuma célula, 9 NÃO RODOU + a janela, decisão com 'L100 NÃO SUSTENTA 100%'" "[ \$(nceluas G) = 0 ] && [ \$(grep -c '^SMOKE' $D/log-G) = 1 ] && grep -q 'L100 NÃO SUSTENTA 100%' $D/si-G/decisao.txt && [ \$(ls $D/si-G/celulas | wc -l) = 0 ] && grep -q 'NÃO RODOU: janela do modelo 1b inteira' $D/si-G/orcamento-log.txt && [ -s $D/si-G/perfil-resultado.json ]"
+confere "G (smoke L100 falha, código 0): um smoke de cada série, nenhuma célula L100, 3 células L10 e 3 LC, decisão com 'L100 NÃO SUSTENTA 100%'" "[ \$(nceluas G) = 6 ] && [ \$(grep -c '^SMOKE' $D/log-G) = 2 ] && [ \$(ls $D/si-G/celulas | grep -c L100) = 0 ] && [ \$(ls $D/si-G/celulas | grep -c -- '-L10-') = 3 ] && [ \$(ls $D/si-G/celulas | grep -c -- '-LC-') = 3 ] && grep -q 'L100 NÃO SUSTENTA 100%' $D/si-G/decisao.txt && grep -q 'SEM PROVA, série L100' $D/si-G/orcamento-log.txt && ! grep -q 'NÃO RODOU: lastro-1b-L100' $D/si-G/orcamento-log.txt && [ -s $D/si-G/perfil-resultado.json ]"
+confere "G: sem nova tentativa (um único SMOKE L100 e nenhuma célula L100 no log) e orçamento sem cortes por causa da série perdida" "[ \$(grep -c 'FRAC=1.0' $D/log-G) = 1 ] && [ \$(cortes G) = 0 ]"
+confere "G: o extrator marca L100 como SEM PROVA (não NÃO RODOU) com o motivo do smoke; L10 e LC seguem OK ou conforme as células" "python3 -I -c \"import json; r=json.load(open('$D/si-G/perfil-resultado.json')); assert r['smokes']['L100']['ok'] is False; assert r['series']['L100']['status']=='SEM PROVA'; assert all(r['celulas']['lastro-1b-L100-%s-quente'%t]['status']=='SEM PROVA' and r['celulas']['lastro-1b-L100-%s-quente'%t]['motivos'] for t in ('curto','medio','longo')); assert r['series']['L10']['status']!='NÃO RODOU' and r['series']['LC']['status']!='NÃO RODOU'\""
 FAKE_SMOKE_FALHA=LC interno H 100000
-confere "H (smoke LC falha, L100 ok): janela parada, nenhuma célula (nem L10), decisão cita o smoke de camadas-CPU" "[ \$(nceluas H) = 0 ] && [ \$(grep -c '^SMOKE' $D/log-H) = 2 ] && grep -q 'SMOKE DE CAMADAS-CPU FALHOU' $D/si-H/decisao.txt && [ \$(ls $D/si-H/celulas | wc -l) = 0 ]"
-confere "G e H: o extrator não publica previsão nenhuma (séries NÃO RODOU) e registra o smoke" "python3 -I -c \"import json; r=json.load(open('$D/si-G/perfil-resultado.json')); assert all(s['status']=='NÃO RODOU' for s in r['series'].values()); assert r['smokes']['L100']['ok'] is False\""
+confere "H (smoke LC falha, L100 ok): só LC fica SEM PROVA; 3 células L10 e 3 L100 rodam, decisão cita o smoke de camadas-CPU" "[ \$(nceluas H) = 6 ] && [ \$(grep -c '^SMOKE' $D/log-H) = 2 ] && grep -q 'SMOKE DE CAMADAS-CPU FALHOU' $D/si-H/decisao.txt && [ \$(ls $D/si-H/celulas | grep -c -- '-LC-') = 0 ] && python3 -I -c \"import json; r=json.load(open('$D/si-H/perfil-resultado.json')); assert r['series']['LC']['status']=='SEM PROVA' and r['smokes']['LC']['ok'] is False\""
+# G2. código 2 num smoke (recusa de ambiente) interrompe a janela INTEIRA
+FAKE_SMOKE_RC=2 interno G2 100000
+confere "G2 (smoke recusa o ambiente, código 2): o smoke LC nem roda, nenhuma célula, a janela inteira NÃO RODOU, decisão gravada" "[ \$(nceluas G2) = 0 ] && [ \$(grep -c '^SMOKE' $D/log-G2) = 1 ] && [ \$(ls $D/si-G2/celulas | wc -l) = 0 ] && grep -q 'recusou o ambiente' $D/si-G2/orcamento-log.txt && grep -q 'NÃO RODOU: lastro-1b-LC-longo-quente' $D/si-G2/orcamento-log.txt && [ -s $D/si-G2/decisao.txt ]"
 # I. recusa de ambiente (código 2) numa célula interrompe a janela
 CMP_FAKE_RECUSA=lastro-1b-L100-curto-quente interno I 100000
 confere "célula que recusa o ambiente (2): janela interrompida na 4ª célula, as seguintes NÃO RODOU, decisão gravada" "[ \$(nceluas I) = 4 ] && grep -q 'recusou o ambiente' $D/si-I/orcamento-log.txt && grep -q 'NÃO RODOU: lastro-1b-LC-longo-quente' $D/si-I/orcamento-log.txt && [ -s $D/si-I/decisao.txt ]"
@@ -204,8 +210,6 @@ export CUDA_VISIBLE_DEVICES=GPU-00000000-0000-0000-0000-00000000f090
 roda uuid-5090; confere "UUID de outra GPU (a 5090 nunca entra): recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-uuid-5090 ] && ! grep -q '^stop' $D/uuid-5090/log"
 export CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
 roda uuid-4090; confere "UUID da 4090 (placa antiga): recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-uuid-4090 ] && ! grep -q '^stop' $D/uuid-4090/log"
-export CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
-roda uuid-4090; confere "UUID da 4090 (saiu do stack, só a 3080 Ti entra): recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-uuid-4090 ] && ! grep -q '^stop' $D/uuid-4090/log"
 export CUDA_VISIBLE_DEVICES=$UUID
 export PRIMEIRA_PALAVRA_AUTORIZADA=0
 roda portao-zero; confere "portão diferente de 1: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-portao-zero ]"
@@ -244,7 +248,7 @@ confere "CMP_MODO_TESTE=1 (modo de teste explícito) aceita a variável de teste
 env -i PATH="$PATH" HOME="$HOME" "$J" --verifica-fixos > "$D/fixos.txt" 2>&1; rcf=$?
 nok=$(grep -c ' OK$' "$D/fixos.txt"); nfal=$(grep -c ' FALHA$' "$D/fixos.txt"); naus=$(grep -c ' AUSENTE ' "$D/fixos.txt")
 echo "congelados do FIXO contra os arquivos reais: $nok OK, $nfal FALHA, $naus AUSENTE (código $rcf)"
-confere "--verifica-fixos: código 0 só com tudo OK (nenhum FALHA nem AUSENTE) e os itens essenciais presentes" "[ $rcf = 0 ] && [ $nfal = 0 ] && [ $naus = 0 ] && [ $nok -ge 20 ] && grep -q '^criterio-perfil 93f92552.*653b OK\$' $D/fixos.txt && grep -q '^binario-lastro .* OK\$' $D/fixos.txt && grep -q '^script-perfil-extrai .* OK\$' $D/fixos.txt && grep -q '^script-lastro .* OK\$' $D/fixos.txt && grep -q '^texto-longo .* OK\$' $D/fixos.txt && grep -q '^ref5c-3b .* OK\$' $D/fixos.txt && grep -q '^tokenizer-3b .* OK\$' $D/fixos.txt"
+confere "--verifica-fixos: código 0 só com tudo OK (nenhum FALHA nem AUSENTE) e os itens essenciais presentes" "[ $rcf = 0 ] && [ $nfal = 0 ] && [ $naus = 0 ] && [ $nok -ge 20 ] && grep -q '^criterio-perfil c006361c.*2c87 OK\$' $D/fixos.txt && grep -q '^binario-lastro .* OK\$' $D/fixos.txt && grep -q '^script-perfil-extrai .* OK\$' $D/fixos.txt && grep -q '^script-lastro .* OK\$' $D/fixos.txt && grep -q '^texto-longo .* OK\$' $D/fixos.txt && grep -q '^ref5c-3b .* OK\$' $D/fixos.txt && grep -q '^tokenizer-3b .* OK\$' $D/fixos.txt"
 confere "--verifica-fixos: o sha congelado do critério do perfil é o do arquivo atual (sha256sum direto)" "[ \"\$(grep '^criterio-perfil ' $D/fixos.txt | cut -d' ' -f2)\" = \"\$(sha256sum $AQUI/criterio-perfil-prefill-20261109.md | cut -d' ' -f1)\" ]"
 # arquivo de integridade alterado: FALHA e código 1; arquivo ausente: AUSENTE e código 1
 echo alterado > "$D/crit-perfil-alterado.md"
@@ -263,4 +267,13 @@ rm -f "$D/aviso-chamado"
 for v in $(compgen -v | grep '^CMP_EST_'); do export "$v=0"; done
 CMP_FAKE_SLEEP=40 LIM=3 roda lim
 confere "limite estourado: 124, sem decisão, timers restaurados, aviso dado" "[ $RC = 124 ] && [ ! -f $D/se-lim/decisao.txt ] && [ \"\$(cat $D/lim/a.timer)\" = active ] && grep -q 'terminou (código 124)' $D/aviso-chamado"
+# composição com o binário REAL (sem GPU): o portão do próprio primeira-palavra recusa a 4090 ANTES de abrir device ou criar a pasta de saída (nunca roda com o UUID da 3080 Ti aqui: abriria a GPU)
+BINREAL=$AQUI/../../rust/moe-rt/target/release/primeira-palavra
+if [ -x "$BINREAL" ]; then
+  env -u CMP_MODO_TESTE PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd "$BINREAL" --gera --celula 1b:/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct --so-texto curto --saida "$D/saida-binario-real" > "$D/out-binreal" 2>&1
+  rcb=$?
+  confere "binário real: com a UUID da 4090 recusa com código 2 citando a 3080 Ti, sem criar a pasta de saída" "[ $rcb = 2 ] && grep -q '3080 Ti' $D/out-binreal && [ ! -e $D/saida-binario-real ]"
+else
+  echo "FALHOU: binário real ausente em $BINREAL (cargo build --offline --release --bin primeira-palavra)"; falhas=$((falhas+1))
+fi
 if [ "$falhas" = 0 ]; then echo "TODOS OS TESTES PASSARAM"; exit 0; else echo "$falhas FALHA(S)"; exit 1; fi

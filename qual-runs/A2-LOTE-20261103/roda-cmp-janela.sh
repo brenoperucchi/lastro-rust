@@ -9,6 +9,8 @@
 #   roda-cmp-janela.sh --degrau2 --modelos 1b|3b --saida DIR [...]   (degrau 2, criterio-degrau2-camadas-20261109.md: séries LC e S2 SÓ, sem S1/S3; smoke antes das medidas)
 #   roda-cmp-janela.sh --verifica-fixos     (sem GPU, sem autorização, só lê: confere os shas congelados do FIXO contra os arquivos reais; código 0 se todos OK)
 #
+# Antes da janela: systemctl --user stop voxtype; ao fim: systemctl --user start voxtype (passo manual, não automatizado; o voxtype em compute na 3080 Ti recusa a janela com código 2).
+#
 # Dentro da janela (do modelo escolhido; o sha de tudo é conferido nas duas): (1) sha256 de tudo que o critério manda conferir (binário do Lastro, binários e bibliotecas do llama.cpp, 2 GGUF, config/tokenizer/safetensors dos
 # dois modelos, textos, referências, cmp-ids-prompt.json, critério) ANTES e DEPOIS, contra os valores congelados onde há (critério, ids, textos, referências, tokenizers);
 # quebrada = SEM PROVA em tudo; (2) ambiente.txt (memória do host se o sistema deixar ler, sem sudo interativo); (3) as células, em BLOCOS por (modelo, texto), na ordem
@@ -83,7 +85,7 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados (valem onde o critério já os fixa; binários, GGUF e safetensors só precisam ser iguais antes e depois).
 declare -A FIXO=(
-  [criterio-cmp]=004cef5703c29b98c38a825332aaa3a835ae70c07a9ff13614924f36853bb217
+  [criterio-cmp]=58dc7a4033272f7b7552d2d1edb26f427bd448ec5d93737e55b162683140e31f
   [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
   [texto-curto]=5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d
   [texto-medio]=bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a
@@ -93,8 +95,8 @@ declare -A FIXO=(
   [ref5c-3b]=968d9b391324a99fbaf5c772a351018b90105f572b32ee2db3140f79da123124
   [tokenizer-1b]=ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654
   [tokenizer-3b]=ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654
-  [criterio-degrau1]=873f414c828ff0b873f3abf65dc441d1e1f48325f9d13db94573c165814e32f1
-  [criterio-degrau2]=d11bea30ffefa884bc8f669cbf6bd2d531b262d863a78df5f65c507bf9937d2c
+  [criterio-degrau1]=8c3406a9fd3ba55133dfb2c2d3800076c6ee0a765735edf8be65f6ba1a72c7de
+  [criterio-degrau2]=bd8cb0510d5a6c3f55ec320a3177e2bec7ebce7b5776529989f0c45a61599b2a
 )
 CHAVES=(); CAMINHOS=()
 monta_lista() {
@@ -172,6 +174,8 @@ if [ $INTERNO = 1 ]; then
     echo "uuid=$UUID"
     echo "limite_s=$LIMITE folga_s=$FOLGA"
     "${NVIDIA_SMI:-nvidia-smi}" --query-gpu=name,driver_version,clocks.max.memory --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu=/'
+    # Emenda 10/2: limite de potência e link PCIe da placa de medida, registrados (a série vale no limite vigente, hoje 370 W; se mudar, a série é invalidada)
+    "${NVIDIA_SMI:-nvidia-smi}" -i "$UUID" --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu_limites=/'
     echo "loadavg=$(cut -d' ' -f1-3 < /proc/loadavg 2>/dev/null)"
     if [ "${CMP_SEM_MEMORIA:-0}" != 1 ]; then
       mts=$(sudo -n dmidecode -t memory 2>/dev/null | awk -F': ' '/Configured Memory Speed/ && $2 ~ /[0-9]/ { split($2, a, " "); print a[1]; exit }')

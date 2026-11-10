@@ -70,6 +70,7 @@ FIXO_CHAVES = ("criterio-perfil", "binario-lastro", "script-perfil-extrai", "scr
 BIN_REF = {"L10": "f0a272db2df8aca6642073b830cc8234f2d2434e01c8ae6ef618886e6e3dc2df", "L100": "936d0c146d750f4849b7724ba5ae7ddd099618629a4e12bd2984758b801c3551",
            "LC": "e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4"}
 P2_DESCRITIVO = "descritivo (sem veredito: a referência é da 4090 e a placa agora é a 3080 Ti)"
+AVISO_P3 = ("Emenda 2: a faixa de P3 vem da RTX 4090; na 3080 Ti, 'fora da previsão' em P3 não isola a causa (placa ou motor), principalmente no L100. P1 não depende da placa")
 AVISO_P2 = "Emenda 2: os valores de referência são da RTX 4090 e NÃO são comparáveis com a 3080 Ti; esta janela é a linha de base nova. P2 compara com binário diferente no L10 e L100 (mudanças aditivas) e com amostragem P4 a 10 Hz; fora da previsão não isola a causa"
 
 
@@ -287,7 +288,8 @@ def status_serie(cels):
 
 
 def previsoes(m, s, cels, bin_atual=None):
-    """P1, P2 e P3 de uma série (só com as três células OK); 'dentro da previsão' ou 'fora da previsão', sempre com o dado ao lado."""
+    """P1 a P3 de uma série (só com as três células OK). P1 e P3 são previsões pré-registradas ('dentro da previsão' ou 'fora da previsão', sempre com o dado ao lado; a faixa de P3
+    vem da 4090, ver AVISO_P3); P2 é DESCRITIVO na 3080 Ti (Emenda 2): desvios contra a janela anterior, sem veredito."""
     st = status_serie(cels)
     if st != "OK":
         motivo = {"SEM PROVA": "SEM PROVA: série sem as três células válidas", "NÃO RODOU": "NÃO RODOU: série incompleta"}[st]
@@ -308,7 +310,7 @@ def previsoes(m, s, cels, bin_atual=None):
         p3 = {"resultado": "SEM PROVA: passo de decode ausente", "razoes": dict(zip(TEXTOS, rz))}
     else:
         p3 = {"resultado": "dentro da previsão" if all(lo <= x <= hi for x in rz) else "fora da previsão", "faixa": [lo, hi], "tolerancia": P3_TOL, "razoes": dict(zip(TEXTOS, rz)),
-              "mediana_da_serie": statistics.median(rz), "decode_ms_passo": dict(zip(TEXTOS, [c["decode_ms_passo_mediana"] for c in cels]))}
+              "mediana_da_serie": statistics.median(rz), "aviso": AVISO_P3, "decode_ms_passo": dict(zip(TEXTOS, [c["decode_ms_passo_mediana"] for c in cels]))}
     # marca de sequência ao lado de P3 (Emenda 1): vem das células; tempos e P3 seguem mantidos
     sq = [c["sequencia"] for c in cels]
     if any(not x["referencia_disponivel"] for x in sq):
@@ -363,9 +365,14 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
         sm = smoke_serie(saida, s)
         smokes[s] = None if sm is None else {"ok": sm[0], "motivo": sm[1]}
         # smoke da série ausente ou falho: as células que existirem não valem (as ausentes seguem NÃO RODOU)
+        # smoke com veredito gravado e reprovado (falha POR SÉRIE): a série inteira é SEM PROVA, inclusive as células que a janela não rodou por causa dele (não é NÃO RODOU)
+        sm_reprovado = sm is not None and not sm[0] and bool(X.le_chave_valor(os.path.join(saida, "smoke-%s" % s, "veredito.txt")))
         if sm is not None and not sm[0]:
             for c in cels:
-                if c["status"] == "OK":
+                if c["status"] == "NÃO RODOU" and sm_reprovado:
+                    c["status"] = "SEM PROVA"
+                    c["motivos"] = [sm[1]]
+                elif c["status"] == "OK":
                     c["status"] = "SEM PROVA"
                     c["motivos"] = sorted(set(c["motivos"] + [sm[1]]))
         if integ:
@@ -378,9 +385,9 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
         series[s] = {"rotulo": ROTULO[s], "status": status_serie(cels), "previsoes": previsoes(m, s, cels, bin_atual)}
     ordem = (X.le_txt(os.path.join(saida, "ordem.txt")) or "").splitlines()
     res = {
-        "tipo": "perfil-resultado", "criterio": "criterio-perfil-prefill-20261109.md (versão 3; herda o critério base e as Emendas 1 dos degraus 1 e 2 para a validade)", "descritivo": True,
+        "tipo": "perfil-resultado", "criterio": "criterio-perfil-prefill-20261109.md (versão 3, com a Emenda 2: P2 descritivo e referências da 4090 não comparáveis com a 3080 Ti; herda o critério base e as Emendas 1 dos degraus 1 e 2 para a validade)", "descritivo": True,
         "modelo_da_janela": m,
-        "aviso": "Descritivo: sem meta e sem PASSA. P1, P2 e P3 são previsões pré-registradas, só conferidas ('dentro da previsão' / 'fora da previsão'); nenhuma prova causa. "
+        "aviso": "Descritivo: sem meta e sem PASSA. P1 e P3 são previsões pré-registradas, só conferidas ('dentro da previsão' / 'fora da previsão'); P2 é descritivo na 3080 Ti (Emenda 2); nenhuma prova causa. "
                  "P4 descreve a célula inteira (inclui carga e criação do motor) e não atribui nada ao prefill.",
         "binario_da_janela": bin_atual, "integridade_problemas": integ, "observacoes_ambiente": obs, "smokes": smokes, "orcamento": orc, "ordem": ordem, "celulas": celulas, "series": series,
     }
@@ -433,6 +440,7 @@ def relatorio(res):
         if "faixa" in p3:
             o.append("  - faixa %s a %s; razões %s; mediana da série %s" % (f(p3["faixa"][0], 3), f(p3["faixa"][1], 3), ", ".join("%s %s" % (t, f(p3["razoes"][t], 3)) for t in TEXTOS), f(p3["mediana_da_serie"], 3)))
             o.append("  - sequência: %s" % p3["sequencia"])
+            o.append("  - %s" % p3["aviso"])
         o.append("")
     o += ["## P4 (descritivo): utilização da GPU e %CPU do processo, célula inteira", "",
           "A leitura cobre carga, criação do motor, prefill e decode; os carimbos de início e fim do prefill não saem do binário, então nada é atribuído ao prefill. "

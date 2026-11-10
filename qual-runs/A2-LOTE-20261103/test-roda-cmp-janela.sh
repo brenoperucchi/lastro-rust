@@ -23,7 +23,7 @@ echo c > "$D/textos/texto-curto.txt"; echo m > "$D/textos/texto-medio.txt"; echo
 echo r1 > "$D/refs/ref5c-1b.json"; echo r3 > "$D/refs/ref5c-3b.json"
 echo '{"modelos": {}}' > "$D/ids.json"; echo criterio > "$D/crit.md"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$D/pp"; chmod +x "$D/pp"
-printf '#!/usr/bin/env bash\ncase $* in *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%%]"; echo "GPU-falsa, 1 MiB, 0 %%";; *pmon*) if [ -n "${FAKE_PMON_ARQ:-}" ]; then cat "$FAKE_PMON_ARQ"; else echo "# gpu pid type sm mem enc dec jpg ofa fb ccpm command"; echo "# Idx # C/G %% %% %% %% %% %% MB MB name"; fi;; *) echo;; esac\n' > "$D/smi"; chmod +x "$D/smi"
+printf '#!/usr/bin/env bash\ncase $* in *power.limit*) case $* in *"-i GPU-b22d9465-8552-9f97-812e-380b590645f8 "*) echo "370.00 W, 16, 4";; esac;; *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%%]"; echo "GPU-falsa, 1 MiB, 0 %%";; *pmon*) if [ -n "${FAKE_PMON_ARQ:-}" ]; then cat "$FAKE_PMON_ARQ"; else echo "# gpu pid type sm mem enc dec jpg ofa fb ccpm command"; echo "# Idx # C/G %% %% %% %% %% %% MB MB name"; fi;; *) echo;; esac\n' > "$D/smi"; chmod +x "$D/smi"
 # células falsas: avançam o relógio virtual pelo custo (mesma fórmula das estimativas dos testes) e gravam celula.json
 cat > "$D/celula-falsa.sh" <<'F'
 #!/usr/bin/env bash
@@ -82,6 +82,7 @@ confere "A (folgado): sai 0, 48 células, nenhum corte, decisao.txt gravada" "[ 
 confere "A: repetições nominais (frio n=3, quente n=5) nos dois lados; as 12 células da S3 com as mesmas repetições do Lastro" "[ \$(grep -c 'frio n=3' $D/si-A/ordem.txt) = 24 ] && [ \$(grep -c 'quente n=5' $D/si-A/ordem.txt) = 24 ] && [ \$(grep 'S3.*frio n=3' $D/si-A/ordem.txt | wc -l) = 6 ] && [ \$(grep 'S3.*quente n=5' $D/si-A/ordem.txt | wc -l) = 6 ]"
 confere "A: ordem E8: 1B antes do 3B, S3 por último; frio antes do quente no bloco" "[ \$(ordem A 1) = lastro-1b-L-curto-frio ] && [ \$(ordem A 37) = llamacpp-1b-S3-curto-frio ] && [ \$(ordem A 48) = llamacpp-3b-S3-longo-quente ] && sed -n 1,18p $D/si-A/ordem.txt | grep -q '1b-L-curto-quente' && ! sed -n 1,18p $D/si-A/ordem.txt | grep -q ' llamacpp-3b'"
 confere "A: lados ALTERNADOS: bloco 0 começa pelo Lastro, bloco 1 pelo llama.cpp (e termina no Lastro), bloco 2 de novo pelo Lastro; ordem gravada com início/fim" "[ \$(ordem A 1) = lastro-1b-L-curto-frio ] && [ \$(ordem A 7) = llamacpp-1b-S1-medio-frio ] && [ \$(ordem A 9) = lastro-1b-L-medio-frio ] && [ \$(ordem A 13) = lastro-1b-L-longo-frio ] && grep -q 'inicio=0s fim=40s rc=0' $D/si-A/ordem.txt"
+confere "A: ambiente.txt registra power.limit, largura e geração do PCIe da placa de medida (consulta com -i UUID)" "grep -qx 'gpu_limites=370.00 W, 16, 4' $D/si-A/ambiente.txt"
 confere "A: pastas de célula novas (uma por célula), integridade antes/depois e ambiente gravados, extrator rodou" "[ \$(ls $D/si-A/celulas | wc -l) = 48 ] && [ -s $D/si-A/integridade-antes.txt ] && cmp -s $D/si-A/integridade-antes.txt $D/si-A/integridade-depois.txt && [ -s $D/si-A/ambiente.txt ] && [ -s $D/si-A/cmp-resultado.json ] && [ -s $D/si-A/cmp-resultado.md ] && grep -q '^llama-lib-libllama.so.0.8.0 ' $D/si-A/integridade-antes.txt && grep -q '^safetensors-3b-2 ' $D/si-A/integridade-antes.txt && grep -q '^gguf-3b ' $D/si-A/integridade-antes.txt"
 # B. S3 não cabe: corte (1) apenas
 interno B 1500

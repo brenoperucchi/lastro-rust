@@ -8,10 +8,12 @@
 #
 # --modelos 1b|3b é OBRIGATÓRIO (uma janela por modelo; nunca as duas de uma vez). --limite padrão 1200 s e máximo 1200 s (20 min, o do escopo); o de fora é o de dentro mais 120 s.
 #
+# Antes da janela: systemctl --user stop voxtype; ao fim: systemctl --user start voxtype (passo manual, não automatizado; o voxtype em compute na 3080 Ti recusa a janela com código 2).
+#
 # Dentro da janela: (1) sha256 de tudo que o critério manda conferir ANTES e DEPOIS, contra os valores congelados onde há (quebrada = SEM PROVA em tudo); (2) ambiente.txt;
 # (3) SMOKE antes das células, uma geração curta de 64 tokens por série que muda o posicionamento: L100 (CMP_FRACAO_SLOTS=1.0, como no degrau 1; julgado por `cmp-extrai.py --smoke`) e
-# camadas-CPU (CMP_CAMADAS_CPU 22 no 1B e 29 no 3B, como no degrau 2; julgado por `cmp-extrai.py --smoke --degrau2`). Falha de qualquer smoke PARA a janela do modelo (nada mais roda,
-# tudo NÃO RODOU), sem repetição automática; (4) as células, em ordem fixa gravada em plano.txt (e, executada, em ordem.txt); (5) perfil-extrai.py (perfil-resultado.json/.md) e decisao.txt.
+# camadas-CPU (CMP_CAMADAS_CPU 22 no 1B e 29 no 3B, como no degrau 2; julgado por `cmp-extrai.py --smoke --degrau2`). Smoke POR SÉRIE: a falha de um smoke (código 0 ou 1, inclusive por memória) marca SÓ aquela série como SEM PROVA (motivo no veredito do smoke) e a janela segue com as outras;
+# código 2 (recusa de ambiente) interrompe a janela inteira; sem repetição automática; (4) as células, em ordem fixa gravada em plano.txt (e, executada, em ordem.txt); (5) perfil-extrai.py (perfil-resultado.json/.md) e decisao.txt.
 # Séries (todas só Lastro, quentes): L10 (padrão, sem variável), L100 (CMP_FRACAO_SLOTS=1.0) e LC (CMP_CAMADAS_CPU=N); textos curto, medio, longo. Ordem: por SÉRIE (L10, L100, LC) e,
 # dentro dela, curto, medio, longo (assim um corte no fim deixa séries inteiras e a P1 de cada uma completa). Cada célula é UMA chamada ao roda-cmp-lastro.sh existente (--estado quente --n N:
 # 1 aquecimento descartado dentro do processo + N medidas quentes; sem células frias), em pasta NOVA DIR/celulas/lastro-<modelo>-<série>-<texto>-quente.
@@ -73,18 +75,18 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 # SHAs congelados (valem onde o critério já os fixa; GGUF, config e safetensors dos modelos só precisam ser iguais antes e depois). Os scripts e o binário daqui entram no FIXO.
 # O próprio roda-perfil-janela.sh NÃO pode conter o seu sha: --verifica-fixos o imprime à parte (linha informativa) para conferência por fora.
 declare -A FIXO=(
-  [criterio-perfil]=93f92552cb3ec09f0dbb1e62f03c2deb5ac45185a36af4178c8a2fcb028c653b
-  [binario-lastro]=e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4
-  [script-perfil-extrai]=8d12cfd84f07f77bd8e6e2e18c199ab666f40bb6ccba670a23011021d74e2c5d
+  [criterio-perfil]=c006361c4447c587a980db5e911eef97161275358768561e92005a3843632c87
+  [binario-lastro]=65faf6e712276b2c6a6029fdd0ac8315fe1f707920f2b18e0205ef511d38a3e4
+  [script-perfil-extrai]=4199484739b7550acf9898391e5b1e982c1e5af33841adeba6c10436c1f5ed8c
   [script-amostra-cpu]=de17df09d75015b54bc527954dc54944c465328a9bab1fbce6e20bb5a8adb3f4
   [script-cmp-extrai]=b02008a850bb034f97b8d0f9bf02d3e12bd515bc783f662c37c9d78de132999c
   [script-lastro]=8e924a36fff414f337857ffc75fc88c5b23e4cf12c3d6314384f3979cab80757
   [script-monitor]=d9d6adc7ccfab15fd87ff64c48e22c3dbda7b6ae4bb24baef48649164a2800dc
   [script-janela]=a168e6672ba87429b8c5ccc0c80ba7daa36335f6a911b91a3744454cf7e63d60
   [script-limite]=196c05649b43e64361766e98e5bab9873636799dfa5d83f70a468436cd4759cc
-  [criterio-cmp]=004cef5703c29b98c38a825332aaa3a835ae70c07a9ff13614924f36853bb217
-  [criterio-degrau1]=873f414c828ff0b873f3abf65dc441d1e1f48325f9d13db94573c165814e32f1
-  [criterio-degrau2]=d11bea30ffefa884bc8f669cbf6bd2d531b262d863a78df5f65c507bf9937d2c
+  [criterio-cmp]=58dc7a4033272f7b7552d2d1edb26f427bd448ec5d93737e55b162683140e31f
+  [criterio-degrau1]=8c3406a9fd3ba55133dfb2c2d3800076c6ee0a765735edf8be65f6ba1a72c7de
+  [criterio-degrau2]=bd8cb0510d5a6c3f55ec320a3177e2bec7ebce7b5776529989f0c45a61599b2a
   [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
   [texto-curto]=5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d
   [texto-medio]=bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a
@@ -170,6 +172,8 @@ if [ $INTERNO = 1 ]; then
     echo "modelo=$MODELOS"
     echo "limite_s=$LIMITE folga_s=$FOLGA"
     "$SMI" --query-gpu=name,driver_version,clocks.max.memory --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu=/'
+    # Emenda 10/2: limite de potência e link PCIe da placa de medida, registrados (a série vale no limite vigente, hoje 370 W; se mudar, a série é invalidada)
+    "$SMI" -i "$UUID" --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu_limites=/'
     echo "loadavg=$(cut -d' ' -f1-3 < /proc/loadavg 2>/dev/null)"
     if [ "${CMP_SEM_MEMORIA:-0}" != 1 ]; then
       mts=$(sudo -n dmidecode -t memory 2>/dev/null | awk -F': ' '/Configured Memory Speed/ && $2 ~ /[0-9]/ { split($2, a, " "); print a[1]; exit }')
@@ -232,8 +236,10 @@ if [ $INTERNO = 1 ]; then
     printf '%02d %s n=%s inicio=%ss fim=%ss rc=%s\n' "$SEQ" "$chave" "$n" "$t0" "$(decorrido)" "$rc" >> "$SAIDA/ordem.txt"
     [ "$rc" != 2 ] || { ABORTA=1; echo "célula $chave recusou o ambiente (código 2): janela interrompida" >> "$SAIDA/orcamento-log.txt"; }
   }
-  # ---- smoke ANTES das células (L100 e LC); falha (exceto ids) PARA a janela do modelo, sem repetição
+  # ---- smoke ANTES das células (L100 e LC), POR SÉRIE: falha (exceto ids) com código 0 ou 1 marca SÓ aquela série como SEM PROVA (motivo em SERIE_FALHA e no veredito.txt do smoke,
+  # que o perfil-extrai.py lê); a janela segue com as outras séries, sem repetição. Código 2 (recusa de ambiente) interrompe a janela inteira (ABORTA). SMOKE_FALHA global só para "sem orçamento".
   SMOKE_FALHA=
+  declare -A SERIE_FALHA=()
   roda_smoke() { # série
     local s=$1 dir="$SAIDA/smoke-$1" t0 rc_s rc_ev smk=() msg
     env_serie "$s"
@@ -246,10 +252,11 @@ if [ $INTERNO = 1 ]; then
     python3 -I "$EXTRAI" --smoke "$dir" --modelo "$MODELOS" "${smk[@]}" --ids "$IDS" --refs "$REFS" --textos "$TEXTOS/textos.json" > "$SAIDA/smoke-$s-veredito.out" 2>&1; rc_ev=$?
     if [ $rc_ev = 2 ]; then printf 'veredito=FALHA\nmotivo=smoke não avaliável (extrator recusou: pasta ou modelo)\n' > "$dir/veredito.txt"; fi
     if ! grep -q '^veredito=OK$' "$dir/veredito.txt" 2> /dev/null; then
-      SMOKE_FALHA=$(grep '^motivo=' "$dir/veredito.txt" 2> /dev/null | head -n 1 | cut -d= -f2-)
-      [ -n "$SMOKE_FALHA" ] || SMOKE_FALHA="smoke sem veredito legível"
-      SMOKE_FALHA="$msg ($s): $SMOKE_FALHA"
-      echo "$SMOKE_FALHA" >> "$SAIDA/orcamento-log.txt"
+      local mot
+      mot=$(grep '^motivo=' "$dir/veredito.txt" 2> /dev/null | head -n 1 | cut -d= -f2-)
+      [ -n "$mot" ] || mot="smoke sem veredito legível"
+      SERIE_FALHA[$s]="$msg ($s): $mot"
+      echo "SEM PROVA, série $s: ${SERIE_FALHA[$s]} (a janela segue com as outras séries)" >> "$SAIDA/orcamento-log.txt"
     fi
   }
   if [ $(( $(decorrido) + 2 * E_SMOKE[$MODELOS] + FOLGA )) -gt "$LIMITE" ]; then
@@ -257,16 +264,16 @@ if [ $INTERNO = 1 ]; then
     nr "janela do modelo $MODELOS inteira (sem orçamento para o smoke: $LIMITE s)"
   else
     roda_smoke L100
-    [ $ABORTA != 0 ] || [ -n "$SMOKE_FALHA" ] || roda_smoke LC
-    [ -z "$SMOKE_FALHA" ] || nr "janela do modelo $MODELOS inteira ($SMOKE_FALHA)"
+    [ $ABORTA != 0 ] || roda_smoke LC
   fi
-  projeta_restante() { local i tot=0; for ((i = $1; i < ${#CELULAS[@]}; i++)); do tot=$(( tot + $(est_celula "$REPS_Q") )); done; echo "$tot"; }
+  projeta_restante() { local i tot=0; for ((i = $1; i < ${#CELULAS[@]}; i++)); do [ -z "${SERIE_FALHA[${CELULAS[$i]%%:*}]:-}" ] || continue; tot=$(( tot + $(est_celula "$REPS_Q") )); done; echo "$tot"; }
   for ((ci = 0; ci < ${#CELULAS[@]}; ci++)); do
     s=${CELULAS[$ci]%%:*}; t=${CELULAS[$ci]##*:}
     if [ $ABORTA != 0 ] || [ -n "$SMOKE_FALHA" ]; then
       [ -n "$SMOKE_FALHA" ] || nr "lastro-$MODELOS-$s-$t-quente: janela interrompida por recusa de ambiente (código 2)"
       continue
     fi
+    [ -z "${SERIE_FALHA[$s]:-}" ] || continue   # série reprovada no smoke: SEM PROVA (motivo no veredito do smoke), nenhuma célula, nenhuma nova tentativa
     # único corte: quente 5 -> 3 medidas, antes de iniciar a célula, quando a projeção estoura
     if [ $REPS_Q = 5 ] && [ $(( $(decorrido) + $(projeta_restante "$ci") + FOLGA )) -gt "$LIMITE" ]; then
       REPS_Q=3; CORTES+=("quente cai de 5 para 3 medidas (nas células ainda não iniciadas)")
@@ -303,7 +310,8 @@ if [ $INTERNO = 1 ]; then
   python3 -I "$PERFIL_EXTRAI" --saida "$SAIDA" --ids "$IDS" --refs "$REFS" --textos "$TEXTOS/textos.json" > "$SAIDA/perfil-extrai.out" 2>&1; RC_EXT=$?
   {
     echo "perfil do prefill (Parte B), janela do modelo $MODELOS, critério sha256 $(sha "$CRIT_PERFIL")"
-    echo "resultado DESCRITIVO: sem meta, sem PASSA/REPROVA; P1 a P3 são previsões conferidas, P4 descreve a célula inteira sem atribuir nada ao prefill; só Lastro, sem llama.cpp"
+    echo "resultado DESCRITIVO: sem meta, sem PASSA/REPROVA; P1 e P3 são previsões pré-registradas conferidas, P2 é descritivo na 3080 Ti (Emenda 2), P4 descreve a célula inteira sem atribuir nada ao prefill; só Lastro, sem llama.cpp"
+    for s in L100 LC; do [ -z "${SERIE_FALHA[$s]:-}" ] || echo "SEM PROVA (série $s): ${SERIE_FALHA[$s]}"; done
     if [ -n "$SMOKE_FALHA" ]; then echo "$SMOKE_FALHA"; else echo "smoke L100: $(grep -E '^(veredito|ids|gpu_pico_pct|cpu_needed)=' "$SAIDA/smoke-L100/veredito.txt" 2> /dev/null | tr '\n' ' ')"; echo "smoke LC: $(grep -E '^(veredito|ids|gpu_pico_pct|cpu_needed|camadas_cpu)=' "$SAIDA/smoke-LC/veredito.txt" 2> /dev/null | tr '\n' ' ')"; fi
     if [ $INTEGRO = 1 ]; then echo "integridade: íntegra (binário, scripts, GGUF/safetensors do modelo, textos, referências, ids e critérios iguais antes e depois$([ "${SEM_SHA_FIXO:-0}" = 1 ] && echo '; congelados NÃO conferidos: SEM_SHA_FIXO=1' || echo ' e aos congelados onde há'))"
     else echo "integridade: QUEBRADA: tudo SEM PROVA"; for n in "${NOTAS[@]}"; do echo "  $n"; done; fi
