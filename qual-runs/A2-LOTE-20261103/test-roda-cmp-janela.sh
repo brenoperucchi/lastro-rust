@@ -8,7 +8,7 @@ unset E4B_GPU_AUTORIZADO E4B_MEDIDA_AUTORIZADA MOE_RT_REQUIRE_GPU PRIMEIRA_PALAV
 export CUDA_VISIBLE_DEVICES=
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
 J=$AQUI/roda-cmp-janela.sh
-UUID=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+UUID=GPU-b22d9465-8552-9f97-812e-380b590645f8
 D=$(mktemp -d -p "${TMPDIR:-/tmp}" cmp-janela-teste.XXXXXX) || exit 1
 echo "pasta de teste: $D"
 falhas=0
@@ -184,6 +184,8 @@ export PRIMEIRA_PALAVRA_AUTORIZADA=1
 roda sem-uuid; confere "sem UUID: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-sem-uuid ]"
 export CUDA_VISIBLE_DEVICES=GPU-00000000-0000-0000-0000-00000000f090
 roda uuid-5090; confere "UUID de outra GPU (a 5090 nunca entra): recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-uuid-5090 ] && ! grep -q '^stop' $D/uuid-5090/log"
+export CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+roda uuid-4090; confere "UUID da 4090 (placa antiga): recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-uuid-4090 ] && ! grep -q '^stop' $D/uuid-4090/log"
 export CUDA_VISIBLE_DEVICES=$UUID
 export PRIMEIRA_PALAVRA_AUTORIZADA=0
 roda portao-zero; confere "portão diferente de 1: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-portao-zero ]"

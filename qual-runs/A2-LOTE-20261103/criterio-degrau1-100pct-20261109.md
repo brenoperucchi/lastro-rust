@@ -41,3 +41,7 @@ Só aumenta o rigor; vale onde conflita com o texto acima.
 2. Memória do smoke: só valem leituras com carimbo de tempo DENTRO do intervalo em que o binário rodou; mínimo de 3 leituras, lacunas e início/fim cobertos com tolerância de 3 s; limite de 90% sobre o máximo dessas leituras. A amostra pós-saída é só descritiva e nunca aprova. Sem cobertura = falha fechada.
 3. `cont.needed` e `cont.cpu` têm de existir, ser numéricos, finitos e não negativos; ausente ou null NUNCA vira zero (smoke falha, célula SEM PROVA). L100 exige needed > 0 e cpu explicitamente 0.
 4. Se o smoke real terminar sem o mínimo de leituras (geração muito curta), vale a falha fechada: a janela do modelo para e o resultado é "L100 NÃO SUSTENTA 100%: leituras insuficientes". Sem repetição automática.
+
+## Emenda (10/11, decisão do Breno): placa de medida 3080 Ti
+
+Onde este critério diz "90% da 4090", vale 90% da memória da placa de medida, a RTX 3080 Ti. A série é nova, só da 3080 Ti, e não se compara com números da 4090 (ver a Emenda 3 de `criterio-comparacao-llamacpp-20261108.md`).

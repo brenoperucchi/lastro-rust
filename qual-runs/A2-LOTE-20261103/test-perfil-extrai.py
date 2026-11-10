@@ -165,8 +165,9 @@ class TestDentroDaPrevisao(Base):
         self.assertTrue(all(c["status"] == "OK" for c in r["celulas"].values()), [c["motivos"] for c in r["celulas"].values() if c["status"] != "OK"])
         for s in SERIES:
             self.assertEqual(r["series"][s]["status"], "OK")
-            for p in ("P1", "P2", "P3"):
+            for p in ("P1", "P3"):
                 self.assertEqual(r["series"][s]["previsoes"][p]["resultado"], "dentro da previsão", (s, p, r["series"][s]["previsoes"][p]))
+            self.assertTrue(r["series"][s]["previsoes"]["P2"]["resultado"].startswith("descritivo"), r["series"][s]["previsoes"]["P2"])
 
     def test_tabela_e_numeros(self):
         self.tudo()
@@ -213,7 +214,7 @@ class TestPrevisoes(Base):
         pv = r["series"]["L10"]["previsoes"]
         self.assertEqual(pv["P1"]["resultado"], "fora da previsão")
         self.assertGreater(pv["P1"]["desvio_max"], 0.15)
-        self.assertEqual(pv["P2"]["resultado"], "fora da previsão")
+        self.assertTrue(pv["P2"]["resultado"].startswith("descritivo"), pv["P2"])
         self.assertGreater(pv["P2"]["desvios"]["longo"], 0.10)
         self.assertLess(pv["P2"]["desvios"]["curto"], 0.01)
         # as outras séries não são afetadas
@@ -235,20 +236,20 @@ class TestPrevisoes(Base):
             self.celula("L10", t, ms_pos=P.REF_MS_POS["1b"]["L10"][t] * 1.30)     # todos 30% acima: uniforme
         pv = self.roda()["series"]["L10"]["previsoes"]
         self.assertEqual(pv["P1"]["resultado"], "dentro da previsão")
-        self.assertEqual(pv["P2"]["resultado"], "fora da previsão")
+        self.assertTrue(pv["P2"]["resultado"].startswith("descritivo"), pv["P2"])
         self.assertAlmostEqual(pv["P2"]["desvio_max"], 0.30, places=6)
 
     def test_p2_bordas(self):
         self.tudo()
         for t in TEXTOS:
             self.celula("L100", t, ms_pos=1.58 * 1.09)
-        self.assertEqual(self.roda()["series"]["L100"]["previsoes"]["P2"]["resultado"], "dentro da previsão")
+        self.assertTrue(self.roda()["series"]["L100"]["previsoes"]["P2"]["resultado"].startswith("descritivo"))
         for t in TEXTOS:
             self.celula("L100", t, ms_pos=1.58 * 1.11)
-        self.assertEqual(self.roda()["series"]["L100"]["previsoes"]["P2"]["resultado"], "fora da previsão")
+        self.assertTrue(self.roda()["series"]["L100"]["previsoes"]["P2"]["resultado"].startswith("descritivo"))
         for t in TEXTOS:
             self.celula("L100", t, ms_pos=1.58 * 0.89)
-        self.assertEqual(self.roda()["series"]["L100"]["previsoes"]["P2"]["resultado"], "fora da previsão")
+        self.assertTrue(self.roda()["series"]["L100"]["previsoes"]["P2"]["resultado"].startswith("descritivo"))
 
     def test_p3_fora_quando_o_decode_muda(self):
         self.tudo()
@@ -258,7 +259,7 @@ class TestPrevisoes(Base):
         self.assertEqual(pv["P3"]["resultado"], "fora da previsão")
         self.assertAlmostEqual(pv["P3"]["razoes"]["curto"], 0.3325, places=3)
         self.assertEqual(pv["P1"]["resultado"], "dentro da previsão")
-        self.assertEqual(pv["P2"]["resultado"], "dentro da previsão")
+        self.assertTrue(pv["P2"]["resultado"].startswith("descritivo"), pv["P2"])
 
     def test_p3_faixas_por_serie(self):
         lo, hi = P.P3_FAIXA["L100"]

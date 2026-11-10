@@ -6,7 +6,7 @@ unset E4B_GPU_AUTORIZADO E4B_MEDIDA_AUTORIZADA MOE_RT_REQUIRE_GPU PRIMEIRA_PALAV
 export CUDA_VISIBLE_DEVICES=
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
 J=$AQUI/roda-cmp-janela.sh
-UUID=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+UUID=GPU-b22d9465-8552-9f97-812e-380b590645f8
 D=$(mktemp -d -p "${TMPDIR:-/tmp}" cmp-degrau2-teste.XXXXXX) || exit 1
 echo "pasta de teste: $D"
 falhas=0
@@ -132,5 +132,5 @@ done
 env -i PATH="$PATH" HOME="$HOME" PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID "$J" --degrau2 --saida "$D/se-sem-mod" > "$D/oute-sem-mod" 2>&1
 confere "--degrau2 sem --modelos: recusa 2 (uma janela por modelo)" "[ $? = 2 ] && [ ! -e $D/se-sem-mod ]"
 env -i PATH="$PATH" HOME="$HOME" "$J" --verifica-fixos > "$D/fixos.txt" 2>&1; rcf=$?
-confere "--verifica-fixos: 12 OK (os 10 antigos + criterio-degrau1 + criterio-degrau2), nenhum FALHA/AUSENTE; sha do critério novo = sha256sum direto" "[ $rcf = 0 ] && [ \$(grep -c ' OK\$' $D/fixos.txt) = 12 ] && ! grep -q 'FALHA\|AUSENTE' $D/fixos.txt && [ \"\$(grep '^criterio-degrau2 ' $D/fixos.txt | cut -d' ' -f2)\" = \"\$(sha256sum $AQUI/criterio-degrau2-camadas-20261109.md | cut -d' ' -f1)\" ] && [ \"\$(grep '^criterio-degrau1 ' $D/fixos.txt | cut -d' ' -f2)\" = f7b5d7ebbb5ff3da25013ae95b0f311efc0c18e0331962504bf5dfefd0ba687b ] && [ \"\$(grep '^criterio-cmp ' $D/fixos.txt | cut -d' ' -f2)\" = f1bd1e0f35378f5efe16ea156546d8b96370b754f986c4dca56e2ecd191a5932 ]"
+confere "--verifica-fixos: 12 OK (os 10 antigos + criterio-degrau1 + criterio-degrau2), nenhum FALHA/AUSENTE; sha do critério novo = sha256sum direto" "[ $rcf = 0 ] && [ \$(grep -c ' OK\$' $D/fixos.txt) = 12 ] && ! grep -q 'FALHA\|AUSENTE' $D/fixos.txt && [ \"\$(grep '^criterio-degrau2 ' $D/fixos.txt | cut -d' ' -f2)\" = \"\$(sha256sum $AQUI/criterio-degrau2-camadas-20261109.md | cut -d' ' -f1)\" ] && [ \"\$(grep '^criterio-degrau1 ' $D/fixos.txt | cut -d' ' -f2)\" = 873f414c828ff0b873f3abf65dc441d1e1f48325f9d13db94573c165814e32f1 ] && [ \"\$(grep '^criterio-cmp ' $D/fixos.txt | cut -d' ' -f2)\" = 004cef5703c29b98c38a825332aaa3a835ae70c07a9ff13614924f36853bb217 ]"
 if [ "$falhas" = 0 ]; then echo "TODOS OS TESTES PASSARAM"; exit 0; else echo "$falhas FALHA(S)"; exit 1; fi

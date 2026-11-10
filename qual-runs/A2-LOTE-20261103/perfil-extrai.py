@@ -4,7 +4,7 @@
     python3 -I perfil-extrai.py --saida DIR_DA_JANELA [--ids cmp-ids-prompt.json] [--refs 5c-referencia] [--textos 5c-textos/textos.json]
 
 Só biblioteca padrão. NÃO roda nada, NÃO usa GPU: lê o que roda-perfil-janela.sh gravou e grava DIR/perfil-resultado.json e DIR/perfil-resultado.md.
-Sem meta e sem PASSA: P1, P2 e P3 são PREVISÕES pré-registradas, e o resultado de cada uma é "dentro da previsão" ou "fora da previsão" com o dado ao lado.
+Sem meta e sem PASSA: P1 e P3 são PREVISÕES pré-registradas (P2 é descritivo na 3080 Ti, Emenda 2), e o resultado de cada uma é "dentro da previsão" ou "fora da previsão" com o dado ao lado.
 
 Layout lido (escrito por roda-perfil-janela.sh e, por baixo, roda-cmp-lastro.sh):
   DIR/integridade-antes.txt, integridade-depois.txt, integridade-fixos.txt, ambiente.txt, orcamento.json ("modelos": um só), ordem.txt
@@ -69,7 +69,8 @@ FIXO_CHAVES = ("criterio-perfil", "binario-lastro", "script-perfil-extrai", "scr
 # binários das janelas de referência da Parte A (P2): L10 das janelas cmp, L100 das d1, LC das d2 (integridade-antes.txt de cada uma)
 BIN_REF = {"L10": "f0a272db2df8aca6642073b830cc8234f2d2434e01c8ae6ef618886e6e3dc2df", "L100": "936d0c146d750f4849b7724ba5ae7ddd099618629a4e12bd2984758b801c3551",
            "LC": "e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4"}
-AVISO_P2 = "P2 compara com binário diferente no L10 e L100 (mudanças aditivas) e com amostragem P4 a 10 Hz; fora da previsão não isola a causa"
+P2_DESCRITIVO = "descritivo (sem veredito: a referência é da 4090 e a placa agora é a 3080 Ti)"
+AVISO_P2 = "Emenda 2: os valores de referência são da RTX 4090 e NÃO são comparáveis com a 3080 Ti; esta janela é a linha de base nova. P2 compara com binário diferente no L10 e L100 (mudanças aditivas) e com amostragem P4 a 10 Hz; fora da previsão não isola a causa"
 
 
 def integridade_fixos(saida, m):
@@ -298,7 +299,7 @@ def previsoes(m, s, cels, bin_atual=None):
           "desvio_max": max(desv), "desvios": dict(zip(TEXTOS, desv)), "max_sobre_min": max(v) / min(v)}
     ref = REF_MS_POS[m][s]
     d2 = {t: abs(c["ms_por_posicao"] / ref[t] - 1) for t, c in zip(TEXTOS, cels)}
-    p2 = {"resultado": "dentro da previsão" if max(d2.values()) <= P2_TOL else "fora da previsão", "tolerancia": P2_TOL, "referencia_ms_por_posicao": dict(ref),
+    p2 = {"resultado": P2_DESCRITIVO, "tolerancia": P2_TOL, "referencia_ms_por_posicao": dict(ref),
           "ms_por_posicao": dict(zip(TEXTOS, v)), "desvios": d2, "desvio_max": max(d2.values()),
           "binario_referencia": BIN_REF[s], "binario_atual": bin_atual, "aviso": AVISO_P2}
     lo, hi = P3_FAIXA[s]
@@ -423,7 +424,7 @@ def relatorio(res):
         o.append("- P1 (ms/posição varia no máximo ±15%% entre 89, 170 e 364): %s" % p1["resultado"])
         if "desvios" in p1:
             o.append("  - média %s ms/posição; desvios %s; maior/menor %s" % (f(p1["media_ms_por_posicao"], 3), ", ".join("%s %s" % (t, pc(p1["desvios"][t])) for t in TEXTOS), f(p1["max_sobre_min"], 3)))
-        o.append("- P2 (cada célula dentro de ±10%% do valor da janela anterior): %s" % p2["resultado"])
+        o.append("- P2 (descritivo na 3080 Ti, desvio contra a janela anterior da 4090, sem veredito): %s" % p2["resultado"])
         if "desvios" in p2:
             o.append("  - " + "; ".join("%s %s contra ref. %s (desvio %s)" % (t, f(p2["ms_por_posicao"][t], 3), f(p2["referencia_ms_por_posicao"][t], 3), pc(p2["desvios"][t])) for t in TEXTOS))
         o.append("  - binário da janela de referência %s; binário de agora %s" % (BIN_REF[s], res.get("binario_da_janela") or "(ilegível)"))

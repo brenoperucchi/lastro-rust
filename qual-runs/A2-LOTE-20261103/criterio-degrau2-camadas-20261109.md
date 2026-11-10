@@ -38,3 +38,7 @@ Revisão dos roteiros alterados e deste critério ANTES da janela (nível defini
 
 ## Emenda 1 (09/11/2026, antes de qualquer dado; r118 rev-2 P2)
 Seção 3, item de `cont.needed` e `cont.cpu`: vale onde conflita com o texto acima (a frase "NÃO se exige cpu == 0 ... a fração é reportada" fica substituída por esta). Por medida, no smoke e em cada célula LC, com inteiros e (L, N) do modelo (1B: L = 24, N = 22; 3B: L = 32, N = 29): `cpu × L == needed × N`, isto é, cpu/needed = N/L exato. Diferente disso, o posicionamento por camada não está provado: o smoke falha ("SMOKE DO DEGRAU 2 FALHOU: cpu/needed = x, esperado N/L exato: o posicionamento por camada não é o declarado") e a célula LC é SEM PROVA. A fração continua sendo reportada.
+
+## Emenda (10/11, decisão do Breno): placa de medida 3080 Ti
+
+Onde este critério diz "90% da 4090", vale 90% da memória da placa de medida, a RTX 3080 Ti. A série é nova, só da 3080 Ti, e não se compara com números da 4090 (ver a Emenda 3 de `criterio-comparacao-llamacpp-20261108.md`).

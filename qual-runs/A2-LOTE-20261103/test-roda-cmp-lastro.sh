@@ -5,7 +5,7 @@ unset PRIMEIRA_PALAVRA_AUTORIZADA
 export CUDA_VISIBLE_DEVICES=
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
 L=$AQUI/roda-cmp-lastro.sh
-UUID=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+UUID=GPU-b22d9465-8552-9f97-812e-380b590645f8
 D=$(mktemp -d -p "${TMPDIR:-/tmp}" cmp-lastro-teste.XXXXXX) || exit 1
 echo "pasta de teste: $D"
 falhas=0
@@ -69,6 +69,9 @@ confere "sem UUID: recusa 2" "[ $RC = 2 ] && [ ! -s $D/log-sem-uuid ]"
 export CUDA_VISIBLE_DEVICES=GPU-00000000-0000-0000-0000-000000005090
 roda uuid-5090 --modelo 1b --texto curto --estado frio --n 2
 confere "UUID de outra GPU (a 5090 nunca): recusa 2" "[ $RC = 2 ] && [ ! -s $D/log-uuid-5090 ]"
+export CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+roda uuid-4090 --modelo 1b --texto curto --estado frio --n 2
+confere "UUID da 4090 (placa antiga): recusa 2" "[ $RC = 2 ] && [ ! -s $D/log-uuid-4090 ]"
 export CUDA_VISIBLE_DEVICES=$UUID
 mkdir -p "$D/s-existe"
 roda existe --modelo 1b --texto curto --estado frio --n 2

@@ -8,7 +8,7 @@ unset E4B_GPU_AUTORIZADO E4B_MEDIDA_AUTORIZADA MOE_RT_REQUIRE_GPU PRIMEIRA_PALAV
 export CUDA_VISIBLE_DEVICES=
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
 J=$AQUI/roda-perfil-janela.sh
-UUID=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+UUID=GPU-b22d9465-8552-9f97-812e-380b590645f8
 D=$(mktemp -d -p "${TMPDIR:-/tmp}" perfil-janela-teste.XXXXXX) || exit 1
 echo "pasta de teste: $D"
 falhas=0
@@ -111,7 +111,7 @@ confere "A: smoke L100 e depois smoke LC, ANTES de qualquer célula (ordem.txt)"
 confere "A: smokes com CMP_FRACAO_SLOTS=1.0 (L100) e CMP_CAMADAS_CPU=22 (LC), um só por série" "[ \"\$(grep -c '^SMOKE' $D/log-A)\" = 2 ] && grep -q '^SMOKE 1b FRAC=1.0 CAMADAS=\$' $D/log-A && grep -q '^SMOKE 1b FRAC= CAMADAS=22\$' $D/log-A && grep -q 'veredito=OK' $D/si-A/smoke-L100/veredito.txt && grep -q 'veredito=OK' $D/si-A/smoke-LC/veredito.txt"
 confere "A: L10 sem variável de série; L100 com FRACAO 1.0; LC com CAMADAS 22; só --estado quente --n 5 (nenhuma célula fria)" "grep -c 'L10-.* FRAC= CAMADAS= ' $D/log-A | grep -q '^3\$' && grep -c 'L100-.* FRAC=1.0 CAMADAS= ' $D/log-A | grep -q '^3\$' && grep -c 'LC-.* FRAC= CAMADAS=22 ' $D/log-A | grep -q '^3\$' && [ \$(grep -c ' n=5 ' $D/log-A) = 9 ] && ! grep -q 'frio' $D/si-A/ordem.txt"
 confere "A: pastas de célula novas (uma por célula) e integridade antes/depois gravadas e iguais; orcamento.json com o modelo e reps finais 5" "[ \$(ls $D/si-A/celulas | wc -l) = 9 ] && cmp -s $D/si-A/integridade-antes.txt $D/si-A/integridade-depois.txt && grep -q '^safetensors-1b ' $D/si-A/integridade-antes.txt && ! grep -q 'safetensors-3b\|config-3b' $D/si-A/integridade-antes.txt && grep -q '\"modelos\": \[\"1b\"\]' $D/si-A/orcamento.json && grep -q '\"reps_finais\": {\"quente\": 5}' $D/si-A/orcamento.json"
-confere "A: P4 por célula: arquivos .gpu.csv e .cpu.csv de cada uma das 9 células; nvidia-smi chamado com -i <UUID da 4090> --query-gpu=timestamp,utilization.gpu --format=csv,noheader -lms 100" "[ \$(ls $D/si-A/p4/*.gpu.csv | wc -l) = 9 ] && [ \$(ls $D/si-A/p4/*.cpu.csv | wc -l) = 9 ] && grep -q -- \"-i $UUID --query-gpu=timestamp,utilization.gpu --format=csv,noheader -lms 100\" $D/smilog-A && grep -q '12 %' $D/si-A/p4/lastro-1b-L10-curto-quente.gpu.csv && ! grep -q dmon $D/smilog-A"
+confere "A: P4 por célula: arquivos .gpu.csv e .cpu.csv de cada uma das 9 células; nvidia-smi chamado com -i <UUID da 3080 Ti> --query-gpu=timestamp,utilization.gpu --format=csv,noheader -lms 100" "[ \$(ls $D/si-A/p4/*.gpu.csv | wc -l) = 9 ] && [ \$(ls $D/si-A/p4/*.cpu.csv | wc -l) = 9 ] && grep -q -- \"-i $UUID --query-gpu=timestamp,utilization.gpu --format=csv,noheader -lms 100\" $D/smilog-A && grep -q '12 %' $D/si-A/p4/lastro-1b-L10-curto-quente.gpu.csv && ! grep -q dmon $D/smilog-A"
 confere "A: o extrator do perfil rodou (perfil-resultado.json e .md)" "[ -s $D/si-A/perfil-resultado.json ] && [ -s $D/si-A/perfil-resultado.md ] && grep -q 'perfil-extrai: células' $D/si-A/decisao.txt"
 confere "A: nenhuma amostragem órfã de nvidia-smi ou do amostrador depois da janela" "! pgrep -f \"$D/smi -i $UUID\" > /dev/null && ! pgrep -f \"perfil-amostra-cpu.py --raiz\" > /dev/null"
 confere "A: manifesto integridade-fixos.txt gravado de uma vez (sem .tmp), uma entrada por chave congelada; com SEM_SHA_FIXO=1 o extrator o recusa (NAO-CONFERIDO) e nenhuma previsão sai" "[ ! -e $D/si-A/.integridade-fixos.tmp ] && [ \$(grep -c 'NAO-CONFERIDO\$' $D/si-A/integridade-fixos.txt) = \$(wc -l < $D/si-A/integridade-fixos.txt) ] && grep -q '^criterio-perfil ' $D/si-A/integridade-fixos.txt && grep -q '^tokenizer-1b ' $D/si-A/integridade-fixos.txt && python3 -I -c \"import json; r=json.load(open('$D/si-A/perfil-resultado.json')); assert any('NAO-CONFERIDO' in x for x in r['integridade_problemas']); assert all(c['status']=='SEM PROVA' for c in r['celulas'].values()); assert all(s['previsoes']['P1']['resultado'].startswith('SEM PROVA') for s in r['series'].values())\""
@@ -202,13 +202,17 @@ export PRIMEIRA_PALAVRA_AUTORIZADA=1
 roda sem-uuid; confere "sem UUID: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-sem-uuid ]"
 export CUDA_VISIBLE_DEVICES=GPU-00000000-0000-0000-0000-00000000f090
 roda uuid-5090; confere "UUID de outra GPU (a 5090 nunca entra): recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-uuid-5090 ] && ! grep -q '^stop' $D/uuid-5090/log"
+export CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+roda uuid-4090; confere "UUID da 4090 (placa antiga): recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-uuid-4090 ] && ! grep -q '^stop' $D/uuid-4090/log"
+export CUDA_VISIBLE_DEVICES=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+roda uuid-4090; confere "UUID da 4090 (saiu do stack, só a 3080 Ti entra): recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-uuid-4090 ] && ! grep -q '^stop' $D/uuid-4090/log"
 export CUDA_VISIBLE_DEVICES=$UUID
 export PRIMEIRA_PALAVRA_AUTORIZADA=0
 roda portao-zero; confere "portão diferente de 1: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-portao-zero ]"
 export PRIMEIRA_PALAVRA_AUTORIZADA=1
 mkdir -p "$D/se-ocupada"; echo x > "$D/se-ocupada/a"
 roda ocupada; confere "--saida não vazia: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-ocupada ]"
-# GPU ocupada: voxtype e Chrome (C+G) abertos na 4090 = recusa 2 ANTES de tocar em timers, com a lista; só G passa
+# GPU ocupada: voxtype e Chrome (C+G) abertos na 3080 Ti = recusa 2 ANTES de tocar em timers, com a lista; só G passa
 printf '# gpu pid type sm mem enc dec jpg ofa fb ccpm command\n    0 1352017   C+G      -      -      -      -      -      -    997      0    voxtype\n    0   42406   C+G      -      -      -      -      -      -    364      0    renderD128 --cr\n    0   41533     G     25     25      -      -      -      -    413      0    Hyprland\n' > "$D/pmon-cg.txt"
 FAKE_PMON_ARQ=$D/pmon-cg.txt roda cg-aberto; confere "GPU ocupada (voxtype/Chrome C+G): recusa 2 antes de tocar em timers, listando PIDs e comandos e mandando fechar" "[ $RC = 2 ] && grep -q 'FECHADOS' $D/oute-cg-aberto && grep -q '1352017 (voxtype)' $D/oute-cg-aberto && grep -q '42406 (renderD128)' $D/oute-cg-aberto && [ ! -s $D/elog-cg-aberto ] && ! grep -q '^stop' $D/cg-aberto/log && [ ! -e $D/se-cg-aberto ] && [ ! -e $D/se-cg-aberto.timers-antes.txt ]"
 roda limite-alto --limite 1201; confere "limite acima de 1200: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-limite-alto ]"
@@ -240,7 +244,7 @@ confere "CMP_MODO_TESTE=1 (modo de teste explícito) aceita a variável de teste
 env -i PATH="$PATH" HOME="$HOME" "$J" --verifica-fixos > "$D/fixos.txt" 2>&1; rcf=$?
 nok=$(grep -c ' OK$' "$D/fixos.txt"); nfal=$(grep -c ' FALHA$' "$D/fixos.txt"); naus=$(grep -c ' AUSENTE ' "$D/fixos.txt")
 echo "congelados do FIXO contra os arquivos reais: $nok OK, $nfal FALHA, $naus AUSENTE (código $rcf)"
-confere "--verifica-fixos: código 0 só com tudo OK (nenhum FALHA nem AUSENTE) e os itens essenciais presentes" "[ $rcf = 0 ] && [ $nfal = 0 ] && [ $naus = 0 ] && [ $nok -ge 20 ] && grep -q '^criterio-perfil 4fd2e000.*2370 OK\$' $D/fixos.txt && grep -q '^binario-lastro .* OK\$' $D/fixos.txt && grep -q '^script-perfil-extrai .* OK\$' $D/fixos.txt && grep -q '^script-lastro .* OK\$' $D/fixos.txt && grep -q '^texto-longo .* OK\$' $D/fixos.txt && grep -q '^ref5c-3b .* OK\$' $D/fixos.txt && grep -q '^tokenizer-3b .* OK\$' $D/fixos.txt"
+confere "--verifica-fixos: código 0 só com tudo OK (nenhum FALHA nem AUSENTE) e os itens essenciais presentes" "[ $rcf = 0 ] && [ $nfal = 0 ] && [ $naus = 0 ] && [ $nok -ge 20 ] && grep -q '^criterio-perfil 93f92552.*653b OK\$' $D/fixos.txt && grep -q '^binario-lastro .* OK\$' $D/fixos.txt && grep -q '^script-perfil-extrai .* OK\$' $D/fixos.txt && grep -q '^script-lastro .* OK\$' $D/fixos.txt && grep -q '^texto-longo .* OK\$' $D/fixos.txt && grep -q '^ref5c-3b .* OK\$' $D/fixos.txt && grep -q '^tokenizer-3b .* OK\$' $D/fixos.txt"
 confere "--verifica-fixos: o sha congelado do critério do perfil é o do arquivo atual (sha256sum direto)" "[ \"\$(grep '^criterio-perfil ' $D/fixos.txt | cut -d' ' -f2)\" = \"\$(sha256sum $AQUI/criterio-perfil-prefill-20261109.md | cut -d' ' -f1)\" ]"
 # arquivo de integridade alterado: FALHA e código 1; arquivo ausente: AUSENTE e código 1
 echo alterado > "$D/crit-perfil-alterado.md"

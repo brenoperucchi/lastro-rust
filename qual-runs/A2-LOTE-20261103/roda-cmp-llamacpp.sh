@@ -3,7 +3,7 @@
 #
 #   roda-cmp-llamacpp.sh --modelo 1b|3b --texto curto|medio|longo --estado frio|quente --serie S1|S2|S3 --n N --saida DIR [--ids cmp-ids-prompt.json]
 #
-# Séries (todas com -t 8 -c 2048 -np 1 -b 2048 -ub 512 --host 127.0.0.1 --no-webui, GPU = a 4090; --metrics desligado; --no-op-offload NÃO usado):
+# Séries (todas com -t 8 -c 2048 -np 1 -b 2048 -ub 512 --host 127.0.0.1 --no-webui, GPU = a 3080 Ti; --metrics desligado; --no-op-offload NÃO usado):
 #   S1 (principal): -ngl 99 -fa on, KV f16 (--cache-type-k f16 --cache-type-v f16 explícitos, o padrão do llama.cpp)
 #   S2 (descarregamento de ordem de grandeza parecida): -ngl 99 -fa on --n-cpu-moe 22 (1B, 24 camadas) ou 29 (3B, 32 camadas), KV f16
 #   S3 (opcional, só se sobrar orçamento): -ngl 99 -fa off, KV f32 (--cache-type-k f32 --cache-type-v f32)
@@ -15,12 +15,12 @@
 # servidor (servidor-K.log), as linhas de KV/flash attention do log (kv-fa.txt), a resposta de cada pedido (resp-K.json) e curl/HTTP (resp-K.rc "curl http"), ms (resp-K.ms).
 # SEMPRE encerra o servidor (TERM, depois KILL) e confere que não sobrou processo com a porta usada. Rede só em 127.0.0.1.
 #
-# Falha FECHADA (2) sem PRIMEIRA_PALAVRA_AUTORIZADA=1 (o "autorizo" do Breno) e sem CUDA_VISIBLE_DEVICES igual ao UUID da 4090 (a 5090 nunca), ou com DIR existente.
+# Falha FECHADA (2) sem PRIMEIRA_PALAVRA_AUTORIZADA=1 (o "autorizo" do Breno) e sem CUDA_VISIBLE_DEVICES igual ao UUID da 3080 Ti (a 4090 e a 5090 nunca), ou com DIR existente.
 # Portão e monitor como em roda-cmp-lastro.sh. Variáveis só para teste: LLAMA_SERVER, GGUF_DIR, CURL, MONITOR_SH, NVIDIA_SMI, ESPERA_PRONTO (s, padrão 300).
 # Códigos: 0 a célula rodou até o fim, 1 algum passo falhou (partida, pedido ou encerramento), 2 recusa de uso/ambiente.
 set -u
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
-UUID=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+UUID=GPU-b22d9465-8552-9f97-812e-380b590645f8
 LLAMA=${LLAMA_SERVER:-/home/brenoperucchi/Devs/GitHub/llama.cpp/build/bin/llama-server}
 GGUFS=${GGUF_DIR:-/home/brenoperucchi/models/gguf}
 CURL=${CURL:-curl}
@@ -50,7 +50,7 @@ case $N in ''|*[!0-9]*) uso;; esac
 [ "$N" -ge 1 ] && [ "$N" -le 50 ] || recusa "--n fora de 1..50: $N"
 [ -n "$SAIDA" ] || uso
 [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] || recusa "portão fechado: sem PRIMEIRA_PALAVRA_AUTORIZADA=1"
-[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a 4090); veio '${CUDA_VISIBLE_DEVICES:-}'"
+[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a 3080 Ti; a 4090 e a 5090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
 [ -x "$LLAMA" ] || recusa "llama-server não executável: $LLAMA"
 [ -f "$GGUF" ] || recusa "GGUF inexistente: $GGUF"
 [ -f "$IDS" ] || recusa "sem $IDS"
@@ -171,7 +171,7 @@ MON_PID=$(cat "$SAIDA/monitor.pid" 2> /dev/null)
 FIM=$(date +%s)
 r_para=0
 cleanup
-# emenda 8: mesma amostra pmon depois da célula (só registra; o desktop divide a 4090 nos dois lados)
+# emenda 8: mesma amostra pmon depois da célula (só registra; o desktop divide a 3080 Ti nos dois lados)
 "$MONITOR" portao-depois --saida "$SAIDA/portao-depois.txt" > /dev/null 2>&1 || true
 [ "$r_para" = 0 ] || MON_FALHAS+=("para rc=$r_para")
 "$MONITOR" avalia --csv "$SAIDA/monitor.csv" > "$SAIDA/monitor-resumo.txt" 2>&1; r=$?

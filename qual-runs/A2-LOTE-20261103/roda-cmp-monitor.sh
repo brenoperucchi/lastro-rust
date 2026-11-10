@@ -3,7 +3,7 @@
 #
 #   roda-cmp-monitor.sh portao  --saida ARQ [--arvore PID]   portão antes da célula (código 0 = passou, 1 = a célula é SEM PROVA, 2 = uso)
 #   roda-cmp-monitor.sh portao-depois --saida ARQ [--arvore PID]   mesma amostra pmon depois da célula (só registra, código 0)
-#   roda-cmp-monitor.sh preflight                            (emenda 9) antes da janela: código 1 se houver PID C ou C+G na 4090 (voxtype, GPU do Chrome...), imprime quais
+#   roda-cmp-monitor.sh preflight                            (emenda 9) antes da janela: código 1 se houver PID C ou C+G na 3080 Ti (voxtype, GPU do Chrome...), imprime quais
 #   roda-cmp-monitor.sh inicia  --csv ARQ --pid-arq ARQ      amostragem a 1 Hz em segundo plano (SÓ REGISTRA: nada derruba a célula por carga)
 #   roda-cmp-monitor.sh para    --pid-arq ARQ                encerra a amostragem
 #   roda-cmp-monitor.sh avalia  --csv ARQ                    temperatura máxima das amostras (código 1 se > 80 C: SEM PROVA); clocks só registrados
@@ -19,7 +19,7 @@
 # O portão grava o que mediu em ARQ (linhas chave=valor) e uma linha final `portao=OK` ou `portao=FALHA motivo`.
 # Variáveis só para teste: NVIDIA_SMI, PROC_STAT, CMP_CPU_JANELA (s, padrão 3), CMP_CPU_ESPERA (s, padrão 20), LOADAVG_ARQ.
 set -u
-UUID=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+UUID=GPU-b22d9465-8552-9f97-812e-380b590645f8
 SMI=${NVIDIA_SMI:-nvidia-smi}
 STAT=${PROC_STAT:-/proc/stat}
 JANELA_CPU=${CMP_CPU_JANELA:-3}
@@ -121,7 +121,7 @@ pmon_amostra() {
   elif [ "$PMON_G_SOMA" -gt "$G_SOMA_MAX" ]; then PMON_SO_G=1; PMON_VEREDITO="pico do pmon (soma G) em ${PMON_G_SOMA}% (> ${G_SOMA_MAX}%): desktop disputando a placa de forma anormal"; fi
   echo "pmon_${rot}_veredito=$PMON_VEREDITO" >> "$arq"
 }
-# apps_fora "PIDS_DA_ARVORE": `--query-compute-apps` da 4090; define APPS_VEREDITO (OK, ou os PIDs/comandos fora da árvore, ou falha fechada se a consulta não for legível) e APPS_N (linhas lidas).
+# apps_fora "PIDS_DA_ARVORE": `--query-compute-apps` da 3080 Ti; define APPS_VEREDITO (OK, ou os PIDs/comandos fora da árvore, ou falha fechada se a consulta não for legível) e APPS_N (linhas lidas).
 APPS_VEREDITO=; APPS_N=0
 apps_fora() {
   local arv=" $(echo $1) " bruto rc l pid fora=
@@ -188,7 +188,7 @@ case $CMD in
     pf=()
     case $PMON_VEREDITO in OK) ;; *) [ "$PMON_SO_G" = 1 ] || pf+=("$PMON_VEREDITO");; esac
     case $APPS_VEREDITO in OK) ;; *) pf+=("$APPS_VEREDITO");; esac
-    if [ ${#pf[@]} = 0 ]; then echo "preflight: nenhum PID C ou C+G na 4090"; exit 0; fi
+    if [ ${#pf[@]} = 0 ]; then echo "preflight: nenhum PID C ou C+G na 3080 Ti"; exit 0; fi
     printf 'preflight FALHOU: %s\n' "${pf[@]}"; exit 1;;
   portao-depois)
     # emenda 8: mesma amostra pmon DEPOIS da célula; só registra (código 0 sempre), grava no arquivo dado
@@ -200,7 +200,7 @@ case $CMD in
     exit 0;;
   inicia)
     [ -n "$CSV" ] && [ -n "$PIDARQ" ] || uso
-    # sem -i na amostragem de clock? Mantém o -i: só a 4090 interessa.
+    # sem -i na amostragem de clock? Mantém o -i: só a placa de medida interessa.
     "$SMI" -i "$UUID" --query-gpu=timestamp,utilization.gpu,clocks.sm,clocks.mem,temperature.gpu,memory.used --format=csv,noheader,nounits -l 1 > "$CSV" 2> "$CSV.err" &
     echo $! > "$PIDARQ"
     exit 0;;

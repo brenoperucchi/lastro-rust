@@ -13,13 +13,13 @@
 # --novos/--data fora do uso normal com --texto (primeira-palavra.rs, parse_args); r111, rev-1 P1.
 # Monitor (r111, rev-1 P2): falha de inicia/para/avalia ou coleta morta antes do fim da célula fica em celula.json ("monitor_falha"); o extrator trata como SEM PROVA.
 #
-# Falha FECHADA (código 2) sem PRIMEIRA_PALAVRA_AUTORIZADA=1 e sem CUDA_VISIBLE_DEVICES igual ao UUID da 4090 (a 5090 nunca), ou com DIR já existente.
+# Falha FECHADA (código 2) sem PRIMEIRA_PALAVRA_AUTORIZADA=1 e sem CUDA_VISIBLE_DEVICES igual ao UUID da 3080 Ti (a 4090 e a 5090 nunca), ou com DIR já existente.
 # Variáveis só para teste: MODELO_1B, MODELO_3B, MONITOR_SH, NVIDIA_SMI.
 # Degrau 1 (criterio-degrau1-100pct-20261109.md): CMP_FRACAO_SLOTS=1.0 repassa `--fracao-slots 1.0` ao binário (única fração aceita além de "não definida" = padrão 0,10 do binário,
 # sem a flag); a célula passa a ser da série L100 (celula.json: "serie": "L100", "fracao_slots": "1.0") e a linha de comando de cada processo fica em DIR/cmdline.txt (uma linha por
 # processo; o stdout/stderr de cada pK guarda os `slots` impressos pelo binário, se houver). Sem a variável o comportamento é o de antes (série "L", sem flag).
 #   roda-cmp-lastro.sh --smoke --modelo 1b|3b --saida DIR [--bin BINARIO]   (seção 3 do critério do degrau 1; exige CMP_FRACAO_SLOTS=1.0)
-# smoke = UMA geração curta (texto curto, 64 tokens, processo novo), sem portão nem monitor de célula e sem medida; amostra a memória da 4090 a ~2 Hz em DIR/gpumem.csv
+# smoke = UMA geração curta (texto curto, 64 tokens, processo novo), sem portão nem monitor de célula e sem medida; amostra a memória da 3080 Ti a ~2 Hz em DIR/gpumem.csv
 # ("epoch_ms, usada, total", MiB; só leituras ok), com falhas em gpumem-falhas.txt, tempos em smoke-tempos.txt e amostra pós-saída (só descritiva) em gpumem-pos-saida.csv; grava DIR/{cmdline.txt,rc.txt,p1/...}; quem julga (código 0, GPU <= 90%, cpu/needed == 0, ids) é `cmp-extrai.py --smoke`.
 # Degrau 2 (criterio-degrau2-camadas-20261109.md): CMP_CAMADAS_CPU=N repassa `--camadas-cpu N` ao binário (experts das N primeiras camadas só na CPU, os das demais todos na GPU); aceita só o valor
 # FIXO do modelo (22 no 1B, 29 no 3B = o --n-cpu-moe da S2), é exclusiva com CMP_FRACAO_SLOTS e a célula passa a ser da série LC (celula.json: "serie": "LC", "camadas_cpu": "N").
@@ -29,7 +29,7 @@
 # do binário (emenda 5, item 11: o envelope interrompe a janela e não inicia células posteriores); celula.json é gravado mesmo assim.
 set -u
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
-UUID=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+UUID=GPU-b22d9465-8552-9f97-812e-380b590645f8
 BIN=$AQUI/../../rust/moe-rt/target/release/primeira-palavra
 MONITOR=${MONITOR_SH:-$AQUI/roda-cmp-monitor.sh}
 M1=${MODELO_1B:-/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct}
@@ -77,7 +77,7 @@ case $N in ''|*[!0-9]*) uso;; esac
 [ "$N" -ge 1 ] && [ "$N" -le 50 ] || recusa "--n fora de 1..50: $N"
 [ -n "$SAIDA" ] || uso
 [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] || recusa "portão fechado: sem PRIMEIRA_PALAVRA_AUTORIZADA=1"
-[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a 4090); veio '${CUDA_VISIBLE_DEVICES:-}'"
+[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a 3080 Ti; a 4090 e a 5090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
 [ -x "$BIN" ] || recusa "binário não executável: $BIN"
 [ -x "$MONITOR" ] || recusa "monitor não executável: $MONITOR"
 if [ -e "$SAIDA" ]; then recusa "$SAIDA já existe: pasta de saída nova"; fi
@@ -159,7 +159,7 @@ MON_PID=$(cat "$SAIDA/monitor.pid" 2> /dev/null)
 FIM=$(date +%s)
 r_para=0
 cleanup
-# emenda 8: mesma amostra pmon depois da célula (só registra; o desktop divide a 4090 nos dois lados)
+# emenda 8: mesma amostra pmon depois da célula (só registra; o desktop divide a 3080 Ti nos dois lados)
 "$MONITOR" portao-depois --saida "$SAIDA/portao-depois.txt" > /dev/null 2>&1 || true
 [ "$r_para" = 0 ] || MON_FALHAS+=("para rc=$r_para")
 "$MONITOR" avalia --csv "$SAIDA/monitor.csv" > "$SAIDA/monitor-resumo.txt" 2>&1; r=$?

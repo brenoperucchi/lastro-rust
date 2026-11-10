@@ -186,3 +186,14 @@ Motivo: os dois revisores da r114 pediram mudanças na emenda 8. A emenda 9 vale
 6. **Campos do relatório.** `celula.json` dos dois roteiros grava `desktop_g_sm_antes`, `desktop_g_sm_depois` (pico do pmon, soma G) e `dmon_sm_antes`; leitura ausente ou não numérica vira `null`. O caminho numérico dessa gravação passou a ter teste nos dois roteiros (monitor falso com linhas pmon e dmon).
 7. **Valores continuam palpites declarados antes dos dados** (60% da soma G, 3 voltas, 3 s de amostra); não vêm de medida de velocidade. As estimativas `CMP_EST_*` não foram alteradas (o preflight não gasta tempo de janela; as 3 capturas de uma volta somam cerca de 3 s, como antes).
 8. **Sha congelado.** O valor do critério no `FIXO` de `roda-cmp-janela.sh` foi recalculado com esta versão completa (emenda 9 incluída); qualquer nova edição do critério exige recalculá-lo.
+
+## Emenda 3 (10/11, decisão do Breno): placa de medida passa a ser a RTX 3080 Ti
+
+Escrita antes de qualquer dado da série nova.
+
+1. **Série nova.** A placa de medida é a RTX 3080 Ti (UUID GPU-b22d9465-8552-9f97-812e-380b590645f8). A série é nova e só dela, sem comparação com a 4090. Os números medidos na 4090 não são comparáveis com os desta série e não entram nela.
+2. **llama.cpp remedido na 3080 Ti.** As séries S1, S2 e S3 são medidas de novo nela, no 1B e no 3B, com o mesmo critério. A 5090 fica fora. Os scripts recusam (código 2) qualquer UUID que não seja o da 3080 Ti, a 4090 e a 5090 incluídas.
+3. **Limites de validade.** Ficam os mesmos de antes; só muda a placa.
+4. **Memória.** `GPU_MAX_FRACAO` continua em 0,90, agora sobre a memória da 3080 Ti (12 GB), não mais sobre a da 4090.
+5. **O que pode não caber em 12 GB.** A S1 com `-ngl 99` e o `--n-cpu-moe` no 3B podem não caber. Antes das células de cada uma há um smoke de carga. Se não couber, a célula fica SEM PROVA, sem ajuste de parâmetro e sem repetição.
+6. **Sha congelado.** O sha deste critério no `FIXO` dos roteiros foi recalculado com esta emenda; os dos critérios dos degraus também, pelas emendas curtas deles.

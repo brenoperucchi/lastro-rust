@@ -64,7 +64,7 @@ FAIXAS_D2 = (
 )
 SMOKE_MIN_LEITURAS = 3    # smoke (rev-1 P2 da r116): >= 3 leituras válidas de memória DENTRO do intervalo em que o binário rodou
 SMOKE_TOL_MS = 3000       # lacuna máxima entre leituras e folga do início/fim do intervalo (tolerância declarada, como na emenda 7 do critério base)
-GPU_MAX_FRACAO = 0.90     # seção 3: memória usada da 4090 no smoke
+GPU_MAX_FRACAO = 0.90     # seção 3: memória usada da placa de medida (3080 Ti) no smoke
 # seção 5 do critério do degrau 1 (palpites pré-registrados, orientação e nunca decisão)
 FAIXAS_D1 = (
     (2.0, "decode L100/S1 <= 2: o motor é competitivo com a GPU a 100%; o próximo passo é o degrau 2 (camadas inteiras) só se ainda se quiser igualar S2"),
@@ -807,7 +807,7 @@ def avalia_smoke(sdir, modelo, ids_arq, refs_dir, textos_arq, d2=False):
             pico = max(x[1] for x in dentro)
             info["gpu_pico_pct"] = "%.1f" % (100 * pico)
             if pico > GPU_MAX_FRACAO:
-                falhas.append("memória usada da GPU %.1f%% > 90%% da 4090" % (100 * pico))
+                falhas.append("memória usada da GPU %.1f%% > 90%% da placa de medida" % (100 * pico))
     pos = (le_txt(os.path.join(sdir, "gpumem-pos-saida.csv")) or "").strip()
     info["gpu_pos_saida_descritiva"] = pos.replace("\n", " ") if pos else "nenhuma"
     # cpu/needed e ids
@@ -1153,7 +1153,7 @@ def relatorio(res):
     nr = [k for k, c in res["celulas"].items() if c["status"] == "NÃO RODOU"]
     L.append("")
     L.append("## Condição do desktop (emendas 8 e 9)")
-    L.append("O desktop gráfico (PIDs de tipo G: compositor Hyprland, quickshell, Xwayland...) divide a 4090 nos DOIS lados em todas as células: é condição COMUM dos dois lados, "
+    L.append("O desktop gráfico (PIDs de tipo G: compositor Hyprland, quickshell, Xwayland...) divide a placa de medida nos DOIS lados em todas as células: é condição COMUM dos dois lados, "
              "fora do SEM PROVA; o efeito pode não ser igual entre eles (o Lastro serve os experts na CPU, a S1 do llama.cpp roda tudo na GPU, a S2 tem parte na CPU). "
              "Processos de compute (tipo C ou C+G, como voxtype e o processo de GPU do Chrome) fora da árvore medida NÃO são isentos: qualquer um, ocioso ou não, é SEM PROVA. "
              "A coluna do pico do pmon é a soma de sm% dos PIDs de tipo G entre as 3 capturas de uma volta (`nvidia-smi pmon -c 1 -s um`, antes e depois de cada célula): "

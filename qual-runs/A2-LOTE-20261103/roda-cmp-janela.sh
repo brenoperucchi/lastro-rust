@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Comparação Lastro x llama.cpp (opção d), UMA janela de até 30 min POR MODELO na 4090 (criterio-comparacao-llamacpp-20261108.md, emendas 1 a 6; a mais nova vale sobre a anterior).
+# Comparação Lastro x llama.cpp (opção d), UMA janela de até 30 min POR MODELO na 3080 Ti (criterio-comparacao-llamacpp-20261108.md, emendas 1 a 6; a mais nova vale sobre a anterior).
 # Emenda 6: duas janelas, 1B depois 3B, mesmo critério e mesmos roteiros; --modelos 1b|3b é OBRIGATÓRIO (sem ele, recusa: nunca roda as duas de uma vez por engano).
 # Composição já validada nas janelas 5c/5e: janela-e4b.sh (pausa e restauração conferida dos timers) por fora, roda-com-limite.sh (limite) por dentro, e este mesmo
 # script em modo interno.
@@ -32,7 +32,7 @@
 # aparecem como NÃO RODOU. Smoke antes das células, julgado por `cmp-extrai.py --smoke --degrau2`; falha do smoke PARA a janela do modelo ("SMOKE DO DEGRAU 2 FALHOU: <motivo>"), sem repetição.
 # Orçamento: só os cortes (3) quente 5->3 e (4) frio 3->2; o que não couber é NÃO RODOU. --degrau1 e --degrau2 são exclusivos.
 #
-# Falha FECHADA antes de tocar em timers ou na GPU (emenda 9: também se houver PID C ou C+G na 4090; durante a janela o voxtype e o processo de GPU do Chrome ficam FECHADOS): PRIMEIRA_PALAVRA_AUTORIZADA=1 e CUDA_VISIBLE_DEVICES igual ao UUID da 4090 (a 5090 NUNCA entra, nem no llama-server)
+# Falha FECHADA antes de tocar em timers ou na GPU (emenda 9: também se houver PID C ou C+G na 3080 Ti; durante a janela o voxtype e o processo de GPU do Chrome ficam FECHADOS): PRIMEIRA_PALAVRA_AUTORIZADA=1 e CUDA_VISIBLE_DEVICES igual ao UUID da 3080 Ti (a 5090 NUNCA entra, nem no llama-server)
 # têm de estar no ambiente de quem chama (o "autorizo" do Breno); --saida e --estado-janela têm de ser pastas novas ou vazias. Rede só em 127.0.0.1. Limite padrão 1800 s
 # (máx. 1800); o de fora é o de dentro mais 120 s. Fim da janela: aviso (notify-send se houver, ou CMP_AVISO_CMD) e DIR.aviso.txt. Este roteiro NÃO é rodado na entrega.
 # Variáveis só para teste (r111, rev-2): JANELA_SH, LIMITE_SH, JANELA_TIMERS, LASTRO_SH_CMP, LLAMA_SH_CMP, EXTRAI_PY, CMP_RELOGIO_ARQ (relógio virtual em segundos), CMP_FOLGA,
@@ -42,7 +42,7 @@
 # Códigos: 0 se decisao.txt foi gravada, o do comando (124 limite, ...) ou 2 recusa de uso, portão ou ambiente.
 set -u
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
-UUID=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+UUID=GPU-b22d9465-8552-9f97-812e-380b590645f8
 JANELA=${JANELA_SH:-$AQUI/janela-e4b.sh}
 LIMITE_SH=${LIMITE_SH:-$AQUI/roda-com-limite.sh}
 LASTRO_SH=${LASTRO_SH_CMP:-$AQUI/roda-cmp-lastro.sh}
@@ -83,7 +83,7 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados (valem onde o critério já os fixa; binários, GGUF e safetensors só precisam ser iguais antes e depois).
 declare -A FIXO=(
-  [criterio-cmp]=f1bd1e0f35378f5efe16ea156546d8b96370b754f986c4dca56e2ecd191a5932
+  [criterio-cmp]=004cef5703c29b98c38a825332aaa3a835ae70c07a9ff13614924f36853bb217
   [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
   [texto-curto]=5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d
   [texto-medio]=bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a
@@ -93,8 +93,8 @@ declare -A FIXO=(
   [ref5c-3b]=968d9b391324a99fbaf5c772a351018b90105f572b32ee2db3140f79da123124
   [tokenizer-1b]=ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654
   [tokenizer-3b]=ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654
-  [criterio-degrau1]=f7b5d7ebbb5ff3da25013ae95b0f311efc0c18e0331962504bf5dfefd0ba687b
-  [criterio-degrau2]=5ed3a01a394390dcaed9689501b64fab59686d9b85986d7d57e1e27560af1dec
+  [criterio-degrau1]=873f414c828ff0b873f3abf65dc441d1e1f48325f9d13db94573c165814e32f1
+  [criterio-degrau2]=d11bea30ffefa884bc8f669cbf6bd2d531b262d863a78df5f65c507bf9937d2c
 )
 CHAVES=(); CAMINHOS=()
 monta_lista() {
@@ -382,7 +382,7 @@ fi
 case $LIMITE in ''|*[!0-9]*) recusa "limite inválido: $LIMITE";; esac
 [ "$LIMITE" -ge 1 ] && [ "$LIMITE" -le 1800 ] || recusa "limite fora de 1..1800 s: $LIMITE"
 [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] || recusa "portão fechado: sem PRIMEIRA_PALAVRA_AUTORIZADA=1 (o 'autorizo' do Breno que nomeia a janela)"
-[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a 4090 combinada; a 5090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
+[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a 3080 Ti; a 4090 e a 5090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
 # variáveis só de teste no ambiente do modo real = recusa 2 (r111, rev-2); só CMP_MODO_TESTE=1 as aceita. `compgen -e` lista só as EXPORTADAS (as variáveis internas do roteiro não contam).
 if [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
   for v in $(compgen -e); do
@@ -406,9 +406,9 @@ for d in "$SAIDA" "$ESTADO"; do
   fi
 done
 SAIDA=$(realpath -m "$SAIDA"); BIN=$(realpath "$BIN")
-# emenda 9 (r114): falha FECHADA antes de tocar em timers ou na GPU. Só PIDs de tipo G (desktop gráfico) são isentos; QUALQUER PID C ou C+G na 4090 (pmon ou --query-compute-apps:
+# emenda 9 (r114): falha FECHADA antes de tocar em timers ou na GPU. Só PIDs de tipo G (desktop gráfico) são isentos; QUALQUER PID C ou C+G na 3080 Ti (pmon ou --query-compute-apps:
 # voxtype, processo de GPU do Chrome...) recusa a janela com a lista de PIDs e comandos: feche-os (ou abra o Chrome sem GPU) e peça de novo. Isso faz parte do "autorizo" do Breno.
-PREFLIGHT=$("$AQUI/roda-cmp-monitor.sh" preflight 2>&1) || recusa "emenda 9: processo(s) de compute na 4090 que precisam ser FECHADOS antes da janela (voxtype, processo de GPU do Chrome...): $PREFLIGHT"
+PREFLIGHT=$("$AQUI/roda-cmp-monitor.sh" preflight 2>&1) || recusa "emenda 9: processo(s) de compute na 3080 Ti que precisam ser FECHADOS antes da janela (voxtype, processo de GPU do Chrome...): $PREFLIGHT"
 TIMERS=()
 [ -z "${JANELA_TIMERS:-}" ] || TIMERS=(--timers "$JANELA_TIMERS")
 coleta() {

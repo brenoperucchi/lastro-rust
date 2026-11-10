@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Perfil do prefill do Lastro (criterio-perfil-prefill-20261109.md, versão 3 e Emenda 1, Parte B): UMA janela POR MODELO (duas janelas no total, uma de cada vez), cada uma de até 20 min (estimativa ~7 min no 1B e ~12 min no 3B) na 4090, SÓ o Lastro (sem llama.cpp), descritiva.
+# Perfil do prefill do Lastro (criterio-perfil-prefill-20261109.md, versão 3 e Emenda 1, Parte B): UMA janela POR MODELO (duas janelas no total, uma de cada vez), cada uma de até 20 min (estimativa ~7 min no 1B e ~12 min no 3B) na RTX 3080 Ti (12 GB), SÓ o Lastro (sem llama.cpp), descritiva.
 # Derivado de roda-cmp-janela.sh: mesmo envelope (janela-e4b.sh pausa e restaura os timers; roda-com-limite.sh põe o limite; este script em modo interno), mesma falha FECHADA
 # antes de tocar em timers ou na GPU, mesmo FIXO com shas e --verifica-fixos.
 #
@@ -16,7 +16,7 @@
 # dentro dela, curto, medio, longo (assim um corte no fim deixa séries inteiras e a P1 de cada uma completa). Cada célula é UMA chamada ao roda-cmp-lastro.sh existente (--estado quente --n N:
 # 1 aquecimento descartado dentro do processo + N medidas quentes; sem células frias), em pasta NOVA DIR/celulas/lastro-<modelo>-<série>-<texto>-quente.
 #
-# P4 (descritivo, por célula, fora da pasta da célula, que o roda-cmp-lastro.sh exige nova): DIR/p4/<chave>.gpu.csv = `nvidia-smi -i <UUID da 4090> --query-gpu=timestamp,utilization.gpu
+# P4 (descritivo, por célula, fora da pasta da célula, que o roda-cmp-lastro.sh exige nova): DIR/p4/<chave>.gpu.csv = `nvidia-smi -i <UUID da 3080 Ti> --query-gpu=timestamp,utilization.gpu
 # --format=csv,noheader -lms 100` e DIR/p4/<chave>.cpu.csv = %CPU do processo medido por /proc/<pid>/stat a cada ~100 ms (perfil-amostra-cpu.py). Cobre a célula inteira; não atribui nada ao prefill.
 #
 # ORÇAMENTO (estimativa ~12 min no 3B e ~7 min no 1B, PALPITES de ordem de grandeza; limite duro 20 min): antes de CADA célula o relógio projeta decorrido + estimativa do que falta + folga
@@ -24,8 +24,8 @@
 # NÃO RODOU (nunca vira número nem estimativa). orcamento.json e decisao.txt declaram o que foi cortado. Estimativas (segundos, CMP_EST_*): portão 8, carga 5 (1B) e 7 (3B), por pedido quente 5 (1B)
 # e 9 (3B), smoke 20 (1B) e 30 (3B).
 #
-# Falha FECHADA antes de tocar em timers ou na GPU: PRIMEIRA_PALAVRA_AUTORIZADA=1 e CUDA_VISIBLE_DEVICES igual ao UUID da 4090 (a 5090 NUNCA entra) têm de estar no ambiente de quem chama
-# (o "autorizo" do Breno); --saida e --estado-janela têm de ser pastas novas ou vazias; QUALQUER PID C ou C+G na 4090 (voxtype, processo de GPU do Chrome...) recusa com código 2 (emenda 9 do
+# Falha FECHADA antes de tocar em timers ou na GPU: PRIMEIRA_PALAVRA_AUTORIZADA=1 e CUDA_VISIBLE_DEVICES igual ao UUID da 3080 Ti (a 4090 e a 5090 NUNCA entram) têm de estar no ambiente de quem chama
+# (o "autorizo" do Breno); --saida e --estado-janela têm de ser pastas novas ou vazias; QUALQUER PID C ou C+G na 3080 Ti (voxtype, processo de GPU do Chrome...) recusa com código 2 (emenda 9 do
 # critério base). Variáveis só para teste (JANELA_SH, LIMITE_SH, JANELA_TIMERS, LASTRO_SH_CMP, EXTRAI_PY, PERFIL_EXTRAI_PY, PERFIL_AMOSTRA_PY, CMP_RELOGIO_ARQ, CMP_FOLGA, CMP_EST_*, CMP_FAKE_*,
 # MODELO_1B, MODELO_3B, TEXTOS_5C, REF_5C, IDS_CMP, CRITERIO_*, SEM_SHA_FIXO, NVIDIA_SMI, CMP_SEM_MEMORIA, PROC_STAT, CMP_CPU_JANELA, CMP_CPU_ESPERA, MONITOR_SH, LOADAVG_ARQ, SYSTEMCTL,
 # SYSTEMD_RUN, PENDENTE, JANELA_*, LIMITE_*, CGROUP_RAIZ, CMP_FRACAO_SLOTS, CMP_CAMADAS_CPU...): no modo real qualquer uma presente no ambiente é RECUSADA com código 2; só CMP_MODO_TESTE=1
@@ -33,7 +33,7 @@
 # Códigos: 0 se decisao.txt foi gravada, o do comando (124 limite, ...) ou 2 recusa de uso, portão ou ambiente.
 set -u
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
-UUID=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd
+UUID=GPU-b22d9465-8552-9f97-812e-380b590645f8
 JANELA=${JANELA_SH:-$AQUI/janela-e4b.sh}
 LIMITE_SH=${LIMITE_SH:-$AQUI/roda-com-limite.sh}
 LASTRO_SH=${LASTRO_SH_CMP:-$AQUI/roda-cmp-lastro.sh}
@@ -73,18 +73,18 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 # SHAs congelados (valem onde o critério já os fixa; GGUF, config e safetensors dos modelos só precisam ser iguais antes e depois). Os scripts e o binário daqui entram no FIXO.
 # O próprio roda-perfil-janela.sh NÃO pode conter o seu sha: --verifica-fixos o imprime à parte (linha informativa) para conferência por fora.
 declare -A FIXO=(
-  [criterio-perfil]=4fd2e00039cab08196c979776e617ab1b5ad129bf491f81a6ff95c1687f92370
+  [criterio-perfil]=93f92552cb3ec09f0dbb1e62f03c2deb5ac45185a36af4178c8a2fcb028c653b
   [binario-lastro]=e4c18f3a9dea7d41236d1b721046f0d69a3be07863a5be8a2cc1a262b9e331d4
-  [script-perfil-extrai]=2e1d4ae57b7c0c196e156803d5b5a808ace231d7a3df699691f81926d9c81da8
+  [script-perfil-extrai]=8d12cfd84f07f77bd8e6e2e18c199ab666f40bb6ccba670a23011021d74e2c5d
   [script-amostra-cpu]=de17df09d75015b54bc527954dc54944c465328a9bab1fbce6e20bb5a8adb3f4
-  [script-cmp-extrai]=f740d72781c5203a5e6eedf2eaa71840931d756a4f384993bdd496ef4984898c
-  [script-lastro]=af62e9c1e9f0312a4b1e917569a9f181ee099d83d20703af742a01e8bc55ae14
-  [script-monitor]=47fd3b4afad3b57f59b1c99d8869082cc44ff5fb20faf24d7944b01d6ba0161f
+  [script-cmp-extrai]=b02008a850bb034f97b8d0f9bf02d3e12bd515bc783f662c37c9d78de132999c
+  [script-lastro]=8e924a36fff414f337857ffc75fc88c5b23e4cf12c3d6314384f3979cab80757
+  [script-monitor]=d9d6adc7ccfab15fd87ff64c48e22c3dbda7b6ae4bb24baef48649164a2800dc
   [script-janela]=a168e6672ba87429b8c5ccc0c80ba7daa36335f6a911b91a3744454cf7e63d60
   [script-limite]=196c05649b43e64361766e98e5bab9873636799dfa5d83f70a468436cd4759cc
-  [criterio-cmp]=f1bd1e0f35378f5efe16ea156546d8b96370b754f986c4dca56e2ecd191a5932
-  [criterio-degrau1]=f7b5d7ebbb5ff3da25013ae95b0f311efc0c18e0331962504bf5dfefd0ba687b
-  [criterio-degrau2]=5ed3a01a394390dcaed9689501b64fab59686d9b85986d7d57e1e27560af1dec
+  [criterio-cmp]=004cef5703c29b98c38a825332aaa3a835ae70c07a9ff13614924f36853bb217
+  [criterio-degrau1]=873f414c828ff0b873f3abf65dc441d1e1f48325f9d13db94573c165814e32f1
+  [criterio-degrau2]=d11bea30ffefa884bc8f669cbf6bd2d531b262d863a78df5f65c507bf9937d2c
   [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
   [texto-curto]=5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d
   [texto-medio]=bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a
@@ -321,7 +321,7 @@ fi
 case $LIMITE in ''|*[!0-9]*) recusa "limite inválido: $LIMITE";; esac
 [ "$LIMITE" -ge 1 ] && [ "$LIMITE" -le $LIMITE_MAX ] || recusa "limite fora de 1..$LIMITE_MAX s: $LIMITE"
 [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] || recusa "portão fechado: sem PRIMEIRA_PALAVRA_AUTORIZADA=1 (o 'autorizo' do Breno que nomeia a janela)"
-[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a 4090 combinada; a 5090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
+[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a 3080 Ti; a 4090 e a 5090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
 # variáveis só de teste no ambiente do modo real = recusa 2; só CMP_MODO_TESTE=1 as aceita. `compgen -e` lista só as EXPORTADAS (as internas do roteiro não contam).
 if [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
   for v in $(compgen -e); do
@@ -344,8 +344,8 @@ for d in "$SAIDA" "$ESTADO"; do
   fi
 done
 SAIDA=$(realpath -m "$SAIDA"); BIN=$(realpath "$BIN")
-# falha FECHADA antes de tocar em timers ou na GPU: QUALQUER PID C ou C+G na 4090 (voxtype, processo de GPU do Chrome...) recusa a janela; só PIDs de tipo G (desktop gráfico) são isentos.
-PREFLIGHT=$("$MONITOR" preflight 2>&1) || recusa "processo(s) de compute na 4090 que precisam ser FECHADOS antes da janela (voxtype, processo de GPU do Chrome...): $PREFLIGHT"
+# falha FECHADA antes de tocar em timers ou na GPU: QUALQUER PID C ou C+G na 3080 Ti (voxtype, processo de GPU do Chrome...) recusa a janela; só PIDs de tipo G (desktop gráfico) são isentos.
+PREFLIGHT=$("$MONITOR" preflight 2>&1) || recusa "processo(s) de compute na 3080 Ti que precisam ser FECHADOS antes da janela (voxtype, processo de GPU do Chrome...): $PREFLIGHT"
 TIMERS=()
 [ -z "${JANELA_TIMERS:-}" ] || TIMERS=(--timers "$JANELA_TIMERS")
 coleta() {
