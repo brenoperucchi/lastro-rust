@@ -86,6 +86,8 @@ pmon_amostra() {
     /^#/ { if ($0 ~ /^# *gpu/) cab[am]=1; next }
     NF==0 { next }
     {
+      # GPU sem processo: o pmon imprime UMA linha placeholder (idx numérico, todos os demais campos "-", pid "-"): é "nenhum processo", não é ilegível
+      if (am>=1 && $1 ~ /^[0-9]+$/ && $2=="-") { ph=1; for (k=3;k<=NF;k++) if ($k!="-") ph=0; if (ph && NF>=11) { vazias++; next } }
       if (am<1 || NF<11 || $2 !~ /^[0-9]+$/ || $3 !~ /^(C|G|C\+G)$/ || ($4!="-" && $4 !~ /^[0-9]+$/) || ($5!="-" && $5 !~ /^[0-9]+$/) || ($10!="-" && $10 !~ /^[0-9]+$/)) { ruim++; next }
       pid=$2
       sm=($4=="-")?0:$4+0; mem=($5=="-")?0:$5+0; fb=($10=="-")?0:$10+0

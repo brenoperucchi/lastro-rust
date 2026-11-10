@@ -181,6 +181,21 @@ FAKE_PMON_ARQ=$D/pmon.txt FAKE_APPS='1352017, 997 MiB, /usr/bin/voxtype' "$M" pr
 confere "preflight: voxtype só em compute-apps: código 1" "[ $rc = 1 ] && grep -q '1352017 (/usr/bin/voxtype)' $D/pf3.txt"
 FAKE_PMON_RC=1 "$M" preflight > "$D/pf4.txt"; rc=$?
 confere "preflight com pmon quebrado: falha fechada" "[ $rc = 1 ]"
+# 11c. GPU sem processo (3080 Ti sem desktop): cabeçalhos com fb/ccpm + UMA linha placeholder com tudo '-'; é "nenhum processo", não ilegível
+PH='    0          -     -      -      -      -      -      -      -      -      -    -\n'
+pmv "$PH" "$PH" "$PH"; roda_pv "$D/p11c.txt"; rc=$?
+confere "GPU sem processo (placeholder nas 3 voltas): portão passa, sem PID C" "[ $rc = 0 ] && grep -q '^pmon_antes_veredito=OK' $D/p11c.txt && grep -q '^pmon_antes_c_fora_n=0' $D/p11c.txt && ! grep -q 'pmon_antes_pid=' $D/p11c.txt"
+pmv "$PH" "$PH" "$PH"; FAKE_PMON_DIR=$D/pv "$M" preflight > "$D/pf5.txt"; rc=$?
+confere "preflight com GPU sem processo: veredito passa (código 0)" "[ $rc = 0 ] && grep -q 'nenhum PID C ou C+G' $D/pf5.txt"
+pmv "$PH" "$(lin 77777 C 0 0 500 outro)\n" "$PH"; roda_pv "$D/p11d.txt"; rc=$?
+confere "placeholder numa volta e PID C real noutra: detecta o C" "[ $rc = 1 ] && grep -q '77777 (outro)' $D/p11d.txt"
+pmv "$PH" "    0          -     -      -      -      -      -      -      -      -      x    -\n" "$PH"; roda_pv "$D/p11e.txt"; rc=$?
+confere "linha com pid '-' mas campo estranho (não é o placeholder): ilegível, recusa" "[ $rc = 1 ] && grep -q 'pmon ilegível.*ilegível' $D/p11e.txt"
+pmv "$PH" "    0          -     -      -\n" "$PH"; roda_pv "$D/p11f.txt"; rc=$?
+confere "placeholder truncado (poucas colunas): ilegível, recusa" "[ $rc = 1 ] && grep -q 'ilegível' $D/p11f.txt"
+mkdir -p "$D/pw"; echo 0 > "$D/pw/cont"; for n in 1 2 3; do printf '%b' "$PH" > "$D/pw/volta.$n"; done
+FAKE_PMON_DIR=$D/pw "$M" portao --saida "$D/p11g.txt"; rc=$?
+confere "placeholder sem cabeçalho: recusa (falha fechada)" "[ $rc = 1 ] && grep -q 'sem cabeçalho' $D/p11g.txt"
 # 12. amostragem a 1 Hz só registra e avalia temperatura
 FAKE_TEMP=60 "$M" inicia --csv "$D/mon.csv" --pid-arq "$D/mon.pid"; sleep 3.3
 "$M" para --pid-arq "$D/mon.pid"
