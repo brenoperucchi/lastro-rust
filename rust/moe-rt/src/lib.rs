@@ -25,6 +25,7 @@ pub mod lastro_servidor;
 pub mod model;
 pub mod motor;
 pub mod npy;
+pub mod perfil_bloco;
 pub mod pool;
 pub mod primeira_palavra_regra;
 pub mod reset_regra;

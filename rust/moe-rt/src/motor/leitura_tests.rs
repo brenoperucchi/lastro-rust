@@ -83,6 +83,11 @@ fn rota(p: usize, l: usize) -> Vec<u32> {
 
 /// Um motor falso para até `total` posições, com `mp` posições por passo; `fail_main_at` injeta a falha da principal.
 fn motor(mp: usize, total: usize, fail_main_at: Option<u64>) -> (Arc<FakeGpu>, Engine<FakeGpu>) {
+    motor_pf(mp, total, fail_main_at, false)
+}
+
+/// Como `motor`, com o instrumento de prefill escolhido (sem depender da variável de ambiente).
+fn motor_pf(mp: usize, total: usize, fail_main_at: Option<u64>, perfil: bool) -> (Arc<FakeGpu>, Engine<FakeGpu>) {
     let routing: Vec<Vec<Vec<u32>>> = (0..total.max(1)).map(|p| (0..2).map(|l| rota(p, l)).collect()).collect();
     let gpu = FakeGpu::new_sched(
         FakeCfg { layers: 2, experts: 4, topk: 2, width: 3, routing, fail_main_at, copy_immediate: false, max_positions: mp },
@@ -91,7 +96,7 @@ fn motor(mp: usize, total: usize, fail_main_at: Option<u64>) -> (Arc<FakeGpu>, E
     let cfg = Config { layers: 2, experts: 4, topk: 2, width: 3, slots: 0, backlog: 0, admit: AdmitMode::TokenBarrier, first_token: 1,
                        prefill: vec![], max_positions: mp, mutant: None };
     let parts = gpu.parts(&cfg);
-    let eng = Engine::new(gpu.clone(), parts, cfg, FakeCpu { weighted: mp > 1, ..FakeCpu::default() }).expect("motor");
+    let eng = Engine::new_pf(gpu.clone(), parts, cfg, FakeCpu { weighted: mp > 1, ..FakeCpu::default() }, perfil).expect("motor");
     (gpu, eng)
 }
 
@@ -444,4 +449,63 @@ fn oraculo_acusa_o_plano_com_a_regra_do_resto_invertida() {
         }
     }
     assert_eq!(acusados, 24 - 3, "só os múltiplos de 8 (8, 16, 24) escapam do mutante");
+}
+
+// ---- Instrumento de prefill (perfil_bloco): o que liga e desliga não muda, e o escopo do registro ---------------------------------------
+
+use crate::perfil_bloco::DadosPedido;
+
+/// Roda `n` ids com o instrumento ligado ou desligado e devolve (blocos vistos pelo preparo, begin_step do falso, posição final, entrada do pedido).
+fn roda_perfil(n: usize, perfil: bool, decode: usize) -> (Vec<(u64, Vec<usize>)>, Vec<(u64, usize)>, u64, Option<crate::perfil_bloco::RecPedido>) {
+    let (gpu, mut eng) = motor_pf(8, n + decode, None, perfil);
+    let prep = Prep::com_gpu(n + decode + 8, &gpu);
+    let mut pf = eng.perfil_armar(plano_blocos(n, 8).len());
+    assert_eq!(pf.ativo(), perfil);
+    le_ids(&mut eng, &prep, &ids(n)).unwrap();
+    pf.logits_ini();
+    pf.desarma();
+    // o decode fica fora do registro
+    for k in 0..decode {
+        le_ids(&mut eng, &prep, &[(k * 5 + 1) % VOCAB]).unwrap();
+    }
+    let d = DadosPedido { indice: 0, aquecimento: false, n, plano: plano_blocos(n, 8), prefill_ms: 0.0, decode_passo_ms_mediana: 1.0 };
+    let mut e = pf.fecha_com(d, &mut || {
+        let _ = super::backend::Backend::relax(&*gpu);
+    });
+    if let Some(e) = e.as_mut() {
+        e.prefill_ms = e.total_perfil_ns() as f64 / 1e6; // o binário mede o mesmo trecho; aqui só o fechamos
+    }
+    let r = (prep.blocos(), gpu.begin_steps(), eng.position(), e);
+    fecha(&gpu, eng);
+    r
+}
+
+#[test]
+fn perfil_ligado_nao_muda_a_sequencia_do_backend_e_desligado_nao_registra() {
+    for (n, decode) in [(1usize, 0usize), (8, 0), (13, 0), (24, 0), (13, 4), (89, 3)] {
+        let (b_off, s_off, p_off, e_off) = roda_perfil(n, false, decode);
+        let (b_on, s_on, p_on, e_on) = roda_perfil(n, true, decode);
+        assert_eq!((&b_off, &s_off, p_off), (&b_on, &s_on, p_on), "n = {n}, decode = {decode}: ligar não pode mudar o que o motor faz");
+        assert!(e_off.is_none(), "desligado não grava nada");
+        let e = e_on.expect("ligado grava uma entrada");
+        let esperado = plano_blocos(n, 8);
+        assert_eq!(e.blocos.iter().map(|b| b.m).collect::<Vec<_>>(), esperado, "blocos = plano_blocos(n, 8), sem registro de decode (decode = {decode})");
+        assert_eq!(e.servico.len(), esperado.len());
+        assert!(!e.servico_aberto() && e.servico_extra == 0, "serviço fechado e zero registros de decode: {:?}", e.servico);
+        assert!(e.problemas().is_empty(), "{:?}", e.problemas());
+        assert!(e.blocos.iter().enumerate().all(|(i, b)| b.pos_ini == 8 * i as u64 && !b.f0_pendente));
+        assert!(e.blocos.windows(2).all(|w| w[1].gen == w[0].gen + 1));
+    }
+}
+
+#[test]
+fn engine_desligado_nao_aloca_e_a_guarda_e_inerte() {
+    let (gpu, eng) = motor_pf(8, 8, None, false);
+    assert!(!eng.perfil_ligado() && !eng.perfil_ativo());
+    let mut g = eng.perfil_armar(100);
+    assert!(!g.ativo());
+    g.logits_ini();
+    g.desarma();
+    assert!(!eng.perfil_ativo());
+    fecha(&gpu, eng);
 }

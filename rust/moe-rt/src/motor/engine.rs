@@ -57,6 +57,8 @@ pub(crate) struct Shared<B: Backend> {
     pub published: Chan<Published>,
     /// Os lados do buffer da tabela devolvidos pela principal, com o índice.
     pub returned: Chan<(usize, Pinned<[AtomicU32]>)>,
+    /// O instrumento de prefill (`crate::perfil_bloco`): `None` com a variável desligada (nada é alocado nem cronometrado).
+    pub pf: Option<Arc<crate::perfil_bloco::Compartilhado>>,
 }
 
 /// As peças que o backend cria para um motor.
@@ -99,6 +101,12 @@ pub struct Engine<B: Backend> {
 
 impl<B: Backend> Engine<B> {
     pub fn new<C: HostExperts>(b: Arc<B>, parts: Parts<B>, cfg: Config, cpu: C) -> R<Self, B> {
+        Self::new_pf(b, parts, cfg, cpu, crate::perfil_bloco::ligado_do_ambiente())
+    }
+
+    /// Como [`Engine::new`], com o instrumento de prefill (`perfil_bloco`) escolhido por quem chama em vez de lido do ambiente: `false` não
+    /// aloca nada e deixa só um `Option` vazio no caminho quente.
+    pub fn new_pf<C: HostExperts>(b: Arc<B>, parts: Parts<B>, cfg: Config, cpu: C, perfil: bool) -> R<Self, B> {
         let keys = cfg.layers * cfg.experts;
         let ok = cfg.layers > 0
             && cfg.topk > 0
@@ -144,6 +152,7 @@ impl<B: Backend> Engine<B> {
             cur_t: AtomicU32::new(cfg.first_token),
             published: Chan::new(),
             returned: Chan::new(),
+            pf: perfil.then(|| Arc::new(crate::perfil_bloco::Compartilhado::novo())),
         });
         let copy = Arc::new(parts.copy);
         let svc = Service::new(b.clone(), sh.clone(), copy.clone(), parts.weights, cfg.clone(), parts.sides);
@@ -204,6 +213,27 @@ impl<B: Backend> Engine<B> {
         }
         b.post_layers(c)?;
         b.write_value(c, &self.sh.seq[self.cfg.layers], t)
+    }
+
+    /// Se o instrumento de prefill existe neste motor (a variável foi lida como ligada na criação).
+    pub fn perfil_ligado(&self) -> bool {
+        self.sh.pf.is_some()
+    }
+
+    /// Se o instrumento está armado agora (um branch previsível: `None` ou flag relaxada).
+    pub(crate) fn perfil_ativo(&self) -> bool {
+        self.sh.pf.as_ref().is_some_and(|p| p.ativo())
+    }
+
+    /// Arma o instrumento para um prefill de `blocos_previstos` blocos; sem instrumento devolve uma guarda inerte, sem alocar.
+    pub fn perfil_armar(&self, blocos_previstos: usize) -> crate::perfil_bloco::Armado {
+        crate::perfil_bloco::Armado::arma(self.sh.pf.clone(), blocos_previstos)
+    }
+
+    pub(crate) fn perfil_registra_bloco(&self, r: crate::perfil_bloco::RecBloco) {
+        if let Some(p) = &self.sh.pf {
+            p.registra_bloco(r);
+        }
     }
 
     /// A posição da sequência do próximo passo (só leitura; a rotina de leitura de N ids a confere com a do backend).

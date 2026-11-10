@@ -12,7 +12,8 @@ use crate::e4b_regra::{argmax, mediana};
 use crate::leitura_regra::Contadores;
 use crate::motor::backend::Backend;
 use crate::motor::engine::Published;
-use crate::motor::leitura::{le_ids_com_pendente, PreparaPasso};
+use crate::motor::leitura::{le_ids_com_pendente, plano_blocos, PreparaPasso};
+use crate::perfil_bloco::{Armado, DadosPedido, RecPedido};
 use crate::primeira_palavra_regra::{dois_maiores, fnv_ids, RotuloCorrecao, Sequencia, GAP_EMPATE};
 use crate::tokenizador::{renderiza_chat, Mensagem, Papel, Tokenizador};
 use serde_json::{json, Value};
@@ -90,11 +91,15 @@ pub struct MotorGeracao<B: Backend, P: PreparaPasso> {
     base: Contadores,
     /// Quantas vezes o motor foi criado (1 + recriações depois de falha).
     pub criacoes: usize,
+    /// Instrumento de prefill: uma entrada por pedido concluído (vazio com `LASTRO_PERFIL_BLOCO` desligada).
+    pub perfil: Vec<RecPedido>,
+    /// O próximo pedido é o de aquecimento descartado (marcado por `gera_serie`).
+    pub aquecimento: bool,
 }
 
 impl<B: Backend, P: PreparaPasso> Default for MotorGeracao<B, P> {
     fn default() -> Self {
-        Self { seq: None, pendente: None, base: Contadores::default(), criacoes: 0 }
+        Self { seq: None, pendente: None, base: Contadores::default(), criacoes: 0, perfil: vec![], aquecimento: false }
     }
 }
 
@@ -180,7 +185,7 @@ where
 {
     let renderizado = renderiza_chat(&[Mensagem { papel: Papel::Usuario, conteudo: texto.to_string() }], true, data).map_err(|e| e.to_string())?;
     let ids: Vec<usize> = tok.codifica(&renderizado).into_iter().map(|x| x as usize).collect();
-    let MotorGeracao { seq, pendente, base, criacoes } = r;
+    let MotorGeracao { seq, pendente, base, criacoes, perfil, aquecimento } = r;
     // Sequência: motor novo (primeiro pedido ou depois de falha) ou `nova_sequencia`.
     let t_seq = Instant::now();
     if seq.as_ref().is_some_and(|x| !x.eng.is_closed()) && pendente.is_some() {
@@ -197,9 +202,15 @@ where
     let sequencia_ms = ms(t_seq.elapsed());
     let s = seq.as_mut().ok_or("sem sequência")?;
     // Prefill: o prompt inteiro, até os logits do primeiro token novo.
+    // Instrumento de prefill: o plano só se calcula com o instrumento ligado; `armar` logo depois de `t_pre` e `desarma` logo depois de
+    // `le_logits` (o decode fica fora). Desligado, `armar` devolve uma guarda inerte, sem alocar.
+    let plano = if s.eng.perfil_ligado() { plano_blocos(ids.len(), s.eng.max_positions()) } else { vec![] };
     let t_pre = Instant::now();
+    let mut pf: Armado = s.eng.perfil_armar(plano.len());
     le_ids_com_pendente(&mut s.eng, &s.prep, &ids, pendente).map_err(|e| format!("le_ids: {e:?}"))?;
+    pf.logits_ini();
     let mut logits = (s.le_logits)()?;
+    pf.desarma();
     let prefill_ms = ms(t_pre.elapsed());
     let n = ids.len() as u64;
     if s.eng.position() != n || s.prep.posicao() != n {
@@ -226,6 +237,11 @@ where
         }
     }
     let total_ms = ms(t_entrada.elapsed());
+    // Fora dos cronômetros: o merge entre host e serviço do instrumento (espera pelo registro do último bloco do serviço, se preciso).
+    if pf.ativo() {
+        let d = DadosPedido { indice: perfil.len(), aquecimento: *aquecimento, n: ids.len(), plano, prefill_ms, decode_passo_ms_mediana: mediana(&passo_ms) };
+        perfil.extend(pf.fecha(d));
+    }
     // Fora dos cronômetros: a posição tem de ser a do prompt mais os tokens realimentados.
     let esperado = n + gerados.len() as u64 - u64::from(!gerados.is_empty() && (gerados.len() == cfg.novos || cfg.para_no_eos && gerados.last() == Some(&EOS)));
     if s.eng.position() != esperado || s.prep.posicao() != esperado {
@@ -308,7 +324,9 @@ where
     let mut v: Vec<MedidaGera> = vec![];
     for k in 0..=reps {
         let (rotulo, descartada) = if k == 0 { ("aquecimento".to_string(), true) } else { (format!("quente rep {k}"), false) };
+        r.aquecimento = k == 0;
         let geracao = gera(Instant::now(), texto, data, tok, r, &mut cria, CfgGera::prova(), saida);
+        r.aquecimento = false;
         let m = MedidaGera { rotulo, descartada, geracao };
         emite(&m);
         let erro = m.geracao.is_err();
@@ -642,6 +660,10 @@ mod tests {
     }
 
     fn motor_falso() -> (Arc<FakeGpu>, crate::motor::Engine<FakeGpu>) {
+        motor_falso_pf(false)
+    }
+
+    fn motor_falso_pf(perfil: bool) -> (Arc<FakeGpu>, crate::motor::Engine<FakeGpu>) {
         let routing: Vec<Vec<Vec<u32>>> = (0..2100).map(|p| (0..2).map(|l| rota(p, l)).collect()).collect();
         let gpu = FakeGpu::new_sched(
             FakeCfg { layers: 2, experts: 4, topk: 2, width: 3, routing, fail_main_at: None, copy_immediate: false, max_positions: 8 },
@@ -649,7 +671,7 @@ mod tests {
         );
         let cfg = Config { layers: 2, experts: 4, topk: 2, width: 3, slots: 0, backlog: 0, admit: AdmitMode::TokenBarrier, first_token: 1, prefill: vec![], max_positions: 8, mutant: None };
         let parts = gpu.parts(&cfg);
-        let eng = crate::motor::Engine::new(gpu.clone(), parts, cfg, FakeCpu { weighted: true, ..FakeCpu::default() }).expect("motor");
+        let eng = crate::motor::Engine::new_pf(gpu.clone(), parts, cfg, FakeCpu { weighted: true, ..FakeCpu::default() }, perfil).expect("motor");
         (gpu, eng)
     }
 
@@ -723,7 +745,11 @@ mod tests {
     }
 
     fn sequencia(cont: &Arc<Mutex<usize>>, eos_em: Option<usize>, gap: f32, falha_a_partir: Option<usize>) -> Result<Sequencia<FakeGpu, Prep>, String> {
-        let (gpu, eng) = motor_falso();
+        sequencia_pf(cont, eos_em, gap, falha_a_partir, false)
+    }
+
+    fn sequencia_pf(cont: &Arc<Mutex<usize>>, eos_em: Option<usize>, gap: f32, falha_a_partir: Option<usize>, perfil: bool) -> Result<Sequencia<FakeGpu, Prep>, String> {
+        let (gpu, eng) = motor_falso_pf(perfil);
         let cont = cont.clone();
         let le: Box<dyn FnMut() -> Result<Vec<f32>, String>> = Box::new(move || {
             let mut c = cont.lock().unwrap();
@@ -1161,5 +1187,45 @@ mod tests {
         assert_eq!(v.len(), 1, "erro no aquecimento para a série");
         assert!(v[0].geracao.is_err() && v[0].descartada);
         assert_eq!(medida_json(&v[0])["falha"].as_str().is_some(), true);
+    }
+
+    /// Escopo do registro (plano 1.4): `--repete 2` gera 3 entradas (1 aquecimento e 2 medidas), cada uma com os blocos de `plano_blocos(n, 8)`
+    /// e zero registros de decode (64 tokens de decode rodam com o instrumento desarmado); o bloco 0 dos pedidos seguintes vem com `f0_pendente`.
+    /// Os ids gerados são os mesmos com o instrumento ligado e desligado.
+    #[test]
+    fn perfil_repete_2_gera_3_entradas_sem_decode_e_nao_muda_os_ids() {
+        let t = tok();
+        let roda_serie = |perfil: bool| {
+            let cont = Arc::new(Mutex::new(0usize));
+            let mut r: MotorGeracao<FakeGpu, Prep> = MotorGeracao::novo();
+            let (c2, c3) = (cont.clone(), cont.clone());
+            let v = gera_serie(TEXTOS[2], &data_fixa_texto(), &t, &mut r, move || {
+                *c2.lock().unwrap() = 0;
+                sequencia_pf(&c3, None, 1.0, None, perfil)
+            }, 2, &mut vec![], &mut |_| {});
+            let perfil = std::mem::take(&mut r.perfil);
+            r.encerra().unwrap();
+            (v, perfil)
+        };
+        let (v_on, e_on) = roda_serie(true);
+        let (v_off, e_off) = roda_serie(false);
+        assert!(e_off.is_empty(), "desligado: nenhuma entrada");
+        assert_eq!(v_on.len(), 3);
+        let ids_de = |v: &[MedidaGera]| v.iter().map(|m| m.geracao.as_ref().unwrap().gerados.clone()).collect::<Vec<_>>();
+        assert_eq!(ids_de(&v_on), ids_de(&v_off), "ligar o instrumento não muda os ids gerados");
+        assert_eq!(e_on.len(), 3, "1 aquecimento + 2 medidas");
+        assert_eq!(e_on.iter().map(|e| (e.indice, e.aquecimento)).collect::<Vec<_>>(), vec![(0, true), (1, false), (2, false)]);
+        for (i, e) in e_on.iter().enumerate() {
+            let n = v_on[i].geracao.as_ref().unwrap().ids.len();
+            assert_eq!(e.n, n);
+            assert_eq!(e.blocos.iter().map(|b| b.m).collect::<Vec<_>>(), plano_blocos(n, 8), "pedido {i}");
+            assert_eq!(e.servico_extra, 0, "pedido {i}: zero registros de decode");
+            assert!(!e.servico_aberto(), "pedido {i}");
+            assert_eq!(e.blocos[0].f0_pendente, i > 0, "pedido {i}: só o motor reutilizado começa com `Published` pendente");
+            assert!(e.blocos.iter().skip(1).all(|b| !b.f0_pendente));
+            assert!(e.problemas().is_empty(), "pedido {i}: {:?}", e.problemas());
+            assert!((e.prefill_ms - v_on[i].geracao.as_ref().unwrap().prefill_ms).abs() < 1e-9);
+            assert!(e.decode_passo_ms_mediana.is_finite());
+        }
     }
 }

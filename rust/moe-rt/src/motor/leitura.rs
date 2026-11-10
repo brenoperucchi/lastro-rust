@@ -95,7 +95,13 @@ pub fn le_ids_com_pendente<B: Backend, P: PreparaPasso>(eng: &mut Engine<B>, pre
         return Err(ErroLeitura::ContadoresDivergem { motor, backend });
     }
     let mut ini = 0;
+    // Instrumento de prefill: um bool lido uma vez; desligado, nenhum `Instant` é lido e nada é alocado.
+    let pf = eng.perfil_ativo();
+    let agora = || if pf { crate::perfil_bloco::agora_ns() } else { 0 };
     for m in plano_blocos(ids.len(), eng.max_positions()) {
+        let t0 = agora();
+        let f0_pendente = pf && pendente.is_some();
+        let pos_ini = if pf { eng.position() } else { 0 };
         // A publicação vem antes do preparo para que um motor que falha aqui não deixe o cache avançado por um bloco que não rodou.
         // `next_published` só consulta o canal e chama `relax`, sem tocar na stream de cálculo; a ordem testada na GPU (preparo e
         // depois `next_published`) e esta são equivalentes.
@@ -110,12 +116,19 @@ pub fn le_ids_com_pendente<B: Backend, P: PreparaPasso>(eng: &mut Engine<B>, pre
                 return Err(ErroLeitura::Motor(e));
             }
         };
+        let t1 = agora();
+        let gen = p.gen;
         if let Err(e) = prep.prepara(&ids[ini..ini + m]) {
             eng.encerra();
             return Err(ErroLeitura::Preparo(e));
         }
+        let t2 = agora();
         eng.enqueue_step(p, m).map_err(ErroLeitura::Motor)?;
+        let t3 = agora();
         eng.finish_token().map_err(ErroLeitura::Motor)?;
+        if pf {
+            eng.perfil_registra_bloco(crate::perfil_bloco::RecBloco { gen, m, pos_ini, t: [t0, t1, t2, t3, agora()], f0_pendente });
+        }
         ini += m;
     }
     Ok(ids.len())

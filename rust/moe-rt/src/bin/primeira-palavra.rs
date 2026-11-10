@@ -869,7 +869,7 @@ fn pedido_gera(c: &Cenario, tok: &Tokenizador, texto: &str, t_entrada: Instant, 
 
 /// Os 3 pedidos de um modelo num único motor. Falha antes dos pedidos (config, pesos, texto que não cabe) deixa o registro sem pedidos; o
 /// primeiro erro de pedido para o laço e os seguintes ficam como erro ("não executado").
-fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> (gr::RegistroGeracao, Vec<gr::MedidaGera>) {
+fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>, perfil: &mut Vec<moe_rt::perfil_bloco::RecPedido>) -> (gr::RegistroGeracao, Vec<gr::MedidaGera>) {
     let mut medidas: Vec<gr::MedidaGera> = vec![];
     let mut rec = gr::RegistroGeracao { modelo: nome.into(), integro: true, falha: None, pedidos: vec![], criacoes: 0, extras: vec![] };
     let r: Result<(), String> = (|| {
@@ -947,6 +947,7 @@ fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>) -> (g
             medidas.extend(serie);
         }
         rec.criacoes = guardado.criacoes;
+        perfil.extend(std::mem::take(&mut guardado.perfil));
         guardado.encerra().map_err(|e| format!("encerramento do motor reutilizado: {e}"))
     })();
     if let Err(e) = r {
@@ -977,6 +978,10 @@ fn gera_prova(args: &Args, exe: &Path) -> Result<i32, String> {
     prepara_saida(&args.saida)?;
     std::fs::write(args.saida.join("decisao.txt"), "em execução: sem decisão\n").map_err(|e| e.to_string())?;
     println!("integridade antes: binário {h_bin0}; critério 5c {h_crit0}; critério 5b {h_5b0}; {} arquivos de entrada", arq0.len());
+    // Instrumento de prefill: o estado lido da variável (a validade do par de controle confere esta linha em cada processo).
+    let perfil_ligado = moe_rt::perfil_bloco::ligado_do_ambiente();
+    println!("{}", moe_rt::perfil_bloco::linha_estado(perfil_ligado));
+    let mut perfil_pedidos: Vec<moe_rt::perfil_bloco::RecPedido> = vec![];
     moe_rt::affinity::set_compute_plan(moe_rt::affinity::Afin::A0.compute_plan(args.threads));
     let device = Device::new(0).map_err(|e| format!("{e:?}"))?;
     let mut extras = extras_de_integridade(&h_bin0, &h_crit0, &arq0);
@@ -986,7 +991,7 @@ fn gera_prova(args: &Args, exe: &Path) -> Result<i32, String> {
     let mut rotulos = vec![];
     let mut linhas = vec![];
     for (nome, mdir) in &args.celulas {
-        let (mut rec, medidas) = gera_modelo(nome, mdir, args, &device);
+        let (mut rec, medidas) = gera_modelo(nome, mdir, args, &device, &mut perfil_pedidos);
         if let Some(t) = &args.so_texto {
             grava_json(&args.saida.join(format!("medidas-{nome}.json")), &gr::medidas_json(nome, t, &medidas))?;
         }
@@ -1001,6 +1006,9 @@ fn gera_prova(args: &Args, exe: &Path) -> Result<i32, String> {
         std::fs::write(args.saida.join(format!("gera-{nome}-parcial.txt")), &txt).map_err(|e| e.to_string())?;
         rotulos.push(a.rotulo);
         linhas.push((nome.to_string(), final_));
+    }
+    if perfil_ligado {
+        grava_json(&args.saida.join("perfil-bloco.json"), &moe_rt::perfil_bloco::perfil_json(&perfil_pedidos))?;
     }
     integro = agora(integro);
     std::fs::write(args.saida.join("gera-final.txt"), format!("tipo=gera-final\nintegro={}\n", integro as u8)).map_err(|e| e.to_string())?;
@@ -1018,6 +1026,7 @@ fn gera_livre(args: &Args) -> Result<i32, String> {
     if texto.trim().is_empty() {
         return Err("texto vazio".into());
     }
+    eprintln!("{}", moe_rt::perfil_bloco::linha_estado(moe_rt::perfil_bloco::ligado_do_ambiente()));
     let tok_sha = sha256(&mdir.join("tokenizer.json"))?;
     if sha_esperado("tokenizer.json") != Some(tok_sha.as_str()) {
         return Err(format!("tokenizer.json com sha256 {tok_sha}, não o do Granite 3.1 congelado"));

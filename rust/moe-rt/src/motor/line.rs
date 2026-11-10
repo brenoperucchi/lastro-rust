@@ -280,6 +280,8 @@ pub struct Service<B: Backend> {
     late_record: Vec<usize>,
     sides: [Option<Pinned<[AtomicU32]>>; 2],
     stats: Stats,
+    /// Acumuladores do instrumento de prefill (só mexem com `sh.pf` presente).
+    acc: crate::perfil_bloco::AccServ,
 }
 
 impl<B: Backend> Service<B> {
@@ -302,7 +304,25 @@ impl<B: Backend> Service<B> {
             late_record: Vec::new(),
             sides: [Some(s0), Some(s1)],
             stats: Stats::default(),
+            acc: Default::default(),
             cfg,
+        }
+    }
+
+    /// Fecha a fase `i` do instrumento no instante de agora (nada com o instrumento ausente).
+    #[inline]
+    fn pf_fase(&mut self, i: usize) {
+        if self.sh.pf.is_some() {
+            self.acc.fase(i, crate::perfil_bloco::agora_ns());
+        }
+    }
+
+    /// Fim do bloco do serviço: guarda o intervalo se o bloco nasceu armado (decidido na camada 0).
+    fn pf_fecha_bloco(&mut self, gen: u32) {
+        if let Some(pf) = &self.sh.pf {
+            if let Some(r) = self.acc.fecha(gen) {
+                pf.registra_servico(r);
+            }
         }
     }
 
@@ -435,6 +455,10 @@ impl<B: Backend> Service<B> {
     pub fn serve_layer<'t>(&mut self, epoch: &'t TokenEpoch, l: usize) -> R<LayerView<'t>, B> {
         let t = epoch.t;
         let LayerRead { m, ids, w, x } = self.wait_layer(l, t)?;
+        if let Some(pf) = &self.sh.pf {
+            // O armamento é lido DEPOIS de ver `seq[0]`: o host armou antes de enfileirar o bloco.
+            self.acc.apos_espera(l, crate::perfil_bloco::agora_ns(), pf.armado_acq(), pf.t_armado());
+        }
         // O `m` é o mesmo em todas as camadas do passo: fixado na camada 0 e conferido nas seguintes.
         if l == 0 {
             self.step_m = None;
@@ -445,6 +469,7 @@ impl<B: Backend> Service<B> {
         }
         if let Some(k) = release_layer(l, self.cfg.is(Mutant::HeldOneLayerEarly)) {
             self.release_held(k, true)?;
+            self.pf_fase(crate::perfil_bloco::S_LIVRO);
         }
         let io = self.sh.io[l].clone();
         let topk = self.cfg.topk;
@@ -488,6 +513,7 @@ impl<B: Backend> Service<B> {
             }
         }
         let flag = self.sh.flag[l].clone();
+        self.pf_fase(crate::perfil_bloco::S_MONTA);
         Ok(LayerView { epoch, layer: l, keys, n_e, misses, m, positions, pweights, x, io, flag, flag_first: self.cfg.is(Mutant::FlagBeforeY) })
     }
 
@@ -587,6 +613,7 @@ impl<B: Backend> Service<B> {
     pub fn end_token(&mut self, epoch: TokenEpoch) -> R<TokenEpoch, B> {
         let l_end = self.cfg.layers;
         self.wait_seq(l_end, epoch.t)?;
+        self.pf_fase(crate::perfil_bloco::S_END_ESPERA);
         let late = self.cfg.is(Mutant::PublishedBeforeRecord) || self.cfg.is(Mutant::QueryBeforeRecord);
         if !self.cfg.is(Mutant::HeldOneLayerEarly) {
             self.release_held(l_end - 1, !late)?;
@@ -618,6 +645,7 @@ impl<B: Backend> Service<B> {
         if self.cfg.is(Mutant::PublishedBeforeRecord) {
             self.record_late()?;
         }
+        self.pf_fase(crate::perfil_bloco::S_END_TRAB);
         Ok(TokenEpoch { t, table })
     }
 }
@@ -714,8 +742,11 @@ fn run<B: Backend, C: HostExperts>(svc: &mut Service<B>, cpu: &mut C) -> R<(), B
             let mut y = vec![0u32; view.m() * width];
             let step = view.cpu_step(width);
             let has_cpu = !step.groups.is_empty();
+            svc.pf_fase(crate::perfil_bloco::S_MONTA);
             cpu.compute_step(l, &step, view.x(), &mut y).map_err(|e| Error::Cpu(format!("{e:?}")))?;
+            svc.pf_fase(crate::perfil_bloco::S_COMPUTE);
             let served = answer(view, &y);
+            svc.pf_fase(crate::perfil_bloco::S_ANSWER);
             crate::diag::answered();
             if has_cpu {
                 crate::diag::inject(crate::diag::Site::Livro);
@@ -726,12 +757,15 @@ fn run<B: Backend, C: HostExperts>(svc: &mut Service<B>, cpu: &mut C) -> R<(), B
                     svc.copy_after_reader(v, key, &served)?;
                 }
             }
+            svc.pf_fase(crate::perfil_bloco::S_LIVRO);
             crate::diag::layer_end(has_cpu);
             if has_cpu {
                 crate::diag::inject(crate::diag::Site::AntesDoWait);
             }
         }
+        let gen = epoch.token();
         epoch = svc.end_token(epoch)?;
+        svc.pf_fecha_bloco(gen);
         crate::diag::token_end();
     }
 }
@@ -776,6 +810,7 @@ mod candidato_tests {
             cur_t: AtomicU32::new(1),
             published: Chan::new(),
             returned: Chan::new(),
+            pf: None,
         });
         let mut svc = Service::new(gpu.clone(), sh, Arc::new(parts.copy), parts.weights, cfg, parts.sides);
         let epoch = TokenEpoch { t: 1, table: vec![NO_SLOT; 6] };
@@ -817,6 +852,7 @@ mod candidato_tests {
             cur_t: AtomicU32::new(1),
             published: Chan::new(),
             returned: Chan::new(),
+            pf: None,
         });
         let svc = Service::new(gpu.clone(), sh.clone(), Arc::new(parts.copy), parts.weights, cfg, parts.sides);
         (gpu, svc, sh)
