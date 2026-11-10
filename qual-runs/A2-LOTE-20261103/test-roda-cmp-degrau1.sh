@@ -27,7 +27,7 @@ json.dump({"modelos": {"1b": {"curto": {"ids": [1, 2]}}, "3b": {"curto": {"ids":
 PY
 echo criterio > "$D/crit.md"; echo criterio-d1 > "$D/crit-d1.md"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$D/pp"; chmod +x "$D/pp"
-printf '#!/usr/bin/env bash\ncase $* in *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%%]"; echo "GPU-falsa, 1 MiB, 0 %%";; *) echo;; esac\n' > "$D/smi"; chmod +x "$D/smi"
+printf '#!/usr/bin/env bash\ncase $* in *power.limit*) case $* in *"query-gpu=power.limit --format"*) echo "370.00 W";; *) echo "370.00 W, 16, 4";; esac;; *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%%]"; echo "GPU-falsa, 1 MiB, 0 %%";; *) echo;; esac\n' > "$D/smi"; chmod +x "$D/smi"
 # célula falsa (Lastro e llama.cpp) e SMOKE falso, por variáveis FAKE_SMOKE_*: MEM ("usada, total"), CPU, IDS (igual|diferente), RC
 cat > "$D/celula-falsa.sh" <<'F'
 #!/usr/bin/env bash
@@ -85,7 +85,7 @@ echo "== degrau 1: caminho feliz"
 interno A 1b 100000 --degrau1
 confere "A: sai 0; smoke julgado ANTES das células (1ª linha da ordem e do log); 12 células do 1B (6 L100 + 6 S1), nenhuma S2/S3" "[ $RC = 0 ] && head -n 1 $D/si-A/ordem.txt | grep -q '^smoke ' && head -n 1 $D/log-A | grep -q '^SMOKE 1b' && [ \$(grep -vc '^smoke' $D/si-A/ordem.txt) = 12 ] && [ \$(grep -c 'L100' $D/si-A/ordem.txt) = 6 ] && [ \$(grep -c 'S1' $D/si-A/ordem.txt) = 6 ] && ! grep -q 'S2\|S3' $D/si-A/ordem.txt && ! grep -q 'S2\|S3' $D/si-A/orcamento-log.txt"
 confere "A: CMP_FRACAO_SLOTS=1.0 chega ao smoke e a toda célula do Lastro (série L100); o llama.cpp não é afetado" "grep -q '^SMOKE 1b CMP_FRACAO_SLOTS=1.0' $D/log-A && [ \$(grep -c '^lastro-1b-L100-.* frac=1.0$' $D/log-A) = 6 ] && ! grep '^lastro' $D/log-A | grep -vq 'L100'"
-confere "A: veredito do smoke OK gravado e citado na decisão; rótulo exato da seção 4 na decisão e no relatório" "grep -q '^veredito=OK' $D/si-A/smoke/veredito.txt && grep -q '^smoke: veredito=OK' $D/si-A/decisao.txt && grep -q 'Lastro 100% experts GPU contra llama.cpp S1; KV f32 no Lastro contra f16 no llama.cpp' $D/si-A/decisao.txt && grep -q 'Degrau 1' $D/si-A/cmp-resultado.md && grep -q 'decode L100/S1 entre 2 e 6' $D/si-A/cmp-resultado.md"
+confere "A: veredito do smoke OK gravado e citado na decisão; rótulo exato da seção 4 na decisão e no relatório" "grep -q '^veredito=OK' $D/si-A/smoke/veredito.txt && grep -q '^smoke: veredito=OK' $D/si-A/decisao.txt && grep -q 'Lastro 100% experts GPU contra llama.cpp S1; KV f32 no Lastro contra f16 no llama.cpp' $D/si-A/decisao.txt && grep -q 'Degrau 1' $D/si-A/cmp-resultado.md && grep -q 'decode L100/S1 entre 2 e 6' $D/si-A/cmp-resultado.md && grep -q 'integridade: íntegra' $D/si-A/decisao.txt"
 confere "A: orcamento.json declara degrau1, S3 inativa, sem cortes; critério do degrau 1 na lista de integridade" "grep -q '\"degrau1\": true' $D/si-A/orcamento.json && grep -q '\"s3_ativa_no_fim\": false' $D/si-A/orcamento.json && grep -q '\"cortes\": \[\]' $D/si-A/orcamento.json && grep -q '^criterio-degrau1 ' $D/si-A/integridade-antes.txt && grep -q 'critério do degrau 1 sha256' $D/si-A/decisao.txt"
 confere "A: lados ALTERNADOS (bloco 0 começa pelo Lastro L100, bloco 1 pelo S1); frio antes do quente" "[ \$(ordem A 1) = lastro-1b-L100-curto-frio ] && [ \$(ordem A 2) = llamacpp-1b-S1-curto-frio ] && [ \$(ordem A 5) = llamacpp-1b-S1-medio-frio ] && [ \$(ordem A 6) = lastro-1b-L100-medio-frio ]"
 confere "A: o extrator foi chamado com --degrau1 (cmp-resultado.json degrau1)" "grep -q '\"degrau1\": true' $D/si-A/cmp-resultado.json"

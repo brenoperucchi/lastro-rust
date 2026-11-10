@@ -64,7 +64,7 @@ class Base(unittest.TestCase):
         self.shas["gguf-extra"] = "d" * 64
         self.manifesto()
         grava(os.path.join(self.saida, "orcamento.json"), {"modelos": [self.modelo], "limite_s": 1200, "decorrido_s": 600, "cortes": [], "nao_rodou": []})
-        grava(os.path.join(self.saida, "ambiente.txt"), "modelo=%s\nmemoria_mts=2400\n" % self.modelo)
+        grava(os.path.join(self.saida, "ambiente.txt"), "modelo=%s\nmemoria_mts=2400\nuuid=GPU-b22d9465-8552-9f97-812e-380b590645f8\npotencia_inicio=370.00_W\npotencia_fim=370.00_W\n" % self.modelo)
         for s in ("L100", "LC"):
             self.smoke(s, True)
 
@@ -468,7 +468,7 @@ class TestValidade(Base):
 
     def test_memoria_do_host_fora_do_nominal(self):
         self.tudo()
-        grava(os.path.join(self.saida, "ambiente.txt"), "memoria_mts=2133\n")
+        grava(os.path.join(self.saida, "ambiente.txt"), "memoria_mts=2133\nuuid=GPU-b22d9465-8552-9f97-812e-380b590645f8\npotencia_inicio=370.00_W\npotencia_fim=370.00_W\n")
         self.assertTrue(all(c["status"] == "SEM PROVA" for c in self.roda()["celulas"].values()))
 
     def test_orcamento_sem_modelo_unico_recusa(self):

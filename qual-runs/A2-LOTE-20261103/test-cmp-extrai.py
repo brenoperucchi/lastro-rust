@@ -49,6 +49,9 @@ class Base(unittest.TestCase):
     def integra(self, depois=None):
         grava(os.path.join(self.saida, "integridade-antes.txt"), "binario abc\ngguf def\n")
         grava(os.path.join(self.saida, "integridade-depois.txt"), depois or "binario abc\ngguf def\n")
+        # série da 3080 Ti (Emenda 10): manifesto com a prova única de potência e ambiente coerente
+        grava(os.path.join(self.saida, "integridade-fixos.txt"), "binario abc abc OK\npotencia 370.00_W 370.00_W OK\n")
+        grava(os.path.join(self.saida, "ambiente.txt"), "uuid=GPU-b22d9465-8552-9f97-812e-380b590645f8\npotencia_inicio=370.00_W\npotencia_fim=370.00_W\n")
 
     # ---- construtores de célula
     def celula_meta(self, nome, **kw):
@@ -122,6 +125,77 @@ class Base(unittest.TestCase):
         r = [x for x in res["razoes"] if (x["modelo"], x["texto"], x["estado"], x["serie"]) == (m, t, estado, serie)]
         self.assertEqual(len(r), 1)
         return r[0]
+
+
+class TestPotencia(Base):
+    """Emenda 10: a série da 3080 Ti exige a prova positiva única `potencia 370.00_W 370.00_W OK`; ausência nunca vira contrato antigo."""
+    def prepara(self):
+        self.lastro()
+        self.llama()
+
+    def fixos(self, txt):
+        grava(os.path.join(self.saida, "integridade-fixos.txt"), txt)
+
+    def amb(self, txt):
+        grava(os.path.join(self.saida, "ambiente.txt"), txt)
+
+    def sem_prova(self, trecho):
+        res = self.roda()
+        self.assertTrue(any(trecho in m for m in res["integridade_problemas"]), res["integridade_problemas"])
+        r = self.razao(res)
+        self.assertNotEqual(r.get("status"), "OK")
+        self.assertIsNone(r.get("decode"))
+        self.assertIsNone(r.get("prefill"))
+
+    def test_prova_valida(self):
+        self.prepara()
+        res = self.roda()
+        self.assertEqual(res["integridade_problemas"], [])
+        self.assertEqual(self.razao(res)["status"], "OK")
+
+    def test_sem_linha_de_potencia(self):
+        self.prepara()
+        self.fixos("binario abc abc OK\n")
+        self.sem_prova("'potencia' ausente")
+
+    def test_linha_duplicada(self):
+        self.prepara()
+        self.fixos("potencia 370.00_W 370.00_W OK\npotencia 370.00_W 370.00_W OK\n")
+        self.sem_prova("duplicada")
+
+    def test_linha_truncada(self):
+        self.prepara()
+        self.fixos("binario abc abc OK\npotencia 370.00_W\n")
+        self.sem_prova("não é a prova")
+
+    def test_extremo_diferente(self):
+        self.prepara()
+        self.fixos("potencia 370.00_W 300.00_W OK\n")
+        self.sem_prova("não é a prova")
+
+    def test_manifesto_ausente(self):
+        self.prepara()
+        os.remove(os.path.join(self.saida, "integridade-fixos.txt"))
+        self.sem_prova("integridade-fixos.txt ausente")
+
+    def test_ambiente_divergente(self):
+        self.prepara()
+        self.amb("uuid=GPU-b22d9465-8552-9f97-812e-380b590645f8\npotencia_inicio=370.00_W\npotencia_fim=300.00_W\n")
+        self.sem_prova("incoerente")
+
+    def test_ambiente_sem_potencia(self):
+        self.prepara()
+        self.amb("uuid=GPU-b22d9465-8552-9f97-812e-380b590645f8\n")
+        self.sem_prova("incoerente")
+
+    def test_historico_4090_so_por_uuid(self):
+        self.prepara()
+        self.fixos("binario abc abc OK\n")
+        self.amb("uuid=GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd\n")
+        res = self.roda()
+        self.assertEqual(res["integridade_problemas"], [])
+        self.amb("loadavg=1 1 1\n")        # sem uuid: a ausência da linha NÃO seleciona o contrato antigo
+        self.sem_prova("'potencia' ausente")
 
 
 class TestEstatistica(unittest.TestCase):

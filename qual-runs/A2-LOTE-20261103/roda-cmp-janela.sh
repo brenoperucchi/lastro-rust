@@ -67,7 +67,7 @@ usa() { echo "uso: roda-cmp-janela.sh [--degrau1|--degrau2] --modelos 1b|3b --sa
 recusa() { echo "roda-cmp-janela: $*" >&2; exit 2; }
 # Portão e registro da potência (Emenda 2 do perfil, Emenda 10 do cmp): le_pot lê só o power.limit da 3080 Ti (vazio se a leitura falhar); tem de ser 370.00 W no preflight (senão recusa 2) e de novo ao fim (senão a janela vira SEM PROVA via manifesto)
 POT_OK="370.00 W"
-le_pot() { "${NVIDIA_SMI:-nvidia-smi}" -i "$UUID" --query-gpu=power.limit --format=csv,noheader 2> /dev/null | head -n 1 | cut -d, -f1 | sed 's/^ *//;s/ *$//'; }
+le_pot() { local o; o=$("${NVIDIA_SMI:-nvidia-smi}" -i "$UUID" --query-gpu=power.limit --format=csv,noheader 2> /dev/null) || return 1; printf '%s\n' "$o" | head -n 1 | cut -d, -f1 | sed 's/^ *//;s/ *$//'; }
 pot_tok() { local v=${1:-}; [ -n "$v" ] || v=ilegivel; echo "${v// /_}"; }
 while [ $# -gt 0 ]; do
   case $1 in
@@ -180,7 +180,7 @@ if [ $INTERNO = 1 ]; then
     "${NVIDIA_SMI:-nvidia-smi}" --query-gpu=name,driver_version,clocks.max.memory --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu=/'
     # Emenda 10/2: limite de potência e link PCIe da placa de medida, registrados (a série vale no limite vigente, hoje 370 W; se mudar, a série é invalidada)
     "${NVIDIA_SMI:-nvidia-smi}" -i "$UUID" --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu_limites=/'
-    POT_INI=$(le_pot); echo "potencia_inicio=$(pot_tok "$POT_INI")"
+    POT_INI=$(le_pot) || POT_INI=; echo "potencia_inicio=$(pot_tok "$POT_INI")"
     echo "loadavg=$(cut -d' ' -f1-3 < /proc/loadavg 2>/dev/null)"
     if [ "${CMP_SEM_MEMORIA:-0}" != 1 ]; then
       mts=$(sudo -n dmidecode -t memory 2>/dev/null | awk -F': ' '/Configured Memory Speed/ && $2 ~ /[0-9]/ { split($2, a, " "); print a[1]; exit }')
@@ -341,21 +341,23 @@ if [ $INTERNO = 1 ]; then
 
   # ---- integridade depois
   coleta_shas "$SAIDA/integridade-depois.txt"
-  POT_FIM=$(le_pot); echo "potencia_fim=$(pot_tok "$POT_FIM")" >> "$SAIDA/ambiente.txt"
+  POT_FIM=$(le_pot) || POT_FIM=; echo "potencia_fim=$(pot_tok "$POT_FIM")" >> "$SAIDA/ambiente.txt"
   INTEGRO=1; NOTAS=()
   if ! cmp -s "$SAIDA/integridade-antes.txt" "$SAIDA/integridade-depois.txt"; then INTEGRO=0; NOTAS+=("sha mudou entre antes e depois"); fi
-  : > "$SAIDA/integridade-fixos.txt"
+  # manifesto gravado em arquivo temporário e movido de uma vez: a interrupção antes do mv deixa o manifesto AUSENTE (cmp-extrai.py trata como SEM PROVA em tudo), nunca truncado
+  : > "$SAIDA/.integridade-fixos.tmp"
   while read -r k h; do
-    [ -n "$h" ] || { INTEGRO=0; NOTAS+=("$k ilegível"); echo "$k - - FALHA ilegível" >> "$SAIDA/integridade-fixos.txt"; continue; }
+    [ -n "$h" ] || { INTEGRO=0; NOTAS+=("$k ilegível"); echo "$k - - FALHA ilegível" >> "$SAIDA/.integridade-fixos.tmp"; continue; }
     if [ -n "${FIXO[$k]:-}" ]; then
-      if [ "${SEM_SHA_FIXO:-0}" = 1 ]; then echo "$k ${FIXO[$k]} $h NAO-CONFERIDO" >> "$SAIDA/integridade-fixos.txt"
-      elif [ "$h" = "${FIXO[$k]}" ]; then echo "$k ${FIXO[$k]} $h OK" >> "$SAIDA/integridade-fixos.txt"
-      else INTEGRO=0; NOTAS+=("$k com sha $h, não o congelado"); echo "$k ${FIXO[$k]} $h FALHA" >> "$SAIDA/integridade-fixos.txt"; fi
+      if [ "${SEM_SHA_FIXO:-0}" = 1 ]; then echo "$k ${FIXO[$k]} $h NAO-CONFERIDO" >> "$SAIDA/.integridade-fixos.tmp"
+      elif [ "$h" = "${FIXO[$k]}" ]; then echo "$k ${FIXO[$k]} $h OK" >> "$SAIDA/.integridade-fixos.tmp"
+      else INTEGRO=0; NOTAS+=("$k com sha $h, não o congelado"); echo "$k ${FIXO[$k]} $h FALHA" >> "$SAIDA/.integridade-fixos.tmp"; fi
     fi
   done < "$SAIDA/integridade-antes.txt"
   # power.limit: o mesmo 370 W do preflight no início e ao fim; mudança, leitura ausente ou ilegível = integridade QUEBRADA (tudo SEM PROVA, a causa vai no manifesto e em NOTAS)
-  if [ "$POT_INI" = "$POT_OK" ] && [ "$POT_FIM" = "$POT_OK" ]; then echo "potencia ${POT_OK// /_} $(pot_tok "$POT_FIM") OK" >> "$SAIDA/integridade-fixos.txt"
-  else INTEGRO=0; NOTAS+=("power.limit fora de $POT_OK ou ilegível (início '${POT_INI:-ilegível}', fim '${POT_FIM:-ilegível}')"); echo "potencia inicio=$(pot_tok "$POT_INI") fim=$(pot_tok "$POT_FIM") FALHA" >> "$SAIDA/integridade-fixos.txt"; fi
+  if [ "$POT_INI" = "$POT_OK" ] && [ "$POT_FIM" = "$POT_OK" ]; then echo "potencia ${POT_OK// /_} $(pot_tok "$POT_FIM") OK" >> "$SAIDA/.integridade-fixos.tmp"
+  else INTEGRO=0; NOTAS+=("power.limit fora de $POT_OK ou ilegível (início '${POT_INI:-ilegível}', fim '${POT_FIM:-ilegível}')"); echo "potencia inicio=$(pot_tok "$POT_INI") fim=$(pot_tok "$POT_FIM") FALHA" >> "$SAIDA/.integridade-fixos.tmp"; fi
+  mv "$SAIDA/.integridade-fixos.tmp" "$SAIDA/integridade-fixos.txt"
   # ---- orçamento declarado
   {
     printf '{"modelos": [%s], "limite_s": %s, "folga_s": %s, "decorrido_s": %s, "cortes": [' "$(printf '"%s", ' "${LISTA_M[@]}" | sed 's/, $//')" "$LIMITE" "$FOLGA" "$(decorrido)"
@@ -421,7 +423,7 @@ done
 SAIDA=$(realpath -m "$SAIDA"); BIN=$(realpath "$BIN")
 # emenda 9 (r114): falha FECHADA antes de tocar em timers ou na GPU. Só PIDs de tipo G (desktop gráfico) são isentos; QUALQUER PID C ou C+G na 3080 Ti (pmon ou --query-compute-apps:
 # voxtype, processo de GPU do Chrome...) recusa a janela com a lista de PIDs e comandos: feche-os (ou abra o Chrome sem GPU) e peça de novo. Isso faz parte do "autorizo" do Breno.
-POT_PRE=$(le_pot)
+POT_PRE=$(le_pot) || POT_PRE=
 [ "$POT_PRE" = "$POT_OK" ] || recusa "power.limit da 3080 Ti tem de ser $POT_OK (lido: '${POT_PRE:-ilegível}'); a série vale só no limite vigente; nada foi tocado, não mexa no limite por este roteiro"
 PREFLIGHT=$("$AQUI/roda-cmp-monitor.sh" preflight 2>&1) || recusa "emenda 9: processo(s) de compute na 3080 Ti que precisam ser FECHADOS antes da janela (voxtype, processo de GPU do Chrome...): $PREFLIGHT"
 TIMERS=()

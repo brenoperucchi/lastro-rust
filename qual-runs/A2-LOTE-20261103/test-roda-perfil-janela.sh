@@ -33,7 +33,7 @@ cat > "$D/smi" <<'F'
 [ -z "${SMI_LOG:-}" ] || echo "$*" >> "$SMI_LOG"
 case $* in
   *-lms*) echo "2026/11/09 04:00:00.000, 12 %";;
-  *"--query-gpu=power.limit --format"*) f=${0%/*}/pot-seq; if [ -s "$f" ]; then l=$(head -n 1 "$f"); tail -n +2 "$f" > "$f.t"; mv "$f.t" "$f"; [ "$l" = FALHA ] && exit 1; echo "$l"; else echo "370.00 W"; fi;;
+  *"--query-gpu=power.limit --format"*) f=${0%/*}/pot-seq; if [ -s "$f" ]; then l=$(head -n 1 "$f"); tail -n +2 "$f" > "$f.t"; mv "$f.t" "$f"; [ "$l" = FALHA ] && exit 1; [ "$l" = FALHA370 ] && { echo "370.00 W"; exit 1; }; echo "$l"; else echo "370.00 W"; fi;;
   *"-i GPU-b22d9465-8552-9f97-812e-380b590645f8 --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max"*) echo "370.00 W, 16, 4";;
   *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%]"; echo "GPU-falsa, 1 MiB, 0 %";;
   *pmon*) if [ -n "${FAKE_PMON_ARQ:-}" ]; then cat "$FAKE_PMON_ARQ"; else echo "# gpu pid type sm mem enc dec jpg ofa fb ccpm command"; echo "# Idx # C/G % % % % % % MB MB name"; fi;;
@@ -131,6 +131,8 @@ printf '370.00 W\nFALHA\n' > "$D/pot-seq"; interno PF 100000
 confere "PF (leitura ausente ao fim): a janela roda, integridade QUEBRADA, fim ilegivel no ambiente e no manifesto, extrator reporta a causa" "[ $RC = 0 ] && grep -qx 'potencia inicio=370.00_W fim=ilegivel FALHA' $D/si-PF/integridade-fixos.txt && grep -qx 'potencia_fim=ilegivel' $D/si-PF/ambiente.txt && grep -q 'integridade: QUEBRADA' $D/si-PF/decisao.txt && grep -q 'ilegivel' $D/si-PF/perfil-resultado.json"
 printf '370.00 W\nN/A\n' > "$D/pot-seq"; interno PI 100000
 confere "PI (leitura ilegível 'N/A' ao fim): integridade QUEBRADA" "[ $RC = 0 ] && grep -q 'integridade: QUEBRADA' $D/si-PI/decisao.txt && grep -q 'FALHA' $D/si-PI/integridade-fixos.txt"
+printf '370.00 W\nFALHA370\n' > "$D/pot-seq"; interno PX 100000
+confere "PX (smi imprime 370.00 W mas retorna 1 ao fim): potência FALHA, fim ilegivel, integridade QUEBRADA, SEM PROVA" "[ $RC = 0 ] && grep -qx 'potencia inicio=370.00_W fim=ilegivel FALHA' $D/si-PX/integridade-fixos.txt && grep -qx 'potencia_fim=ilegivel' $D/si-PX/ambiente.txt && grep -q 'integridade: QUEBRADA' $D/si-PX/decisao.txt"
 rm -f "$D/pot-seq"
 interno B 540
 confere "B (limite 540 = exatamente o nominal 9x60): sem corte, 9 células com n=5" "[ \$(cortes B) = 0 ] && [ \$(nceluas B) = 9 ] && [ \$(grep -c ' n=5 ' $D/log-B) = 9 ]"
@@ -228,6 +230,7 @@ export PRIMEIRA_PALAVRA_AUTORIZADA=1
 # power.limit (Emenda 2/10): diferente de 370.00 W no preflight = recusa 2 antes de tocar em timers; leitura ilegível ou ausente também
 printf '300.00 W\n' > "$D/pot-seq"; roda pot-300; confere "power.limit 300 W no preflight: recusa 2 citando o limite, nada tocado (timers, pasta, células)" "[ $RC = 2 ] && grep -q '370.00 W' $D/oute-pot-300 && grep -q \"'300.00 W'\" $D/oute-pot-300 && [ ! -s $D/elog-pot-300 ] && ! grep -q '^stop' $D/pot-300/log && [ ! -e $D/se-pot-300 ] && [ ! -e $D/se-pot-300.timers-antes.txt ]"
 printf 'FALHA\n' > "$D/pot-seq"; roda pot-falha; confere "power.limit ilegível/ausente no preflight (nvidia-smi falha): recusa 2, nada tocado" "[ $RC = 2 ] && grep -q 'ilegível' $D/oute-pot-falha && [ ! -s $D/elog-pot-falha ] && ! grep -q '^stop' $D/pot-falha/log && [ ! -e $D/se-pot-falha ]"
+printf 'FALHA370\n' > "$D/pot-seq"; roda pot-falha370; confere "power.limit: smi imprime 370.00 W mas retorna 1 no preflight: recusa 2 antes dos timers, nada tocado" "[ $RC = 2 ] && grep -q 'ilegível' $D/oute-pot-falha370 && [ ! -s $D/elog-pot-falha370 ] && ! grep -q '^stop' $D/pot-falha370/log && [ ! -e $D/se-pot-falha370 ]"
 rm -f "$D/pot-seq"
 mkdir -p "$D/se-ocupada"; echo x > "$D/se-ocupada/a"
 roda ocupada; confere "--saida não vazia: recusa 2" "[ $RC = 2 ] && [ ! -s $D/elog-ocupada ]"

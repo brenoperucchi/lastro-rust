@@ -253,6 +253,10 @@ class Refs:
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------- integridade
+UUID_4090 = "GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd"
+POT_OK_TOK = "370.00_W"
+
+
 def integridade(saida):
     motivos = []
     antes, depois = le_shas(os.path.join(saida, "integridade-antes.txt")), le_shas(os.path.join(saida, "integridade-depois.txt"))
@@ -268,6 +272,20 @@ def integridade(saida):
     for linha in (fixos or "").splitlines():
         if "FALHA" in linha:
             motivos.append("integridade: " + linha.strip())
+    amb = le_chave_valor(os.path.join(saida, "ambiente.txt"))
+    if amb.get("uuid") == UUID_4090:
+        return sorted(set(motivos))      # contrato antigo, só por evidência explícita: janela da RTX 4090 (sem prova de potência)
+    # série da 3080 Ti (Emenda 10): prova positiva única `potencia 370.00_W 370.00_W OK`, coerente com potencia_inicio/potencia_fim do ambiente
+    if fixos is None:
+        motivos.append("integridade: integridade-fixos.txt ausente, power.limit sem prova (janela interrompida antes de publicar o manifesto)")
+    else:
+        pot = [l.split() for l in fixos.splitlines() if l.split()[:1] == ["potencia"]]
+        if len(pot) != 1:
+            motivos.append("integridade: linha 'potencia' %s no manifesto (esperada uma única, power.limit sem prova)" % ("ausente" if not pot else "duplicada"))
+        elif pot[0] != ["potencia", POT_OK_TOK, POT_OK_TOK, "OK"]:
+            motivos.append("integridade: linha 'potencia' do manifesto não é a prova de %s nos dois extremos: %s" % (POT_OK_TOK, " ".join(pot[0])))
+        elif amb.get("potencia_inicio") != POT_OK_TOK or amb.get("potencia_fim") != POT_OK_TOK:
+            motivos.append("integridade: power.limit do ambiente.txt (início %r, fim %r) incoerente com a prova do manifesto" % (amb.get("potencia_inicio"), amb.get("potencia_fim")))
     return sorted(set(motivos))
 
 
