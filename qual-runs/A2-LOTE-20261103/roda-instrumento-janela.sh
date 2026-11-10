@@ -80,10 +80,10 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados. O próprio roda-instrumento-janela.sh NÃO pode conter o seu sha (nem o critério o do roteiro: o roteiro guarda o sha do critério): --verifica-fixos imprime o do roteiro à parte (linha informativa).
 declare -A FIXO=(
-  [criterio-instrumento]=d15b272b4c7944ec66b888ee6b7c3956a13a5d8821c6664aee26769fe413a9a1
+  [criterio-instrumento]=4d7fd8a9a647334625700fbc3f1ba98a63abfd46bc4f9fb238659e72cb13da9e
   [plano-instrumento]=39fbab0335ed40f9c75b19815db5194c09ae6e5aa8566e8b13977a97eaf7f8a4
   [binario-instr]=ae14cbde3965493808818f3aa4a8e7665b6397531e36c2abf020c35fc4f3d969
-  [script-instrumento-extrai]=65c41601df45ed9c5e9ca41a96d006b44e3201f92a3a6b24e14a26b6ec68e186
+  [script-instrumento-extrai]=c88bb8345ae34322f264fa578102cb4422378547a83500d13633c0d10611799d
   [script-perfil-extrai]=755e1d7dd622e98dce9513ef30584e21667a5bc9d8c08cce4198090b2c34ba68
   [script-cmp-extrai]=22d32816ca9b298eb1ca63b3079ea9a6c681519224726b285153bec697f58865
   [script-lastro]=8e924a36fff414f337857ffc75fc88c5b23e4cf12c3d6314384f3979cab80757
@@ -150,20 +150,25 @@ cargo_teste() { # "args": 0 se a linha de comando tem `cargo <opções> test|t|n
   done
   return 1
 }
+# Códigos: 0 = nenhum processo proibido, 1 = achou (uma linha por processo), 2 = falha ao ler a lista de processos (recusa com motivo; nunca vira "lista vazia").
+# O executável de teste do cargo é reconhecido por `deps/<nome>-<hash de 16 hex>` em QUALQUER raiz de alvo (padrão, CARGO_TARGET_DIR personalizado, relativo).
 proc_proibidos() {
-  local lista pid args exe base achou=0 anc=" $$ " p
+  local lista pid args exe base achou=0 anc=" $$ " p rc_l=0
   p=$$; while [ "$p" -gt 1 ] 2> /dev/null; do p=$(awk '{print $4}' "/proc/$p/stat" 2> /dev/null) || break; [ -n "$p" ] || break; anc+="$p "; done
-  if [ -n "${PROC_LISTA:-}" ]; then lista=$(cat "$PROC_LISTA" 2> /dev/null); else lista=$(ps -eo pid=,args= 2> /dev/null); fi
+  if [ -n "${PROC_LISTA:-}" ]; then lista=$(cat "$PROC_LISTA" 2> /dev/null); rc_l=$?; else lista=$(ps -eo pid=,args= 2> /dev/null); rc_l=$?; fi
+  if [ $rc_l != 0 ]; then echo "falha ao ler a lista de processos (${PROC_LISTA:-ps}, código $rc_l)"; return 2; fi
   while read -r pid args; do
     [ -n "$pid" ] || continue
     case $anc in *" $pid "*) continue;; esac
     exe=${args%% *}; base=${exe##*/}
     if cargo_teste "$args"; then echo "$pid ($args)"; achou=1; continue; fi
-    if [[ $args =~ /target/(debug|release)/deps/[A-Za-z0-9_]+-[0-9a-f]{16}( |$) ]]; then echo "$pid ($args)"; achou=1; continue; fi
+    if [[ $args =~ (^|[/\ ])deps/[A-Za-z0-9_]+-[0-9a-f]{16}( |$) ]]; then echo "$pid ($args)"; achou=1; continue; fi
     case $base in primeira-palavra*|llama-server*|llama-bench*|llama-cli*) echo "$pid ($args)"; achou=1;; esac
   done <<< "$lista"
   [ $achou = 0 ]
 }
+# portão do binário: o executável escolhido (--bin incluso) tem de ter o sha do FIXO ANTES de qualquer envelope, smoke ou célula (SEM_SHA_FIXO=1, só em teste, dispensa)
+confere_binario() { [ "${SEM_SHA_FIXO:-0}" = 1 ] || [ "$(sha "$BIN")" = "${FIXO[binario-instr]}" ]; }
 # estimativas (palpites) de tempo: est NOME PADRAO
 est() { local v=CMP_EST_$1; echo "${!v:-$2}"; }
 
@@ -201,7 +206,8 @@ bloco_par_s() { echo $(( E_SMOKE[$MODELOS] + 12 * $(est_celula 3) + FOLGA )); }
 # ---------------------------------------------------------------- modo interno (dentro da janela, com o portão e o UUID no ambiente)
 if [ $INTERNO = 1 ]; then
   [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] && [ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "modo interno sem portão ou UUID"
-  proc_proibidos > /dev/null || recusa "cargo test ou processo CUDA em execução (modo interno): $(proc_proibidos | head -n 3 | tr '\n' ' ')"
+  PROIB_I=$(proc_proibidos) || recusa "cargo test, processo CUDA em execução ou lista de processos ilegível (modo interno): $(echo "$PROIB_I" | head -n 3 | tr '\n' ' ')"
+  confere_binario || recusa "binário com sha diferente do FIXO (${FIXO[binario-instr]}): $BIN (modo interno)"
   mkdir -p "$SAIDA/celulas" || exit 2
   # a variável do instrumento NÃO é limpa aqui: cada processo recebe o seu ambiente explícito (D: env -u LASTRO_PERFIL_BLOCO; L: LASTRO_PERFIL_BLOCO=1; smoke: -u); o que o ambiente de quem chama trouxer não vale
   unset CMP_FRACAO_SLOTS CMP_CAMADAS_CPU
@@ -370,7 +376,7 @@ if [ $INTERNO = 1 ]; then
   python3 -I "$INSTR_EXTRAI" --saida "$SAIDA" --ids "$IDS" --refs "$REFS" --textos "$TEXTOS/textos.json" > "$SAIDA/instrumento-extrai.out" 2>&1; RC_EXT=$?
   NINC=$(grep -c ' INCOERENTE$' "$SAIDA/prova-variavel.txt" 2> /dev/null || true)
   {
-    echo "instrumento de prefill, janela do modelo $MODELOS, critério sha256 $(sha "$CRIT_INSTR")"
+    echo "instrumento de prefill, janela do modelo $MODELOS, critério sha256 $(sha "$CRIT_INSTR"), roteiro sha256 $(sha "$AQUI/roda-instrumento-janela.sh")"
     echo "resultado DESCRITIVO: sem meta, sem PASSA/REPROVA, sem veredito geral; H1 a H6 são previsões pré-registradas conferidas; H7 não é avaliada; só Lastro, binário instrumentado sha256 $(sha "$BIN")"
     for s in L100 LC; do [ -z "${SERIE_FALHA[$s]:-}" ] || echo "SEM PROVA (série $s): ${SERIE_FALHA[$s]}"; done
     echo "variável do instrumento: ${NINC:-0} processo(s) INCOERENTE(S) em prova-variavel.txt (D tem de imprimir desligado e L ligado)"
@@ -414,7 +420,8 @@ for d in "$SAIDA" "$ESTADO"; do
 done
 SAIDA=$(realpath -m "$SAIDA"); BIN=$(realpath "$BIN")
 # cargo test / processo CUDA em execução: recusa ANTES de tocar em timers ou na GPU (incidente do rev-2 da rodada 137)
-PROIB=$(proc_proibidos) || recusa "processo que pode usar a 3080 Ti em execução (cargo test, binário de teste do cargo, primeira-palavra ou llama.*): feche antes da janela; nada foi tocado: $(echo "$PROIB" | head -n 3 | tr '\n' ' ')"
+confere_binario || recusa "binário com sha diferente do FIXO: $BIN tem sha256 $(sha "$BIN"), o congelado é ${FIXO[binario-instr]}; nada foi tocado (sem envelope, timers, smoke)"
+PROIB=$(proc_proibidos) || recusa "processo que pode usar a 3080 Ti em execução (cargo test, binário de teste do cargo, primeira-palavra ou llama.*) ou lista de processos ilegível: feche antes da janela; nada foi tocado: $(echo "$PROIB" | head -n 3 | tr '\n' ' ')"
 POT_PRE=$(le_pot) || POT_PRE=
 [ "$POT_PRE" = "$POT_OK" ] || recusa "power.limit da 3080 Ti tem de ser $POT_OK (lido: '${POT_PRE:-ilegível}'); a série vale só no limite vigente; nada foi tocado, não mexa no limite por este roteiro"
 PREFLIGHT=$("$MONITOR" preflight 2>&1) || recusa "processo(s) de compute na 3080 Ti que precisam ser FECHADOS antes da janela (voxtype, processo de GPU do Chrome...): $PREFLIGHT"

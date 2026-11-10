@@ -18,6 +18,7 @@ Layout lido (escrito por roda-instrumento-janela.sh e, por baixo, roda-cmp-lastr
 Interpretações onde o plano deixa margem estão no critério (seção 'Interpretações') e nos comentários abaixo; nada aqui inventa limiar.
 """
 import argparse
+import hashlib
 import importlib.util
 import json
 import math
@@ -92,14 +93,16 @@ def razao(a, b):
     return (a / b) if (fin(a) is not None and fin(b) is not None and b > 0) else None
 
 
-def classifica_controle(procs, orcamento_ok=True):
+def classifica_controle(procs, orcamento_ok=True, incompleto_motivo=None):
     """Classifica o par de controle de uma (modelo, série). `procs`: lista na ordem em que rodou, cada um com braco ('D'|'L'), prefill_ms_mediana, passo_ms_mediana (ou None), imprimiu_ligado,
     produziu_perfil, valido. Devolve dict com `classe` em {'comprovada', 'com ressalva', 'SEM PROVA', 'controle incompleto'}, `motivo`, `desvio` (com sinal), `pior_caso`, `desvio_passo`.
-    A magnitude manda (o sinal não aprova nada); 3% e 10% são inclusivos (com EPS contra erro de ponto flutuante). Controle incompleto = nenhuma classificação de H e custo SEM PROVA."""
+    A magnitude manda (o sinal não aprova nada); 3% e 10% são inclusivos (com EPS contra erro de ponto flutuante). Controle incompleto = nenhuma classificação de H e custo SEM PROVA. `incompleto_motivo` (ordem efetiva do ordem.txt ausente, truncada ou incompatível) força o incompleto."""
     def inc(m):
         return {"classe": "controle incompleto", "motivo": m, "desvio": None, "pior_caso": None, "desvio_passo": None}
     if not orcamento_ok:
         return inc("orçamento insuficiente")
+    if incompleto_motivo:
+        return inc(incompleto_motivo)
     if len(procs) != len(ORDEM_CONTROLE):
         return inc("%d processos de controle em vez de 6 (mínimo de 3 válidos por braço)" % len(procs))
     if "".join(p["braco"] for p in procs) != ORDEM_CONTROLE:
@@ -264,15 +267,40 @@ def valida_pedidos(arq, m, t, n_medidas, mot):
     return medidos
 
 
+def compara5c(d, m, t, refs):
+    """Ids de CADA pedido (aquecimento inclusive; os tempos do aquecimento seguem fora das medianas) contra a referência 5c e contra o prompt esperado. A referência tem de estar disponível:
+    ausente = `referencia_disponivel` False (bloqueio, nunca igualdade)."""
+    ref = refs.ref(m, t)
+    disp = bool(ref) and isinstance(ref.get("gerados"), list) and bool(ref["gerados"])
+    esperado = refs.ids_prompt(m, t)
+    div = []
+    for p in sorted(x for x in os.listdir(d) if x.startswith("p") and x[1:].isdigit()):
+        mj = X.le_json(os.path.join(d, p, "saida", "medidas-%s.json" % m))
+        for e in (mj or {}).get("medidas", []) if isinstance(mj, dict) else []:
+            if not isinstance(e, dict) or e.get("falha"):
+                continue
+            rot = {"processo": p, "rotulo": e.get("rotulo"), "aquecimento": bool(e.get("descartada"))}
+            if disp:
+                g = list(e.get("gerados") or [])
+                i = X.primeira_divergencia(g, list(ref["gerados"]))
+                if i is not None:
+                    div.append(dict(rot, passo=i, tipo="gerados"))
+            if esperado is not None and list(e.get("ids") or []) != list(esperado):
+                div.append(dict(rot, passo=None, tipo="ids do prompt"))
+    return {"referencia_disponivel": disp, "divergencias": div, "n_divergentes_no_aquecimento": sum(1 for x in div if x["aquecimento"])}
+
+
 def le_dir_celula(saida, nome, m, s, t, n_prev, refs, bin_ref=None):
-    """Lê UMA pasta de processo/célula (controle ou principal). Devolve dict: status OK|SEM PROVA|NÃO RODOU, motivos, meds (X), pedidos medidos, estado da linha, tem_perfil, sequência."""
+    """Lê UMA pasta de processo/célula (controle ou principal). Devolve dict com `status` (OK|SEM PROVA|NÃO RODOU, o conjunto), `status_temporal` (só rc, portão, medidas, ids, linha, D sem perfil: é o que vale
+    para o PROCESSO de controle) e `status_perfil` (só o conteúdo de perfil-bloco.json: marca a célula, nunca o controle), motivos de cada um, meds, pedidos medidos, linha, tem_perfil e a comparação com a 5c."""
     d = os.path.join(saida, "celulas", nome)
     meta = X.le_json(os.path.join(d, "celula.json"))
     base = {"nome": nome, "modelo": m, "serie": s, "texto": t, "n_previstas": n_prev}
     if not isinstance(meta, dict):
-        base.update({"status": "NÃO RODOU", "motivos": ["a janela não rodou esta pasta"], "meds": [], "pedidos": [], "estado_linha": None, "tem_perfil": False})
+        base.update({"status": "NÃO RODOU", "status_temporal": "NÃO RODOU", "status_perfil": "NÃO RODOU", "motivos": ["a janela não rodou esta pasta"], "motivos_temporais": [], "motivos_perfil": [],
+                     "meds": [], "pedidos": [], "estado_linha": None, "tem_perfil": False, "seq": {"referencia_disponivel": False, "divergencias": [], "n_divergentes_no_aquecimento": 0}})
         return base
-    mot = []
+    mot, mot_p = [], []
     if meta.get("lado") != "lastro" or meta.get("modelo") != m or meta.get("texto") != t or meta.get("estado") != "quente":
         mot.append("celula.json não é de %s (lado/modelo/texto/estado)" % nome)
     if meta.get("serie") != P.SERIE_META[s]:
@@ -296,16 +324,20 @@ def le_dir_celula(saida, nome, m, s, t, n_prev, refs, bin_ref=None):
     estado, mot3 = le_linha_perfil(d)
     mot += mot3
     perfis = acha_perfis(d)
-    base.update({"estado_linha": estado, "tem_perfil": bool(perfis), "meds": meds, "pedidos": [], "seq": P.compara_com_referencia(refs, m, t, meds)})
+    base.update({"estado_linha": estado, "tem_perfil": bool(perfis), "meds": meds, "pedidos": [], "seq": compara5c(d, m, t, refs)})
     if estado == "ligado":
         if len(perfis) != 1:
             mot.append("braço ligado com %d perfil-bloco.json (esperado 1)" % len(perfis))
         else:
-            base["pedidos"] = valida_pedidos(perfis[0], m, t, n_prev, mot)
+            base["pedidos"] = valida_pedidos(perfis[0], m, t, n_prev, mot_p)
     elif estado == "desligado" and perfis:
         mot.append("processo com perfil-bloco: desligado produziu perfil-bloco.json")
-    base["status"] = "SEM PROVA" if mot else "OK"
-    base["motivos"] = sorted(set(mot))
+    base["status_temporal"] = "SEM PROVA" if mot else "OK"
+    base["status_perfil"] = "SEM PROVA" if mot_p else "OK"
+    base["status"] = "SEM PROVA" if (mot or mot_p) else "OK"
+    base["motivos_temporais"] = sorted(set(mot))
+    base["motivos_perfil"] = sorted(set(mot_p))
+    base["motivos"] = sorted(set(mot + mot_p))
     return base
 
 
@@ -316,7 +348,7 @@ def mediana_passo(meds):
 def processo_controle(c, braco):
     meds = c.get("meds") or []
     return {"braco": braco, "prefill_ms_mediana": mediana([x["prefill_ms"] for x in meds]), "passo_ms_mediana": mediana_passo(meds), "imprimiu_ligado": c.get("estado_linha") == "ligado",
-            "produziu_perfil": bool(c.get("tem_perfil")), "valido": c["status"] == "OK" and c.get("estado_linha") == ("ligado" if braco == "L" else "desligado")}
+            "produziu_perfil": bool(c.get("tem_perfil")), "valido": c.get("status_temporal") == "OK" and c.get("estado_linha") == ("ligado" if braco == "L" else "desligado")}
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------- estatísticas por (série, texto)
@@ -443,6 +475,61 @@ def smoke_ok(saida, s):
     return True, ""
 
 
+ORDEM_RE = r"^(\d\d) (ctrl-%s-%s-medio-(\d\d)-([DL])) n=(\d+) braco=([DL]) inicio=\S+ fim=\S+ rc=(\d+)$"
+
+
+def confere_ordem(saida, m, s, procs_ctrl):
+    """Ordem EFETIVA do controle da série, lida do ordem.txt (registro cronológico do roteiro) e cruzada com as 6 pastas: mesmas chaves na mesma ordem (D L L D D L), braço do registro igual ao do nome,
+    n = 3 e rc = 0. Registro ausente, truncado ou incompatível devolve o motivo (controle incompleto); None = confere."""
+    txt = X.le_txt(os.path.join(saida, "ordem.txt"))
+    if txt is None:
+        return "ordem.txt ausente: a ordem efetiva do controle de %s não foi provada" % s
+    rx = re.compile(ORDEM_RE % (re.escape(m), re.escape(s)))
+    linhas = []
+    for x in txt.splitlines():
+        mt = rx.match(x.strip())
+        if mt:
+            linhas.append({"chave": mt.group(2), "nn": int(mt.group(3)), "braco_nome": mt.group(4), "n": int(mt.group(5)), "braco": mt.group(6), "rc": int(mt.group(7))})
+        elif x.strip().split(" ")[1:2] and x.split(" ")[1].startswith("ctrl-%s-%s-" % (m, s)):
+            return "linha de ordem.txt ilegível para o controle de %s: %r" % (s, x.strip()[:80])
+    if len(linhas) != len(ORDEM_CONTROLE):
+        return "ordem.txt com %d linhas do controle de %s (esperadas 6): registro truncado ou ausente" % (len(linhas), s)
+    esperado = ["ctrl-%s-%s-medio-%02d-%s" % (m, s, i + 1, b) for i, b in enumerate(ORDEM_CONTROLE)]
+    if [x["chave"] for x in linhas] != esperado:
+        return "ordem efetiva de ordem.txt (%s) diferente de D L L D D L com os nomes esperados" % " ".join(x["chave"][-4:] for x in linhas)
+    if any(x["braco"] != x["braco_nome"] for x in linhas):
+        return "braço registrado em ordem.txt diferente do braço do nome da pasta"
+    if any(x["rc"] != 0 or x["n"] != 3 for x in linhas):
+        return "ordem.txt com processo de controle de rc != 0 ou n != 3"
+    if sorted(x[2] for x in procs_ctrl) != sorted(esperado):
+        return "pastas do controle diferentes das 6 esperadas"
+    return None
+
+
+def sha_arq(p):
+    if not os.path.isfile(p):
+        return None
+    with open(p, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
+def confere_referencias(saida, m, ids_arq, refs_dir, textos_arq):
+    """Os arquivos que o extrator ABRIU (ids, referência 5c do modelo, textos) têm de ter o sha registrado no manifesto da janela (observado). Devolve motivos de bloqueio."""
+    obs = {}
+    for x in (X.le_txt(os.path.join(saida, "integridade-fixos.txt")) or "").splitlines():
+        c = x.split()
+        if len(c) == 4:
+            obs[c[0]] = c[2]
+    mot = []
+    for chave, arq in (("cmp-ids-prompt", ids_arq), ("ref5c-%s" % m, os.path.join(refs_dir, "ref5c-%s.json" % m)), ("textos-json", textos_arq)):
+        h = sha_arq(arq)
+        if h is None:
+            mot.append("referência 5c: arquivo %s ausente (%s)" % (chave, os.path.basename(arq)))
+        elif obs.get(chave) != h:
+            mot.append("referência 5c: o arquivo aberto para %s tem sha %s…, o manifesto registra %s…" % (chave, h[:12], (obs.get(chave) or "nada")[:12]))
+    return mot
+
+
 def processa(saida, ids_arq, refs_dir, textos_arq):
     refs = X.Refs(ids_arq, refs_dir, textos_arq)
     orc = X.le_json(os.path.join(saida, "orcamento.json"))
@@ -455,7 +542,6 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
     if rec:
         raise Recusa("; ".join(rec))
     nomes = sorted(os.listdir(os.path.join(saida, "celulas"))) if os.path.isdir(os.path.join(saida, "celulas")) else []
-    # recusa: nenhum processo com a linha perfil-bloco (a janela não é deste instrumento ou o binário é outro)
     algum = False
     for n_ in nomes:
         if (CTRL_RE.match(n_) or CEL_RE.match(n_)) and os.path.isdir(os.path.join(saida, "celulas", n_)):
@@ -463,8 +549,8 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
                 algum = True
     if not algum:
         raise Recusa("sem a linha `perfil-bloco: ligado|desligado` em nenhum processo: não é saída do binário instrumentado")
-    integ = X.integridade(saida) + integridade_fixos(saida, m)
-    integ = sorted(set(integ))
+    integ = sorted(set(X.integridade(saida) + integridade_fixos(saida, m)))
+    ref_prob = confere_referencias(saida, m, ids_arq, refs_dir, textos_arq)
     bin_atual = X.le_shas(os.path.join(saida, "integridade-antes.txt")).get("binario-instr") or None
     nao_rodou = [str(x) for x in (orc.get("nao_rodou") or [])]
 
@@ -488,36 +574,31 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
     resultado_series = {}
     for s in SERIES:
         sm_ok, sm_mot = smokes[s]
-        # ---- controle
         ctl, procs_ctrl = None, []
-        motivos_serie = []
         if s in SERIES_CONTROLE:
-            lst = sorted(ctrl.get(s, []))
-            for (nn, braco, nome) in lst:
-                c = le(nome, s, "medio", 3)
-                procs_ctrl.append((nn, braco, nome, c))
+            for (nn, braco, nome) in sorted(ctrl.get(s, [])):
+                procs_ctrl.append((nn, braco, nome, le(nome, s, "medio", 3)))
             nums = [x[0] for x in procs_ctrl]
             ordem_ok = nums == list(range(1, len(nums) + 1))
             orc_ok = not any(x.startswith("ctrl-%s-%s-" % (m, s)) for x in nao_rodou)   # o roteiro grava em nao_rodou a pasta do processo de controle que não coube/rodou
-            ctl = classifica_controle([processo_controle(c, b) for (_, b, _, c) in procs_ctrl], orc_ok and ordem_ok)
-            if not (orc_ok and ordem_ok) and ctl["classe"] != "controle incompleto":
-                ctl = classifica_controle([], False)
-            ctl["processos"] = [{"nn": nn, "braco": b, "pasta": nome, "status": c["status"], "estado_linha": c.get("estado_linha"), "tem_perfil": c.get("tem_perfil"),
-                                 "prefill_ms_mediana": mediana([x["prefill_ms"] for x in c.get("meds") or []]), "passo_ms_mediana": mediana_passo(c.get("meds") or []), "motivos": c["motivos"]}
+            mot_ordem = confere_ordem(saida, m, s, procs_ctrl) if procs_ctrl else None
+            if not ordem_ok and not mot_ordem:
+                mot_ordem = "numeração das pastas do controle não é 01..%02d" % len(nums)
+            ctl = classifica_controle([processo_controle(c, b) for (_, b, _, c) in procs_ctrl], orc_ok, mot_ordem)
+            ctl["ordem_efetiva"] = mot_ordem or "confere com ordem.txt (D L L D D L, rc 0)"
+            ctl["processos"] = [{"nn": nn, "braco": b, "pasta": nome, "status": c["status"], "status_temporal": c["status_temporal"], "status_perfil": c["status_perfil"],
+                                 "estado_linha": c.get("estado_linha"), "tem_perfil": c.get("tem_perfil"), "prefill_ms_mediana": mediana([x["prefill_ms"] for x in c.get("meds") or []]),
+                                 "passo_ms_mediana": mediana_passo(c.get("meds") or []), "motivos_temporais": c["motivos_temporais"], "motivos_perfil": c["motivos_perfil"]}
                                 for (nn, b, nome, c) in procs_ctrl]
         else:
             ctl = {"classe": "sem controle", "motivo": "a série LC não tem par de controle: descritiva, sempre com ressalva", "desvio": None, "pior_caso": None, "desvio_passo": None}
-        # passo de decode do braço D (denominador de H2)
         passo_d = mediana([processo_controle(c, b)["passo_ms_mediana"] for (_, b, _, c) in procs_ctrl if b == "D"]) if procs_ctrl else None
-        # ---- células por texto
         por_texto, b_por_texto, fora_frac_serie = {}, {}, []
         for t in TEXTOS:
-            pedidos, motivos_t, estado_t, seqs, usadas = [], [], "NÃO RODOU", [], []
-            fontes = []
+            pedidos, motivos_t, estado_t, usadas, fontes, seqs = [], [], "NÃO RODOU", [], [], []
             if s in SERIES_CONTROLE and t == "medio":
                 fontes += [(nome, c) for (_, b, nome, c) in procs_ctrl if b == "L"]
             for nome in cels.get((s, t), []):
-                # células principais: 5 medidas (nominal) ou 3 (corte de orçamento), como o celula.json declara
                 mj = X.le_json(os.path.join(saida, "celulas", nome, "celula.json")) or {}
                 fontes.append((nome, le(nome, s, t, mj.get("n_medidas") if mj.get("n_medidas") in (3, 5) else 5)))
             if fontes:
@@ -529,75 +610,92 @@ def processa(saida, ids_arq, refs_dir, textos_arq):
                     if c["status"] == "OK":
                         pedidos += c["pedidos"]
                         usadas.append(nome)
-            div = [x for sq in seqs if sq for x in sq.get("divergencias", [])]
             m_h, desc, fora_frac, mb = estatisticas(pedidos, N_POS[t] % BLOCO) if pedidos else ({}, {}, [], None)
             fora_frac_serie += fora_frac
             b_por_texto[t] = mb
-            por_texto[t] = {"status": estado_t, "motivos": sorted(set(motivos_t)), "celulas": usadas, "divergencias_5c": div, "medidas": m_h, "descricao": desc, "n_posicoes": N_POS[t]}
-        # extrapolação do controle: variação do ms por bloco (B mediano) entre os textos da série (interna, só L)
-        bs = [v for v in b_por_texto.values() if fin(v) is not None]
-        extra = {"b_ms_mediano_por_texto": b_por_texto, "variacao": ((max(bs) - min(bs)) / min(bs)) if len(bs) >= 2 and min(bs) > 0 else None}
-        extra["ok"] = extra["variacao"] is not None and extra["variacao"] <= LIM_EXTRAPOLACAO + EPS if s in SERIES_CONTROLE else None
+            por_texto[t] = {"status": estado_t, "motivos": sorted(set(motivos_t)), "celulas": usadas, "medidas": m_h, "descricao": desc, "n_posicoes": N_POS[t],
+                            "ref_ausente": any((not sq["referencia_disponivel"]) for sq in seqs if sq) if fontes else False}
+        # extrapolação do controle (checagem INTERNA, B mediano observado em L; não estima L-D): por texto, |B_t - B_médio| / B_médio <= 10%; exige B médio válido; só o texto que falha fica SEM PROVA
+        bm = b_por_texto.get("medio")
+        extra = {"formula": "|B_texto - B_medio| / B_medio <= 10%", "b_medio_ms": bm, "textos": {}}
+        for t in ("curto", "longo"):
+            bt = b_por_texto.get(t)
+            if fin(bm) is None or bm <= 0 or fin(bt) is None:
+                extra["textos"][t] = {"b_ms": bt, "desvio": None, "ok": False, "motivo": "sem B médio válido" if (fin(bm) is None or bm <= 0) else "sem B do texto"}
+            else:
+                dv = abs(bt - bm) / bm
+                extra["textos"][t] = {"b_ms": bt, "desvio": dv, "ok": dv <= LIM_EXTRAPOLACAO + EPS, "motivo": ""}
+        extra["textos"]["medio"] = {"b_ms": bm, "desvio": 0.0 if fin(bm) is not None else None, "ok": fin(bm) is not None, "motivo": ""}
         cobs = mediana(fora_frac_serie)
         cob_serv_ressalva = cobs is not None and cobs > LIM_COB_SERVICO
-        # ids: divergência da referência 5c em QUALQUER processo da série (controle D e L inclusive) invalida o instrumento nesta série (plano 2: ids iguais, ligado e desligado)
-        div_serie = []
+        # ids contra a 5c em QUALQUER processo da série, D ou L, aquecimento inclusive
+        div_serie, ref_ausente_serie = [], []
         for (_, b, nome, c) in procs_ctrl:
-            div_serie += [dict(x, pasta=nome, braco=b) for x in (c.get("seq") or {}).get("divergencias", [])]
+            div_serie += [dict(x, pasta=nome, braco=b) for x in c["seq"]["divergencias"]]
+            if not c["seq"]["referencia_disponivel"]:
+                ref_ausente_serie.append(nome)
         for t in TEXTOS:
             for nome in cels.get((s, t), []):
-                div_serie += [dict(x, pasta=nome, texto=t) for x in ((leituras.get(nome) or {}).get("seq") or {}).get("divergencias", [])]
+                c = leituras.get(nome) or {}
+                div_serie += [dict(x, pasta=nome, texto=t) for x in (c.get("seq") or {}).get("divergencias", [])]
+                if c and not (c.get("seq") or {}).get("referencia_disponivel"):
+                    ref_ausente_serie.append(nome)
         ids_l_d = None
         if procs_ctrl:
             gl = {tuple(x["gerados"]) for (_, b, _, c) in procs_ctrl if b == "L" for x in c.get("meds") or []}
             gd = {tuple(x["gerados"]) for (_, b, _, c) in procs_ctrl if b == "D" for x in c.get("meds") or []}
             ids_l_d = bool(gl) and bool(gd) and gl == gd and len(gl) == 1
-        # ---- H por texto
+        # bloqueios da série (L10 e L100; na LC os dados ficam como descrição): valem para a classe EFETIVA do controle e do custo, e para as H
+        bloq = []
+        if s != "LC":
+            if integ:
+                bloq.append("integridade quebrada")
+            if not sm_ok:
+                bloq.append(sm_mot)
+            if div_serie:
+                bloq.append("ids diferentes da referência 5c (instrumento inválido nesta série; inclui o aquecimento)")
+            if ref_prob:
+                bloq.append("; ".join(ref_prob))
+            if any(x.startswith("ctrl-") for x in ref_ausente_serie):
+                bloq.append("referência 5c indisponível para um processo do controle")
+        if s in SERIES_CONTROLE and bloq and controle_permite(ctl["classe"]):
+            ctl = dict(ctl, classe_calculada=ctl["classe"], classe="SEM PROVA", motivo="bloqueio da série: " + "; ".join(bloq) + " (as medidas calculadas ficam só como descrição)")
         hs = {}
-        base_bloqueio = []
-        if integ:
-            base_bloqueio.append("integridade quebrada")
-        if not sm_ok:
-            base_bloqueio.append(sm_mot)
-        if s != "LC" and div_serie:
-            base_bloqueio.append("ids diferentes da referência 5c (instrumento inválido nesta série)")
         for t in TEXTOS:
             pt = por_texto[t]
+            pt["f3_passo"] = razao(pt["descricao"]["fases_host_ms"]["f3"]["mediana"], passo_d) if pt["descricao"] else None   # denominador de H2: passo de decode do braço D
             r = {}
             for h in ("H1", "H2", "H3", "H4", "H5", "H6"):
                 if pt["status"] != "OK" or not pt["medidas"]:
                     r[h] = "sem dado" if pt["status"] == "NÃO RODOU" else "SEM PROVA"
                     continue
-                if base_bloqueio:
-                    r[h] = "SEM PROVA"
-                    continue
                 if s == "LC":
                     r[h] = "descritivo"
                     continue
-                if t != "medio" and extra["ok"] is not True:
+                if bloq or pt["ref_ausente"] or not extra["textos"][t]["ok"]:
                     r[h] = "SEM PROVA"
                     continue
                 mm = dict(pt["medidas"])
-                mm["f3_passo"] = razao(pt["descricao"]["fases_host_ms"]["f3"]["mediana"], passo_d)
+                mm["f3_passo"] = pt["f3_passo"]
                 r[h] = classifica_h(h, s, mm, ctl["classe"])
             hs[t] = r
         ressalvas = []
         if ctl["classe"] == "com ressalva":
             ressalvas.append("controle com ressalva (3% < |desvio| <= 10%): frações relativas ao tempo medido com instrumento, nunca ao do braço D")
         if s == "LC":
-            ressalvas.append("LC sem controle: descritiva, sempre com ressalva")
+            ressalvas.append("LC sem controle: descritiva, sempre com ressalva (divergência contra a 5c, se houver, só reportada)")
         if cob_serv_ressalva:
             ressalvas.append("com ressalva de cobertura do serviço (mediana de S_fora/I_g %.1f%% > 10%%)" % (100 * cobs))
         for t in TEXTOS:
             cb = (por_texto[t]["descricao"].get("cobertura_host_frac") or {}).get("mediana") if por_texto[t]["descricao"] else None
             if cb is not None and cb > LIM_COB_HOST:
                 ressalvas.append("com ressalva de cobertura do host em %s (mediana %.1f%% > 3%%)" % (t, 100 * cb))
-        resultado_series[s] = {"controle": ctl, "passo_d_ms": passo_d, "textos": por_texto, "extrapolacao": extra, "cobertura_servico_mediana": cobs, "bloqueios": base_bloqueio, "hipoteses": hs,
+        resultado_series[s] = {"controle": ctl, "passo_d_ms": passo_d, "textos": por_texto, "extrapolacao": extra, "cobertura_servico_mediana": cobs, "bloqueios": bloq, "hipoteses": hs,
                                "ressalvas": ressalvas, "ids_L_igual_D": ids_l_d, "divergencias_5c_serie": div_serie}
     return {"tipo": "instrumento-resultado", "criterio": "criterio-instrumento-prefill-20261110.md", "descritivo": True, "modelo_da_janela": m, "binario_da_janela": bin_atual,
             "aviso": "Descritivo: sem veredito geral e sem PASSA. H1 a H6 são previsões pré-registradas, só conferidas ('dentro', 'fora', 'sem leitura', 'sem dado', 'SEM PROVA'); nada prova causa; "
                      "o tempo com instrumento não é o tempo de produção; H7 não é avaliada nesta unidade.",
-            "integridade_problemas": integ, "smokes": {s: {"ok": smokes[s][0], "motivo": smokes[s][1]} for s in SERIES}, "orcamento": orc, "series": resultado_series}
+            "integridade_problemas": integ, "referencia_problemas": ref_prob, "smokes": {s: {"ok": smokes[s][0], "motivo": smokes[s][1]} for s in SERIES}, "orcamento": orc, "series": resultado_series}
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------- relatório
@@ -612,27 +710,35 @@ def pc(x):
 def relatorio(res):
     m = res["modelo_da_janela"]
     o = ["# Instrumento de prefill do Lastro, janela do modelo %s (criterio-instrumento-prefill-20261110.md)" % m.upper(), "", res["aviso"], ""]
+    if res.get("referencia_problemas"):
+        o += ["**Referência 5c sem prova (bloqueia L10 e L100):**", ""] + ["- %s" % x for x in res["referencia_problemas"]] + [""]
     if res["integridade_problemas"]:
         o += ["**Integridade QUEBRADA: tudo SEM PROVA (dados brutos preservados como descrição).**", ""] + ["- %s" % x for x in res["integridade_problemas"]] + [""]
     for s, sr in res["series"].items():
         c = sr["controle"]
         o += ["## Série %s" % s, ""]
         o.append("Controle do custo do instrumento: **%s**%s" % (c["classe"], (" (%s)" % c["motivo"]) if c.get("motivo") else ""))
+        if c.get("classe_calculada"):
+            o.append("- classe calculada antes do bloqueio: %s (medidas abaixo preservadas só como descrição)" % c["classe_calculada"])
+        if c.get("ordem_efetiva"):
+            o.append("- ordem efetiva do controle (ordem.txt): %s" % c["ordem_efetiva"])
         if c.get("desvio") is not None:
             o.append("- desvio de prefill_ms (L menos D, sobre D, com sinal): %s; pior caso (maior L menos menor D, sobre menor D): %s; desvio do passo de decode: %s; mediana D %s ms, mediana L %s ms"
                      % (pc(c["desvio"]), pc(c["pior_caso"]), pc(c.get("desvio_passo")), f(c.get("prefill_D_mediana_ms"), 2), f(c.get("prefill_L_mediana_ms"), 2)))
             blocos = len(plano_blocos(N_POS["medio"]))
             o.append("- desvio em ms por bloco: %s ms (diferença das medianas / %d blocos do texto médio)" % (f((c["prefill_L_mediana_ms"] - c["prefill_D_mediana_ms"]) / blocos, 3), blocos))
         for p in c.get("processos", []):
-            o.append("  - %02d %s %s: %s, linha %s, perfil %s, prefill mediano %s ms, passo %s ms%s" % (p["nn"], p["braco"], p["pasta"], p["status"], p["estado_linha"], "sim" if p["tem_perfil"] else "não",
-                                                                                                  f(p["prefill_ms_mediana"], 2), f(p["passo_ms_mediana"], 2), ("; " + "; ".join(p["motivos"])) if p["motivos"] else ""))
-        if sr["extrapolacao"]["ok"] is not None:
+            mots = p["motivos_temporais"] + ["perfil: " + x for x in p["motivos_perfil"]]
+            o.append("  - %02d %s %s: temporal %s, perfil %s, linha %s, perfil-bloco.json %s, prefill mediano %s ms, passo %s ms%s" % (
+                p["nn"], p["braco"], p["pasta"], p["status_temporal"], p["status_perfil"], p["estado_linha"], "sim" if p["tem_perfil"] else "não", f(p["prefill_ms_mediana"], 2), f(p["passo_ms_mediana"], 2),
+                ("; " + "; ".join(mots)) if mots else ""))
+        if sr["extrapolacao"]["textos"]:
             e = sr["extrapolacao"]
-            o.append("- extrapolação do médio para curto e longo (variação do ms por bloco entre textos <= 10%%): %s (variação %s; B mediano %s)" % ("sustentada" if e["ok"] else "NÃO sustentada", pc(e["variacao"]),
-                                                                                                                  ", ".join("%s %s ms" % (t, f(v, 2)) for t, v in e["b_ms_mediano_por_texto"].items())))
+            o.append("- extrapolação do médio (checagem interna: B mediano observado em L, não estimativa de L menos D; %s; B médio %s ms): %s" % (
+                e["formula"], f(e["b_medio_ms"], 2), "; ".join("%s B %s ms, desvio %s, %s" % (t, f(v["b_ms"], 2), pc(v["desvio"]), "sustenta" if v["ok"] else "BLOQUEIA" + ((" (%s)" % v["motivo"]) if v["motivo"] else "")) for t, v in e["textos"].items() if t != "medio")))
         o.append("- ids do braço L iguais aos do D (processos do controle): %s" % ({True: "sim", False: "não", None: "sem dado"}[sr["ids_L_igual_D"]]))
         if sr["divergencias_5c_serie"]:
-            o.append("- DIVERGÊNCIA contra a referência 5c em %d medida(s): instrumento inválido nesta série (%s)" % (len(sr["divergencias_5c_serie"]), "; ".join("%s passo %s" % (x.get("pasta") or x.get("texto"), x.get("passo")) for x in sr["divergencias_5c_serie"][:6])))
+            o.append("- DIVERGÊNCIA contra a referência 5c em %d pedido(s), aquecimento incluído (%s)" % (len(sr["divergencias_5c_serie"]), "; ".join("%s %s passo %s" % (x.get("pasta") or x.get("texto"), x.get("rotulo"), x.get("passo")) for x in sr["divergencias_5c_serie"][:6])))
         if sr["bloqueios"]:
             o.append("- BLOQUEIOS (H em SEM PROVA): " + "; ".join(sr["bloqueios"]))
         for r in sr["ressalvas"]:

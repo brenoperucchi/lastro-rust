@@ -71,6 +71,10 @@ class Base(T.Base):
         self.shas = {k: ("%02d" % i) * 32 for i, k in enumerate(E.FIXO_CHAVES + ("tokenizer-%s" % self.modelo,))}
         self.shas["binario-instr"] = "ae14cbde3965493808818f3aa4a8e7665b6397531e36c2abf020c35fc4f3d969"
         self.shas["gguf-extra"] = "d" * 64
+        self.shas["cmp-ids-prompt"] = E.sha_arq(self.ids)
+        self.shas["textos-json"] = E.sha_arq(self.textos)
+        for mm in ("1b", "3b"):
+            self.shas["ref5c-%s" % mm] = E.sha_arq(os.path.join(self.refs, "ref5c-%s.json" % mm))
         self.manifesto()
         for s in ("L100", "LC"):
             self.smoke(s, True)
@@ -79,7 +83,7 @@ class Base(T.Base):
     def proc(self, s, nn, braco, ms_pos=None, linha=None, perfil_json=True, prefills=None, ids=None, rc_estado=None, **kw):
         """Um processo do controle: pasta ctrl-<m>-<s>-medio-NN-<braco> com 1 aquecimento + 3 medidas."""
         ms_pos = ms_pos if ms_pos is not None else 5.0
-        d = self.celula(s, "medio", ms_pos=ms_pos, n=3, p4=False, prefills=prefills, ids=ids, decode=kw.pop("decode", 8.0), **{k: v for k, v in kw.items() if k in ("cpu", "needed", "falha", "gerados_reps")})
+        d = self.celula(s, "medio", ms_pos=ms_pos, n=3, p4=False, prefills=prefills, ids=ids, decode=(kw.get("decode_d", 8.0) if braco == "D" else kw.get("decode_l", 8.0)), **{k: v for k, v in kw.items() if k in ("cpu", "needed", "falha", "gerados_reps")})
         novo = os.path.join(self.saida, "celulas", "ctrl-%s-%s-medio-%02d-%s" % (self.modelo, s, nn, braco))
         os.rename(d, novo)
         ligado = (braco == "L") if linha is None else (linha == "ligado")
@@ -89,9 +93,18 @@ class Base(T.Base):
             grava(os.path.join(novo, "p1", "saida", "perfil-bloco.json"), perfil(self.modelo, "medio", 3, **{k: v for k, v in kw.items() if k in ("v", "aberto", "valido", "cob", "r6")}))
         return novo
 
-    def controle(self, s, dev=0.0, ms_pos=5.0, ordem="DLLDDL", **kw):
+    def registra_ordem(self, s, ordem="DLLDDL", sequencia=None, rc=0, n=3):
+        """Acrescenta ao ordem.txt as linhas do controle da série (na ordem do registro; `sequencia` = lista de NN para inverter só o registro)."""
+        with open(os.path.join(self.saida, "ordem.txt"), "a", encoding="utf-8") as fh:
+            for k, nn in enumerate(sequencia or range(1, len(ordem) + 1), 1):
+                b = ordem[nn - 1]
+                fh.write("%02d ctrl-%s-%s-medio-%02d-%s n=%d braco=%s inicio=%ds fim=%ds rc=%d\n" % (k, self.modelo, s, nn, b, n, b, k, k + 1, rc))
+
+    def controle(self, s, dev=0.0, ms_pos=5.0, ordem="DLLDDL", registro=True, **kw):
         for nn, b in enumerate(ordem, 1):
             self.proc(s, nn, b, ms_pos=ms_pos * (1 + dev) if b == "L" else ms_pos, **kw)
+        if registro:
+            self.registra_ordem(s, ordem)
 
     def principal(self, s, t, n=5, ms_pos=5.0, v=None, linha=None, ids=None, **kw):
         d = self.celula(s, t, ms_pos=ms_pos, n=n, p4=False, ids=ids, decode=8.0)
@@ -144,6 +157,8 @@ class TestControle(unittest.TestCase):
         self.assertIn("braço L", E.classifica_controle(p)["motivo"])
         p = self.procs(0.0); p[2]["valido"] = False
         self.assertIn("abortado", E.classifica_controle(p)["motivo"])
+        r = E.classifica_controle(self.procs(0.0), incompleto_motivo="ordem efetiva errada")
+        self.assertEqual((r["classe"], r["motivo"]), ("controle incompleto", "ordem efetiva errada"))
         for c in E.classifica_controle(self.procs(0.0)[:5]), E.classifica_controle(self.procs(0.0), orcamento_ok=False):
             self.assertIsNone(c["desvio"])
 
@@ -231,7 +246,7 @@ class TestProcessa(Base):
         self.assertEqual(h["H3"], "dentro")        # R3 = (0,2+0,05)/B pequeno
         self.assertEqual(s10["hipoteses"]["medio"]["H1"], "sem dado")
         self.assertEqual(s100["hipoteses"]["curto"]["H1"], "dentro")   # extrapolação sustentada (B por bloco igual entre textos)
-        self.assertTrue(s100["extrapolacao"]["ok"])
+        self.assertTrue(all(v["ok"] for v in s100["extrapolacao"]["textos"].values()))
         self.assertEqual(s100["textos"]["medio"]["descricao"]["n_pedidos"], 9)   # 3 processos L x 3 medidas
         self.assertEqual(s100["textos"]["curto"]["descricao"]["n_pedidos"], 5)
         # LC não rodou: sem dado, e o resultado não tem veredito geral
@@ -337,14 +352,6 @@ class TestProcessa(Base):
             grava(os.path.join(self.saida, "celulas", pasta, "p1", "saida", "perfil-bloco.json"), perfil("1b", "curto", 5, cob=0.04))
         self.assertTrue(any("cobertura do host em curto" in x for x in self.roda()["series"]["L10"]["ressalvas"]))
 
-    def test_extrapolacao_nao_sustentada(self):
-        self.tudo()
-        grava(os.path.join(self.saida, "celulas", "lastro-1b-L100-longo-quente", "p1", "saida", "perfil-bloco.json"), perfil("1b", "longo", 5, v={"f2": 9.0}))
-        r = self.roda()["series"]["L100"]
-        self.assertFalse(r["extrapolacao"]["ok"])
-        self.assertTrue(all(x == "SEM PROVA" for x in r["hipoteses"]["longo"].values()))
-        self.assertNotEqual(r["hipoteses"]["medio"]["H1"], "SEM PROVA")
-
     def test_pedido_invalido_pelo_binario_invalida_so_a_celula(self):
         self.tudo()
         grava(os.path.join(self.saida, "celulas", "lastro-1b-L10-longo-quente", "p1", "saida", "perfil-bloco.json"), perfil("1b", "longo", 5, valido=False))
@@ -383,6 +390,12 @@ class TestProcessa(Base):
         self.assertTrue(r["integridade_problemas"])
         for s in ("L10", "L100"):
             self.assertTrue(all(x == "SEM PROVA" for x in r["series"][s]["hipoteses"]["medio"].values()))
+            c = r["series"][s]["controle"]
+            self.assertEqual(c["classe"], "SEM PROVA")                      # a classe EFETIVA do custo
+            self.assertEqual(c["classe_calculada"], "comprovada")           # medidas preservadas como descrição, com o motivo
+            self.assertIn("integridade quebrada", c["motivo"])
+            self.assertIsNotNone(c["desvio"])
+        self.assertIn("classe calculada antes do bloqueio", E.relatorio(r))
 
     def test_smoke_reprovado_bloqueia_so_a_serie(self):
         self.tudo()
@@ -390,6 +403,178 @@ class TestProcessa(Base):
         r = self.roda()["series"]
         self.assertTrue(all(x == "SEM PROVA" for x in r["L100"]["hipoteses"]["medio"].values()))
         self.assertNotEqual(r["L10"]["hipoteses"]["medio"]["H5"], "SEM PROVA")
+
+    # ---- rodada 139
+    def extrapola(self, b_curto_f2, b_longo_f2):
+        for s in ("L10", "L100"):
+            self.controle(s)
+            self.principal(s, "curto", v={"f2": b_curto_f2})
+            self.principal(s, "longo", v={"f2": b_longo_f2})
+        return self.roda()["series"]["L100"]
+
+    def test_extrapolacao_por_texto_94_100_106_sustenta_as_duas(self):
+        r = self.extrapola(6.4, 7.6)       # B = 3,0 + f2: 9,4 / 10,0 / 10,6 (6% do médio cada)
+        self.assertAlmostEqual(r["extrapolacao"]["b_medio_ms"], 10.0)
+        self.assertTrue(r["extrapolacao"]["textos"]["curto"]["ok"] and r["extrapolacao"]["textos"]["longo"]["ok"])
+        self.assertAlmostEqual(r["extrapolacao"]["textos"]["curto"]["desvio"], 0.06)
+        self.assertNotEqual(r["hipoteses"]["curto"]["H1"], "SEM PROVA")      # classificado (F2/B = 68%: faixa intermediária)
+        self.assertNotEqual(r["hipoteses"]["longo"]["H1"], "SEM PROVA")
+
+    def test_extrapolacao_94_100_111_bloqueia_so_o_longo(self):
+        r = self.extrapola(6.4, 8.1)       # longo a 11,0% do médio
+        self.assertTrue(r["extrapolacao"]["textos"]["curto"]["ok"])
+        self.assertFalse(r["extrapolacao"]["textos"]["longo"]["ok"])
+        self.assertNotEqual(r["hipoteses"]["curto"]["H1"], "SEM PROVA")
+        self.assertTrue(all(x == "SEM PROVA" for x in r["hipoteses"]["longo"].values()))
+        self.assertEqual(r["hipoteses"]["medio"]["H1"], "dentro")
+        self.assertIn("BLOQUEIA", E.relatorio(self.roda()))
+
+    def test_extrapolacao_limite_exato_de_10_por_cento_sustenta(self):
+        r = self.extrapola(7.0, 8.0)       # longo com B = 11,0 ms: exatamente 10% do médio, inclusivo
+        self.assertTrue(r["extrapolacao"]["textos"]["longo"]["ok"])
+
+    def test_extrapolacao_sem_b_medio_valido_nenhuma_extensao(self):
+        for s in ("L10", "L100"):
+            self.principal(s, "curto")
+            self.principal(s, "longo")
+        r = self.roda()["series"]["L100"]
+        self.assertIsNone(r["extrapolacao"]["b_medio_ms"])
+        self.assertFalse(any(v["ok"] for v in r["extrapolacao"]["textos"].values()))
+        self.assertTrue(all(x == "SEM PROVA" for t in ("curto", "longo") for x in r["hipoteses"][t].values()))
+
+    def test_ordem_efetiva_invertida_so_no_registro_e_controle_incompleto(self):
+        self.controle("L10", registro=False)
+        self.registra_ordem("L10", sequencia=[2, 1, 3, 4, 5, 6])      # mesmas pastas e medições, só o registro cronológico trocado
+        c = self.roda()["series"]["L10"]["controle"]
+        self.assertEqual(c["classe"], "controle incompleto", c)
+        self.assertIn("ordem efetiva", c["motivo"])
+
+    def test_ordem_correta_mantem_o_controle_e_registro_ausente_ou_truncado_nao(self):
+        self.controle("L10")
+        self.assertEqual(self.roda()["series"]["L10"]["controle"]["classe"], "comprovada")
+        with open(os.path.join(self.saida, "ordem.txt"), encoding="utf-8") as fh:
+            linhas = fh.read().splitlines()
+        grava(os.path.join(self.saida, "ordem.txt"), "\n".join(linhas[:5]) + "\n")
+        c = self.roda()["series"]["L10"]["controle"]
+        self.assertEqual(c["classe"], "controle incompleto")
+        self.assertIn("truncado", c["motivo"])
+        grava(os.path.join(self.saida, "ordem.txt"), "")
+        self.assertEqual(self.roda()["series"]["L10"]["controle"]["classe"], "controle incompleto")
+
+    def test_ordem_registra_braco_ou_rc_incompativel(self):
+        self.controle("L10", registro=False)
+        self.registra_ordem("L10", rc=1)
+        self.assertEqual(self.roda()["series"]["L10"]["controle"]["classe"], "controle incompleto")
+
+    def test_divergencia_5c_so_em_um_processo_d_bloqueia_a_serie_inteira(self):
+        self.tudo()
+        p = os.path.join(self.saida, "celulas", "ctrl-1b-L100-medio-04-D", "p1", "saida", "medidas-1b.json")
+        with open(p, encoding="utf-8") as fh:
+            j = json.load(fh)
+        for e in j["medidas"]:
+            e["gerados"] = [x + 1 for x in e["gerados"]]
+        grava(p, j)
+        r = self.roda()["series"]
+        c = r["L100"]["controle"]
+        self.assertEqual(c["classe"], "SEM PROVA")
+        self.assertEqual(c["classe_calculada"], "comprovada")
+        self.assertIsNotNone(c["desvio"])
+        for t in ("curto", "medio", "longo"):
+            self.assertTrue(all(x == "SEM PROVA" for x in r["L100"]["hipoteses"][t].values()), t)
+        self.assertTrue(any(x.get("braco") == "D" for x in r["L100"]["divergencias_5c_serie"]))
+        self.assertEqual(r["L10"]["controle"]["classe"], "comprovada")
+
+    def altera_so_aquecimento(self, pasta, alvo="gerados"):
+        p = os.path.join(self.saida, "celulas", pasta, "p1", "saida", "medidas-1b.json")
+        with open(p, encoding="utf-8") as fh:
+            j = json.load(fh)
+        ent = [e for e in j["medidas"] if e.get("descartada")]
+        self.assertEqual(len(ent), 1)
+        ent[0][alvo] = [x + 1 for x in ent[0][alvo]]
+        grava(p, j)
+
+    def test_id_alterado_so_no_aquecimento_bloqueia_a_classificacao(self):
+        self.tudo()
+        self.altera_so_aquecimento("lastro-1b-L10-curto-quente")
+        r = self.roda()["series"]["L10"]
+        self.assertTrue(r["divergencias_5c_serie"] and all(x["aquecimento"] for x in r["divergencias_5c_serie"]))
+        self.assertEqual(r["controle"]["classe"], "SEM PROVA")
+        self.assertTrue(all(x == "SEM PROVA" for x in r["hipoteses"]["medio"].values()))
+        self.assertEqual(self.roda()["series"]["L100"]["hipoteses"]["medio"]["H1"], "dentro")
+        # o tempo do aquecimento segue fora das medianas: 5 pedidos medidos no curto
+        self.assertEqual(r["textos"]["curto"]["descricao"]["n_pedidos"], 5)
+
+    def test_id_do_prompt_alterado_so_no_aquecimento_tambem_bloqueia(self):
+        self.tudo()
+        self.altera_so_aquecimento("ctrl-1b-L100-medio-02-L", alvo="ids")
+        r = self.roda()["series"]["L100"]
+        self.assertTrue(any(x["tipo"] == "ids do prompt" for x in r["divergencias_5c_serie"]))
+        self.assertEqual(r["controle"]["classe"], "SEM PROVA")
+
+    def test_referencia_ausente_bloqueia_com_igualdade_nunca_presumida(self):
+        self.tudo()
+        ref = os.path.join(self.refs, "ref5c-1b.json")
+        grava(ref, {"casos": []})
+        self.shas["ref5c-1b"] = E.sha_arq(ref)
+        self.manifesto()                                   # manifesto coerente com o arquivo: o bloqueio vem da ausência, não do sha
+        r = self.roda()
+        for s in ("L10", "L100"):
+            self.assertEqual(r["series"][s]["controle"]["classe"], "SEM PROVA")
+            self.assertIn("referência 5c indisponível", r["series"][s]["controle"]["motivo"])
+            self.assertTrue(all(x == "SEM PROVA" for x in r["series"][s]["hipoteses"]["medio"].values()))
+
+    def test_referencia_com_sha_divergente_do_manifesto_bloqueia(self):
+        self.tudo()
+        ref = os.path.join(self.refs, "ref5c-1b.json")
+        with open(ref, encoding="utf-8") as fh:
+            j = json.load(fh)
+        j["observacao"] = "arquivo diferente do registrado"
+        grava(ref, j)
+        r = self.roda()
+        self.assertTrue(r["referencia_problemas"])
+        self.assertIn("sha", r["referencia_problemas"][0])
+        for s in ("L10", "L100"):
+            self.assertEqual(r["series"][s]["controle"]["classe"], "SEM PROVA")
+            self.assertTrue(all(x == "SEM PROVA" for x in r["series"][s]["hipoteses"]["medio"].values()))
+
+    def test_referencia_integra_e_ids_iguais_mantem_o_resultado_positivo(self):
+        self.tudo()
+        r = self.roda()
+        self.assertEqual(r["referencia_problemas"], [])
+        self.assertEqual(r["series"]["L100"]["controle"]["classe"], "comprovada")
+        self.assertEqual(r["series"]["L100"]["hipoteses"]["medio"]["H1"], "dentro")
+
+    def test_perfil_invalido_de_um_L_do_controle_so_marca_a_celula_medio(self):
+        for s in ("L10", "L100"):
+            for nn, b in enumerate("DLLDDL", 1):
+                self.proc(s, nn, b, ms_pos=5.0, valido=(nn != 3))        # o L 03 do controle traz um pedido inválido do binário
+            self.registra_ordem(s)
+            for t in ("curto", "longo"):
+                self.principal(s, t)
+        r = self.roda()["series"]["L100"]
+        self.assertEqual(r["controle"]["classe"], "comprovada", r["controle"])
+        proc3 = [p for p in r["controle"]["processos"] if p["nn"] == 3][0]
+        self.assertEqual(proc3["status_temporal"], "OK")
+        self.assertEqual(proc3["status_perfil"], "SEM PROVA")
+        self.assertEqual(r["textos"]["medio"]["status"], "SEM PROVA")
+        self.assertTrue(all(x == "SEM PROVA" for x in r["hipoteses"]["medio"].values()))
+        self.assertTrue(any("inválido pelo próprio binário" in x for x in r["textos"]["medio"]["motivos"]))
+        self.assertEqual(r["hipoteses"]["curto"]["H1"], "dentro")        # curto e longo classificados (B médio vem dos processos L de perfil válido)
+        self.assertEqual(r["hipoteses"]["longo"]["H1"], "dentro")
+        self.assertIn("perfil SEM PROVA", E.relatorio(self.roda()))
+
+    def test_h2_usa_o_passo_de_decode_do_braco_D(self):
+        for s in ("L10", "L100"):
+            for nn, b in enumerate("DLLDDL", 1):
+                self.proc(s, nn, b, ms_pos=5.0, decode_d=20.0, decode_l=8.0)
+            self.registra_ordem(s)
+            for t in ("curto", "longo"):
+                self.principal(s, t)
+        r = self.roda()["series"]["L100"]
+        self.assertAlmostEqual(r["passo_d_ms"], 20.0)
+        self.assertAlmostEqual(r["textos"]["medio"]["f3_passo"], 2.4 / 20.0)      # não 2,4/8 (passo do L)
+        self.assertNotAlmostEqual(r["textos"]["medio"]["f3_passo"], 2.4 / 8.0)
+        self.assertEqual(r["hipoteses"]["medio"]["H2"], "fora")                   # F3/passo(D) = 0,12 < 1,5
 
 
 class TestRecusa(Base):

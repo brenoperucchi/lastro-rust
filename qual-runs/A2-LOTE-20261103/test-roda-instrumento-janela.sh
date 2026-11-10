@@ -108,6 +108,7 @@ confere "A: séries certas por processo (L10 sem variável de série; L100 FRAC=
 confere "A: prova-variavel.txt com 19 linhas, D com '-u LASTRO_PERFIL_BLOCO' e linha desligado, L com LASTRO_PERFIL_BLOCO=1 e linha ligado, nenhuma INCOERENTE" "[ \$(wc -l < $D/si-A/prova-variavel.txt) = 19 ] && grep -q 'ctrl-1b-L10-medio-01-D braco=D env=\".*-u LASTRO_PERFIL_BLOCO\" linha_do_binario=\"perfil-bloco: desligado\"\$' $D/si-A/prova-variavel.txt && grep -q 'ctrl-1b-L10-medio-02-L braco=L env=\".*LASTRO_PERFIL_BLOCO=1\" linha_do_binario=\"perfil-bloco: ligado\"\$' $D/si-A/prova-variavel.txt && ! grep -q INCOERENTE $D/si-A/prova-variavel.txt && grep -q '0 processo(s) INCOERENTE' $D/si-A/decisao.txt"
 confere "A: nenhum perfil-bloco.json nos D; um em cada L; manifesto com potência OK; ambiente com início e fim" "[ -z \"\$(find $D/si-A/celulas -path '*-D/*' -name perfil-bloco.json)\" ] && [ \$(find $D/si-A/celulas -name perfil-bloco.json | wc -l) = 13 ] && grep -qx 'potencia 370.00_W 370.00_W OK' $D/si-A/integridade-fixos.txt && grep -qx 'potencia_inicio=370.00_W' $D/si-A/ambiente.txt && grep -qx 'potencia_fim=370.00_W' $D/si-A/ambiente.txt"
 confere "A: orçamento.json com o modelo, controle-ordem.txt com 12 linhas e o extrator real rodou (resultado gravado, controle incompleto pelos dados falsos)" "grep -q '\"modelos\": \[\"1b\"\]' $D/si-A/orcamento.json && [ \$(wc -l < $D/si-A/controle-ordem.txt) = 12 ] && [ -s $D/si-A/instrumento-resultado.json ] && grep -q 'extrator:' $D/si-A/decisao.txt"
+confere "A: decisao.txt imprime o sha256 do roteiro" "grep -q \"roteiro sha256 \$(sha256sum $J | cut -d' ' -f1)\" $D/si-A/decisao.txt"
 # B. falha de isolamento: binário falso que liga mesmo em D -> INCOERENTE
 CMP_FAKE_FORCE_LIGADO=1 interno B 100000
 confere "B (variável vazando para um D): prova-variavel.txt marca INCOERENTE nos 6 D e a decisão conta" "[ \$(grep -c 'braco=D.*INCOERENTE\$' $D/si-B/prova-variavel.txt) = 6 ] && grep -q '6 processo(s) INCOERENTE' $D/si-B/decisao.txt"
@@ -219,6 +220,25 @@ done
 LIM=1200 roda ok
 confere "ok: sai 0, decisao.txt, 19 processos, timers parados e restaurados, resultado do extrator, prova da variável sem incoerência" "[ $RC = 0 ] && [ -s $D/se-ok/decisao.txt ] && [ \$(ls $D/se-ok/celulas | grep -c '^ctrl-') = 12 ] && [ -s $D/se-ok/instrumento-resultado.json ] && grep -q '^stop a.timer' $D/ok/log && [ \"\$(cat $D/ok/a.timer)\" = active ] && ! grep -q INCOERENTE $D/se-ok/prova-variavel.txt && grep -q 'resultado DESCRITIVO' $D/se-ok/decisao.txt"
 confere "ok: aviso no fim da janela e listas systemd ao lado da pasta" "grep -q 'terminou (código 0)' $D/se-ok.aviso.txt && grep -q 'terminou (código 0)' $D/aviso-chamado && [ -s $D/se-ok.unidades-antes.txt ]"
+# rodada 139: guarda de processos de teste em qualquer raiz de alvo, falha de leitura da lista, portão do sha do binário
+for caso in "/tmp/target-instrumento/debug/deps/moe_rt-0123456789abcdef --nocapture" "target/debug/deps/moe_rt-0123456789abcdef" "./alvo-relativo/release/deps/leitura_regra-fedcba9876543210 --test-threads=1" "/r/target/debug/deps/moe_rt-0123456789abcdef"; do
+  printf '4242 %s\n' "$caso" > "$D/proc-x"
+  PROC_LISTA=$D/proc-x roda alvo-x; confere "executável de teste em raiz de alvo '${caso%% *}': recusa 2 antes do envelope" "[ $RC = 2 ] && grep -q 'processo que pode usar a 3080 Ti' $D/oute-alvo-x && [ ! -s $D/elog-alvo-x ] && ! grep -q '^stop' $D/alvo-x/log && [ ! -e $D/se-alvo-x ]"
+done
+PROC_LISTA=$D/nao-existe-lista roda ps-erro; confere "falha ao ler a lista de processos (ps com erro): recusa 2 com o motivo, nunca lista vazia, nada tocado" "[ $RC = 2 ] && grep -q 'ilegível' $D/oute-ps-erro && grep -q 'falha ao ler a lista de processos' $D/oute-ps-erro && [ ! -s $D/elog-ps-erro ] && ! grep -q '^stop' $D/ps-erro/log && [ ! -e $D/se-ps-erro ]"
+printf '4242 cargo build --release --bin primeira-palavra\n4343 /x/target/release/deps/libmoe_rt-0123456789abcdef.rlib\n' > "$D/proc-x"
+PROC_LISTA=$D/proc-x roda build-ok2; confere "cargo build continua permitido (e uma biblioteca .rlib em deps não é executável de teste)" "[ $RC = 0 ] && ! grep -q 'processo que pode usar' $D/oute-build-ok2"
+REAL=$AQUI/../../.herdr/binarios/primeira-palavra-instr-ae14cbde
+SEM_SHA_FIXO=0 roda bin-errado
+confere "binário com sha diferente do FIXO (--bin falso, SEM_SHA_FIXO=0): recusa 2 sem envelope, timers, smoke nem célula, nada criado" "[ $RC = 2 ] && grep -q 'binário com sha diferente do FIXO' $D/oute-bin-errado && [ ! -s $D/elog-bin-errado ] && ! grep -q '^stop' $D/bin-errado/log && [ ! -e $D/se-bin-errado ] && [ ! -e $D/se-bin-errado.timers-antes.txt ]"
+if [ -x "$REAL" ]; then
+  SEM_SHA_FIXO=0 roda bin-congelado --bin "$REAL"
+  confere "cópia congelada real (sha do FIXO) passa do portão do binário (as células são falsas; o binário real nunca roda aqui)" "! grep -q 'binário com sha diferente' $D/oute-bin-congelado && [ -s $D/se-bin-congelado/decisao.txt ] && grep -q 'ae14cbde3965493808818f3aa4a8e7665b6397531e36c2abf020c35fc4f3d969' $D/se-bin-congelado/integridade-antes.txt"
+else echo "FALHOU: binário congelado ausente em $REAL"; falhas=$((falhas+1)); fi
+# portão do binário também no modo interno (antes da primeira execução)
+: > "$D/log-bi"
+PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID CMP_FAKE_LOG=$D/log-bi SEM_SHA_FIXO=0 "$J" --interno --modelos 1b --saida "$D/si-bi" --bin "$D/pp" --limite 100 > "$D/outi-bi" 2>&1
+confere "modo interno com binário fora do FIXO: recusa 2 antes de qualquer processo" "[ $? = 2 ] && [ ! -s $D/log-bi ] && grep -q 'binário com sha diferente do FIXO' $D/outi-bi"
 # --verifica-fixos: ambiente limpo contra os arquivos REAIS
 env -i PATH="$PATH" HOME="$HOME" "$J" --verifica-fixos > "$D/fixos.txt" 2>&1; rcf=$?
 nok=$(grep -c ' OK$' "$D/fixos.txt"); nfal=$(grep -c ' FALHA$' "$D/fixos.txt"); naus=$(grep -c ' AUSENTE ' "$D/fixos.txt")
