@@ -1,4 +1,4 @@
-# Pacote da janela F2C, plano de desempenho das cópias (O1), 11/11/2026
+# Pacote das execuções da F2C (plano de cópias, O1): coletas e janelas, 11/11/2026
 
 ## O que é
 Uma janela por modelo (1B primeiro, depois 3B, nunca as duas juntas), de até 1200 s por janela e modelo na RTX 3080 Ti (UUID GPU-b22d9465-8552-9f97-812e-380b590645f8; a 4090 e a 5090 nunca entram), só o Lastro, descritiva. Mede o efeito da O1 (reshape no lugar das quatro cópias de forma no pré-roteador) no prefill e no decode. Regras em `criterio-f2c-20261111.md`; plano v3 em `plano-desempenho-copias-20261111.md` (aprovado na rodada 165); decisão do Breno de 15:23 em `.herdr/DECISAO-BRENO-PLANO-COPIAS-SEIS-PONTOS-20261111-1523.txt`. Código aprovado na rodada 169.
@@ -23,17 +23,24 @@ Conferido por `roda-f2c-janela.sh --verifica-fixos` (sem GPU, só lê; código 0
 
 ## Execução de coleta (`abre-f2c-coleta-20261111.sh <worktree-cand>`)
 Execução própria, fora da janela de medida (não mede desempenho), com os mesmos portões. Usa `roda-f2c-janela.sh --modelos <m> --saida <pasta> --coleta`: dois processos por modelo (base e candidato), mesmas entradas, `--repete 3`, só `LASTRO_GANCHO_LOGITS=1`, que grava o hash dos logits e do KV por camada (HC1b). No 1B, leva também o teste de erro em GPU: `--teste-gpu --worktree-cand DIR`, que roda `cargo test --release --test motor_reforma_gpu -- --ignored --nocapture` com `E4B_GPU_AUTORIZADO=1` (o roteiro define a variável; teto 300 s), e grava `teste-gpu.txt`, o rc, o commit e o sha do executável.
-Antes: criar o worktree do commit candidato (`git worktree add --detach <pasta> 71dfc8e719260e9ccb2862740360b55a38b30d61`), limpo, e compilar o teste sem GPU com `CARGO_TARGET_DIR=<pasta>/target-f2c` e `CUDA_VISIBLE_DEVICES` vazio. O roteiro recusa se o HEAD diferir do commit candidato do critério ou se a árvore estiver suja.
 
-## Autorizações (cada uma pelo nome, com o "autorizo" do Breno)
-1. Janela F2C 1B (medida).
-2. Janela F2C 3B (medida).
-3. Coleta F2C 1B (hashes de logits e KV) com o teste de erro em GPU `motor_reforma_gpu --ignored`.
-4. Coleta F2C 3B (hashes de logits e KV).
-O voxtype é parado e religado pelos scripts de abertura em `.herdr` (trap), não pelo roteiro. A coleta de 15:23 (itens 2, 3 e 6) cobre as autorizações 3 e 4; as janelas seguem a autorização permanente da 3080 Ti. Sem a coleta, a condição de saída bit a bit fica SEM PROVA.
+Pré-compilação do teste de GPU (já feita, sem GPU e sem executar nada), no worktree do commit candidato:
+```
+git worktree add --detach /home/brenoperucchi/.cache/lastro-testes/f2c/wt-cand 71dfc8e719260e9ccb2862740360b55a38b30d61
+cd /home/brenoperucchi/.cache/lastro-testes/f2c/wt-cand/rust/moe-rt
+CUDA_VISIBLE_DEVICES= CARGO_TARGET_DIR=/home/brenoperucchi/.cache/lastro-testes/f2c/wt-cand/target-f2c \
+  cargo test --release --test motor_reforma_gpu --no-run
+```
+Executável gerado: `wt-cand/target-f2c/release/deps/motor_reforma_gpu-dd9dfd0f0e815c14`. O worktree fica limpo no commit candidato (o roteiro recusa se o HEAD diferir ou a árvore estiver suja, exceto `target-f2c`). Uso: `abre-f2c-coleta-20261111.sh /home/brenoperucchi/.cache/lastro-testes/f2c/wt-cand`. O script confere que o executável existe ANTES de parar o voxtype; sem ele, recusa com código 2.
+
+## Scripts de abertura (`.herdr`, fora do git) e o voxtype
+Ordem: FIXOS, estado inicial do voxtype (ilegível = recusa), logs de saída livres (id com segundos; log existente nunca é sobrescrito, recusa antes de qualquer parada), na coleta o executável do teste, e só então parar o voxtype e CONFIRMAR `inactive` (falha de stop ou permanência em `active` = roteiro não é chamado). O voxtype só é religado se estava ativo e foi parado pelo script, após sucesso ou falha; falha ao religar é avisada e vira código 3 só se a execução principal tinha dado 0. Erro no 1B impede o 3B e conserva o código. Testes sem GPU: `.herdr/test-abre-f2c.sh`.
+
+## Autorizações
+As quatro execuções (coleta 1B com o teste de GPU, coleta 3B, janela 1B, janela 3B) já estão autorizadas pela decisão do Breno de 11/11 às 15:23 (itens 2, 3 e 6) e pela autorização permanente da 3080 Ti, com teto de 1200 s por janela e modelo. Sem a coleta, a condição de saída bit a bit fica SEM PROVA.
 
 ## O que cada janela grava
-- Medida: `decisao.txt`, `ordem.txt`, `prova-variavel.txt`, `plano.txt`, `orcamento.json`, `teto-excedido.txt` (se houver), `integridade-antes.txt` e `integridade-depois.txt`, `celulas/ctrl-<modelo>-L100-medio-<NN>-<Dvelho|Dnovo|B2novo>`, mais `.carga-antes/depois.txt`, `.aviso.txt` e o `.log` ao lado, e os resultados do extrator (`f2c-extrai.out`, JSON e Markdown).
+- Medida: `decisao.txt`, `ordem.txt`, `prova-variavel.txt`, `plano.txt`, `orcamento.json`, `teto-excedido.txt` (sempre criado; vazio se nenhum teto estourou), `integridade-antes.txt` e `integridade-depois.txt`, `celulas/ctrl-<modelo>-L100-medio-<NN>-<Dvelho|Dnovo|B2novo>`, mais `.carga-antes/depois.txt`, `.aviso.txt` e o `.log` ao lado, e os resultados do extrator (`f2c-extrai.out`, JSON e Markdown).
 - Coleta: `coleta-manifesto.txt`, `integridade-*.txt`, células `coleta-<modelo>-medio-<papel>`, `f2c-coleta-resultado.json` e `.md` (com `teste_gpu`: executado, rc, passou), `teste-gpu.txt` no 1B.
 
 ## Testes sem GPU
