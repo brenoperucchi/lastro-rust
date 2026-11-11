@@ -291,12 +291,44 @@ pub struct Compartilhado {
     t_armado: AtomicU64,
     blocos: Mutex<Vec<RecBloco>>,
     servico: Mutex<Vec<RecServico>>,
+    /// `LASTRO_PERFIL_F2` ligada (só existe com o instrumento de bloco ligado).
+    f2: bool,
+    /// Camadas do motor (I3 da F2 do host); 0 com a coleta desligada.
+    layers: usize,
+    f2_blocos: Mutex<Vec<BlocoF2>>,
+    f2_tb: Mutex<Vec<RecTb>>,
 }
 
 impl Compartilhado {
     pub fn novo() -> Self {
+        Self::novo_f2(false, 0)
+    }
+    /// Como [`novo`](Self::novo), com a coleta da F2 do host (`LASTRO_PERFIL_F2`) escolhida por quem chama.
+    pub fn novo_f2(f2: bool, layers: usize) -> Self {
         let _ = agora_ns(); // fixa a origem antes de qualquer carimbo
-        Self { armado: AtomicBool::new(false), t_armado: AtomicU64::new(0), blocos: Mutex::new(vec![]), servico: Mutex::new(vec![]) }
+        Self { armado: AtomicBool::new(false), t_armado: AtomicU64::new(0), blocos: Mutex::new(vec![]), servico: Mutex::new(vec![]),
+               f2, layers, f2_blocos: Mutex::new(vec![]), f2_tb: Mutex::new(vec![]) }
+    }
+    /// A coleta da F2 do host está ligada neste motor.
+    pub fn f2(&self) -> bool {
+        self.f2
+    }
+    pub fn registra_f2_bloco(&self, r: BlocoF2) {
+        trava(&self.f2_blocos).push(r);
+    }
+    pub fn registra_f2_tb(&self, r: RecTb) {
+        trava(&self.f2_tb).push(r);
+    }
+    /// Publica o fim do bloco do serviço: o `RecTb` (F2) ANTES do `RecServico`, que é o marcador de conclusão esperado pelo merge. `entre` roda
+    /// entre as duas publicações (os testes pausam o serviço aí).
+    pub fn publica_servico(&self, srv: Option<RecServico>, tb: Option<RecTb>, entre: &mut dyn FnMut()) {
+        if let Some(t) = tb {
+            self.registra_f2_tb(t);
+        }
+        entre();
+        if let Some(r) = srv {
+            self.registra_servico(r);
+        }
     }
     /// Leitura do host (a mesma thread que arma): relaxada.
     pub fn ativo(&self) -> bool {
@@ -354,6 +386,14 @@ impl Armado {
             s.clear();
             s.reserve(blocos_previstos);
         }
+        if p.f2 {
+            let mut b = trava(&p.f2_blocos);
+            b.clear();
+            b.reserve(blocos_previstos);
+            let mut t = trava(&p.f2_tb);
+            t.clear();
+            t.reserve(blocos_previstos);
+        }
         let t = agora_ns();
         p.t_armado.store(t, Ordering::Release);
         p.armado.store(true, Ordering::Release);
@@ -406,6 +446,14 @@ impl Armado {
             .collect();
         self.pf = None;
         let servico_extra = sv.len();
+        let f2 = pf.f2.then(|| {
+            let mut hb = std::mem::take(&mut *trava(&pf.f2_blocos));
+            let mut tb = std::mem::take(&mut *trava(&pf.f2_tb));
+            // Alinhado aos blocos do host, pela geração; o que não casa fica fora (a I4 e a I8 acusam a falta).
+            let hosts: Vec<Option<BlocoF2>> = blocos.iter().map(|b| hb.iter().position(|h| h.gen == b.gen).map(|i| hb.swap_remove(i))).collect();
+            let tbs: Vec<Option<RecTb>> = blocos.iter().map(|b| tb.iter().position(|h| h.gen == b.gen).map(|i| tb.swap_remove(i))).collect();
+            DadosF2 { layers: pf.layers, hosts, tbs, host_extra: hb.len(), tb_extra: tb.len() }
+        });
         Some(RecPedido {
             modelo: d.modelo,
             indice: d.indice,
@@ -419,6 +467,7 @@ impl Armado {
             t_logits_ini: self.t_logits_ini,
             t_desarmado: self.t_desarmado,
             prefill_ms: d.prefill_ms,
+            f2,
             decode_passo_ms_mediana: d.decode_passo_ms_mediana,
         })
     }
@@ -430,6 +479,10 @@ impl Drop for Armado {
             p.armado.store(false, Ordering::Release);
             trava(&p.blocos).clear();
             trava(&p.servico).clear();
+            if p.f2 {
+                trava(&p.f2_blocos).clear();
+                trava(&p.f2_tb).clear();
+            }
         }
     }
 }
@@ -455,6 +508,8 @@ pub struct RecPedido {
     pub t_desarmado: u64,
     pub prefill_ms: f64,
     pub decode_passo_ms_mediana: f64,
+    /// F2 do host por operação (`LASTRO_PERFIL_F2`): `None` com a variável desligada. Não entra em `perfil-bloco.json` (esquema v2 intacto).
+    pub f2: Option<DadosF2>,
 }
 
 impl RecPedido {
@@ -905,6 +960,877 @@ pub fn classifica_controle(procs: &[ProcessoControle], orcamento_ok: bool) -> Re
     ResultadoControle { classe, desvio: Some(desvio), pior_caso: Some((max_l - min_d) / min_d) }
 }
 
+// ---- F2 do host por operação em L100 (plano `plano-f2-host-20261111.md`, versão 3, aprovada na rodada 147) -----------------------------------
+//
+// Descritivo, como o resto do módulo. Ligado por `LASTRO_PERFIL_F2=1` (só o valor exato `1`) e só junto com `LASTRO_PERFIL_BLOCO=1`; desligado
+// não há acumulador, relógio nem gravação (`Engine::f2_acc` é `None` e `enqueue_inner` recebe `None`). Saída em `perfil-f2.json` (esquema
+// próprio, versão 1); o `perfil-bloco.json` versão 2 não muda.
+//
+// Decisões da implementação (o plano deixou em aberto ou o código real pediu):
+//  * A entrega do acumulador ao registro do bloco acontece em `le_ids_com_pendente`, DEPOIS do carimbo t4 e fora de F2 (não no fim de
+//    `enqueue_step`): a cópia do vetor não entra em `R_borda`. O custo cai em R_entre do bloco seguinte e é medido pelo par de controle.
+//  * `H_BEGIN_STEP` é gravada sempre (duração perto de zero quando `max_positions == 1` e `begin_step` não é chamado), como `H_WAIT_EVENT`,
+//    para que I3 seja 6 x layers + 7 independente da configuração.
+//  * `H_WAIT_EVENT` cobre o laço inteiro das esperas (a soma dos `wait_event` mais o custo do laço); `n_ready` fica à parte.
+//  * Os carimbos do serviço (`tb_obs_l`, `tb_l`) cobrem as camadas 0..layers-1 (as que passam por `apos_espera`); `seq[layers]` é esperada em
+//    `end_token` por `wait_seq` e não tem carimbo `tb`.
+
+/// Nome da variável que liga a F2 do host.
+pub const VARIAVEL_F2: &str = "LASTRO_PERFIL_F2";
+
+/// Só o valor exato `1` liga (mesmo contrato de [`interpreta`]).
+pub fn interpreta_f2(v: Option<&str>) -> bool {
+    interpreta(v)
+}
+
+/// Lê `LASTRO_PERFIL_F2` do ambiente (não UTF-8 conta como ausente). Não olha a variável de bloco: [`f2_efetivo`] combina as duas.
+pub fn f2_do_ambiente() -> bool {
+    interpreta_f2(std::env::var(VARIAVEL_F2).ok().as_deref())
+}
+
+/// A F2 só vale com o instrumento de bloco ligado.
+pub fn f2_efetivo(bloco: bool, f2: bool) -> bool {
+    bloco && f2
+}
+
+/// A linha de estado do binário: `perfil-f2: ligado`, `perfil-f2: desligado` ou, pedida sem o bloco, `perfil-f2: desligado (exige perfil-bloco)`.
+pub fn linha_estado_f2(bloco: bool, f2: bool) -> &'static str {
+    match (bloco, f2) {
+        (true, true) => "perfil-f2: ligado",
+        (false, true) => "perfil-f2: desligado (exige perfil-bloco)",
+        _ => "perfil-f2: desligado",
+    }
+}
+
+/// Operações do host (códigos estáveis do JSON). As sete fixas e as seis por camada.
+pub const H_ENTRADA: u8 = 0;
+pub const H_BEGIN_STEP: u8 = 1;
+pub const H_UPLOAD_TABELA: u8 = 2;
+pub const H_WAIT_EVENT: u8 = 3;
+pub const H_POST_LAYERS: u8 = 4;
+pub const H_SEQ_FIM: u8 = 5;
+pub const H_SAIDA: u8 = 6;
+pub const H_PRE_LAYER: u8 = 7;
+pub const H_ROUTE: u8 = 8;
+pub const H_SEQ: u8 = 9;
+pub const H_LAUNCH_HITS: u8 = 10;
+pub const H_WAIT_FLAG: u8 = 11;
+pub const H_ADD_Y: u8 = 12;
+pub const NOMES_H: [&str; 13] = [
+    "H_ENTRADA", "H_BEGIN_STEP", "H_UPLOAD_TABELA", "H_WAIT_EVENT", "H_POST_LAYERS", "H_SEQ_FIM", "H_SAIDA", "H_PRE_LAYER", "H_ROUTE", "H_SEQ",
+    "H_LAUNCH_HITS", "H_WAIT_FLAG", "H_ADD_Y",
+];
+/// As seis operações de cada camada, na ordem em que o motor as enfileira.
+pub const OPS_CAMADA: [u8; 6] = [H_PRE_LAYER, H_ROUTE, H_SEQ, H_LAUNCH_HITS, H_WAIT_FLAG, H_ADD_Y];
+/// Marca de "sem camada" nas operações fixas.
+pub const SEM_CAMADA: u32 = u32::MAX;
+
+/// Operações do bloco: 6 x layers + 7 (I3).
+pub fn n_ops_esperado(layers: usize) -> usize {
+    6 * layers + 7
+}
+
+/// Capacidade do acumulador por bloco: layers x 6 + 8 (as operações mais uma folga de uma), independente de `n_ready`.
+pub fn capacidade_f2(layers: usize) -> usize {
+    layers * 6 + 8
+}
+
+/// Uma operação do host: o código `H_*`, a camada (ou [`SEM_CAMADA`]) e o intervalo [`ini`, `fim`] em ns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpH {
+    pub op: u8,
+    pub camada: u32,
+    pub ini: u64,
+    pub fim: u64,
+}
+
+impl OpH {
+    pub fn dur(&self) -> u64 {
+        self.fim.saturating_sub(self.ini)
+    }
+}
+
+/// Acumulador do host para o bloco em andamento (escritor único: a linha principal). Capacidade fixa reservada na criação do motor; as
+/// marcas do caminho quente só empurram em vetor com folga, sem alocar.
+#[derive(Debug)]
+pub struct AccHost {
+    pub ops: Vec<OpH>,
+    /// `agora_ns()` próprio tomado na entrada de `enqueue_step`.
+    pub entrada: u64,
+    /// `agora_ns()` próprio tomado antes do `Ok(())` de `enqueue_step`.
+    pub saida: u64,
+    pub n_ready: usize,
+    ult: u64,
+}
+
+impl AccHost {
+    pub fn com_capacidade(layers: usize) -> Self {
+        Self { ops: Vec::with_capacity(capacidade_f2(layers)), entrada: 0, saida: 0, n_ready: 0, ult: 0 }
+    }
+    pub fn capacidade(&self) -> usize {
+        self.ops.capacity()
+    }
+    /// Zera para o bloco seguinte (mantém a capacidade) e fixa o carimbo de entrada.
+    pub fn reinicia(&mut self, entrada: u64) {
+        self.ops.clear();
+        self.entrada = entrada;
+        self.saida = 0;
+        self.n_ready = 0;
+        self.ult = entrada;
+    }
+    /// Abre a cadeia interna (início de `enqueue_inner`): grava `H_ENTRADA` de `entrada` até agora.
+    pub fn abre(&mut self, n_ready: usize) {
+        self.n_ready = n_ready;
+        let agora = agora_ns();
+        self.ops.push(OpH { op: H_ENTRADA, camada: SEM_CAMADA, ini: self.entrada, fim: agora });
+        self.ult = agora;
+    }
+    /// Fim de uma chamada ao backend: o início é o fim da anterior (carimbos encadeados).
+    #[inline]
+    pub fn marca(&mut self, op: u8, camada: u32) {
+        let agora = agora_ns();
+        self.ops.push(OpH { op, camada, ini: self.ult, fim: agora });
+        self.ult = agora;
+    }
+    /// Fecha a cadeia no carimbo `saida` (depois de `cur_m` e `current`): grava `H_SAIDA`.
+    pub fn fecha_saida(&mut self, saida: u64) {
+        self.ops.push(OpH { op: H_SAIDA, camada: SEM_CAMADA, ini: self.ult, fim: saida });
+        self.saida = saida;
+        self.ult = saida;
+    }
+    /// O registro do bloco (copia as operações: aloca, fora de F2).
+    pub fn para_bloco(&self, gen: u32, m: usize, pos_ini: u64, t2: u64, t3: u64) -> BlocoF2 {
+        BlocoF2 { gen, m, pos_ini, n_ready: self.n_ready, ops: self.ops.clone(), entrada: self.entrada, saida: self.saida, t2, t3 }
+    }
+}
+
+/// O host de um bloco: as operações encadeadas, os dois carimbos de borda e os t2/t3 externos de `leitura.rs` (os do `RecBloco`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlocoF2 {
+    pub gen: u32,
+    pub m: usize,
+    pub pos_ini: u64,
+    pub n_ready: usize,
+    pub ops: Vec<OpH>,
+    pub entrada: u64,
+    pub saida: u64,
+    pub t2: u64,
+    pub t3: u64,
+}
+
+impl BlocoF2 {
+    pub fn f2_ns(&self) -> u64 {
+        self.t3.saturating_sub(self.t2)
+    }
+    pub fn soma_ops_ns(&self) -> u64 {
+        self.ops.iter().map(OpH::dur).sum()
+    }
+    /// `R_borda = (entrada - t2) + (t3 - saida)`.
+    pub fn r_borda_ns(&self) -> u64 {
+        self.entrada.saturating_sub(self.t2) + self.t3.saturating_sub(self.saida)
+    }
+    /// Soma das durações da operação `op` (todas as camadas).
+    pub fn soma_op_ns(&self, op: u8) -> u64 {
+        self.ops.iter().filter(|o| o.op == op).map(OpH::dur).sum()
+    }
+    /// Fim da operação `H_SEQ` da camada `l`.
+    pub fn fim_seq(&self, l: usize) -> Option<u64> {
+        self.ops.iter().find(|o| o.op == H_SEQ && o.camada as usize == l).map(|o| o.fim)
+    }
+    /// I1: carimbos internos não decrescentes (encadeados, sem sobreposição) e dentro de [t2, t3] com `TOL_RELOGIO_NS` nas bordas.
+    pub fn i1(&self) -> bool {
+        let Some(p) = self.ops.first() else { return false };
+        let dentro = |x: u64| x + TOL_RELOGIO_NS >= self.t2 && x <= self.t3 + TOL_RELOGIO_NS;
+        if self.entrada != p.ini {
+            return false;
+        }
+        let mut prev = p.ini;
+        for o in &self.ops {
+            if o.ini < prev || o.fim < o.ini || !dentro(o.ini) || !dentro(o.fim) {
+                return false;
+            }
+            prev = o.fim;
+        }
+        prev == self.saida && dentro(self.saida) && dentro(self.entrada)
+    }
+    /// I2: soma(operações) + `R_borda` = t3 - t2, dentro de 1 µs por carimbo de borda (2 µs).
+    pub fn i2(&self) -> bool {
+        (self.soma_ops_ns() + self.r_borda_ns()).abs_diff(self.f2_ns()) <= 2 * TOL_RELOGIO_NS
+    }
+    /// I3: 6 x layers + 7 operações na ordem do motor, camadas 0..layers-1 sem repetir nem faltar.
+    pub fn i3(&self, layers: usize) -> bool {
+        if self.ops.len() != n_ops_esperado(layers) {
+            return false;
+        }
+        let esperado = std::iter::empty()
+            .chain([H_ENTRADA, H_BEGIN_STEP, H_UPLOAD_TABELA, H_WAIT_EVENT].map(|o| (o, SEM_CAMADA)))
+            .chain((0..layers).flat_map(|l| OPS_CAMADA.map(|o| (o, l as u32))))
+            .chain([H_POST_LAYERS, H_SEQ_FIM, H_SAIDA].map(|o| (o, SEM_CAMADA)));
+        self.ops.iter().zip(esperado).all(|(o, (op, cam))| o.op == op && o.camada == cam)
+    }
+    /// I5: soma por camada das seis operações mais as fixas = soma de todas as operações.
+    pub fn i5(&self, layers: usize) -> bool {
+        let por_camada: u64 = (0..layers as u32).map(|l| self.ops.iter().filter(|o| o.camada == l && OPS_CAMADA.contains(&o.op)).map(OpH::dur).sum::<u64>()).sum();
+        let fixas: u64 = self.ops.iter().filter(|o| o.camada == SEM_CAMADA).map(OpH::dur).sum();
+        por_camada + fixas == self.soma_ops_ns()
+    }
+    /// `R_borda` / F2 (0 com F2 nula).
+    pub fn cobertura(&self) -> f64 {
+        if self.f2_ns() == 0 {
+            0.0
+        } else {
+            self.r_borda_ns() as f64 / self.f2_ns() as f64
+        }
+    }
+    /// I6: ressalva (não invalida) quando `R_borda`/F2 passa de 3%.
+    pub fn ressalva_borda(&self) -> bool {
+        self.cobertura() > LIM_COBERTURA_HOST
+    }
+    /// Soma das durações do bloco nas seis operações da camada `l`.
+    pub fn soma_camada_ns(&self, l: usize) -> u64 {
+        self.ops.iter().filter(|o| o.camada as usize == l && OPS_CAMADA.contains(&o.op)).map(OpH::dur).sum()
+    }
+}
+
+/// Carimbos do serviço de uma camada: a geração `gen` que o serviço gravou (a do token), a primeira observação de `seq[l]` e o carimbo pós-leitura.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TbL {
+    pub camada: u32,
+    pub gen: u32,
+    pub tb_obs: u64,
+    pub tb: u64,
+}
+
+/// Os carimbos do serviço de um bloco (uma entrada por camada observada).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecTb {
+    pub gen: u32,
+    pub camadas: Vec<TbL>,
+}
+
+/// Acumulador do serviço (escritor único: a thread de serviço); capacidade `layers`.
+#[derive(Debug, Default)]
+pub struct AccTb {
+    pub camadas: Vec<TbL>,
+}
+
+impl AccTb {
+    pub fn com_capacidade(layers: usize) -> Self {
+        Self { camadas: Vec::with_capacity(layers) }
+    }
+    /// Camada 0 abre o bloco.
+    pub fn grava(&mut self, camada: usize, gen: u32, tb_obs: u64, tb: u64) {
+        if camada == 0 {
+            self.camadas.clear();
+        }
+        self.camadas.push(TbL { camada: camada as u32, gen, tb_obs, tb });
+    }
+    pub fn fecha(&mut self, gen: u32) -> RecTb {
+        let r = RecTb { gen, camadas: self.camadas.clone() };
+        self.camadas.clear();
+        r
+    }
+}
+
+fn dif(a: u64, b: u64) -> i64 {
+    (a as i128 - b as i128).clamp(i64::MIN as i128, i64::MAX as i128) as i64
+}
+
+/// Grandezas descritivas por camada, com sinal (ns). Negativos são conservados (a observação pode vir antes do retorno da chamada no host).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DefasL {
+    pub camada: u32,
+    /// `tb_obs_l - fim(H_SEQ_l)`.
+    pub defasagem_obs: i64,
+    /// `tb_l - fim(H_SEQ_l)`.
+    pub defasagem: i64,
+    /// `tb_obs_l - tb_obs_(l-1)` (None na camada 0).
+    pub intervalo_obs: Option<i64>,
+    /// `tb_l - tb_(l-1)` (None na camada 0).
+    pub intervalo: Option<i64>,
+}
+
+/// Defasagens e intervalos de um bloco; camadas sem `H_SEQ` no host ficam de fora.
+pub fn defasagens(h: &BlocoF2, tb: &RecTb) -> Vec<DefasL> {
+    let mut out = Vec::with_capacity(tb.camadas.len());
+    for (i, c) in tb.camadas.iter().enumerate() {
+        let Some(fim) = h.fim_seq(c.camada as usize) else { continue };
+        let ant = i.checked_sub(1).map(|j| tb.camadas[j]);
+        out.push(DefasL {
+            camada: c.camada,
+            defasagem_obs: dif(c.tb_obs, fim),
+            defasagem: dif(c.tb, fim),
+            intervalo_obs: ant.map(|a| dif(c.tb_obs, a.tb_obs)),
+            intervalo: ant.map(|a| dif(c.tb, a.tb)),
+        });
+    }
+    out
+}
+
+/// I8 (só da coleta de carimbos do serviço; invalida a HI do pedido, não as outras hipóteses). Causal: `tb_obs_l >= ini(H_SEQ_l) - TOL_RELOGIO_NS`
+/// (a GPU não escreve `seq[l]` antes de o host começar a chamada que a enfileira). `tb_obs == 0` é acusado à parte ("tb_obs ausente").
+/// A defasagem negativa NÃO é violação.
+pub fn i8_problemas(h: &BlocoF2, tb: Option<&RecTb>, layers: usize) -> Vec<String> {
+    let Some(tb) = tb else { return vec![format!("bloco gen {}: sem carimbos do serviço", h.gen)] };
+    let mut p = vec![];
+    if tb.gen != h.gen {
+        p.push(format!("bloco gen {}: registro do serviço com gen {}", h.gen, tb.gen));
+    }
+    if tb.camadas.len() != layers {
+        p.push(format!("bloco gen {}: {} camadas com carimbo de serviço, esperadas {layers}", h.gen, tb.camadas.len()));
+    }
+    for (i, c) in tb.camadas.iter().enumerate() {
+        if c.camada as usize != i {
+            p.push(format!("bloco gen {}: camada {} fora de ordem na posição {i}", h.gen, c.camada));
+        }
+        if c.gen != h.gen {
+            p.push(format!("bloco gen {}: camada {} com geração de serviço {}", h.gen, c.camada, c.gen));
+        }
+        if c.tb_obs == 0 {
+            p.push(format!("bloco gen {}: camada {}: tb_obs ausente", h.gen, c.camada));
+            continue;
+        }
+        if c.tb_obs > c.tb {
+            p.push(format!("bloco gen {}: camada {} com tb_obs > tb", h.gen, c.camada));
+        }
+        match h.ops.iter().find(|o| o.op == H_SEQ && o.camada as usize == i) {
+            Some(o) if c.tb_obs + TOL_RELOGIO_NS < o.ini => p.push(format!("bloco gen {}: camada {} com tb_obs anterior ao início de H_SEQ", h.gen, c.camada)),
+            None => p.push(format!("bloco gen {}: camada {} sem H_SEQ no host", h.gen, c.camada)),
+            _ => {}
+        }
+        if i > 0 {
+            let a = tb.camadas[i - 1];
+            if c.tb < a.tb || c.tb_obs < a.tb_obs {
+                p.push(format!("bloco gen {}: carimbos não crescentes na camada {}", h.gen, c.camada));
+            }
+        }
+    }
+    p
+}
+
+/// O que o merge entrega de um pedido com a F2 ligada: um host e um registro de serviço por bloco (na ordem de `RecPedido::blocos`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DadosF2 {
+    pub layers: usize,
+    pub hosts: Vec<Option<BlocoF2>>,
+    pub tbs: Vec<Option<RecTb>>,
+    /// Registros sem bloco do host correspondente (esperado 0).
+    pub host_extra: usize,
+    pub tb_extra: usize,
+}
+
+impl DadosF2 {
+    /// Problemas que invalidam o pedido (I1 a I5; I3 invalida o pedido inteiro). A I6 e a I8 não entram aqui.
+    pub fn problemas(&self, blocos: &[RecBloco]) -> Vec<String> {
+        let mut p = vec![];
+        if self.hosts.len() != blocos.len() {
+            p.push(format!("{} blocos do host contra {} registros de F2", blocos.len(), self.hosts.len()));
+            return p;
+        }
+        if self.host_extra > 0 {
+            p.push(format!("{} registros de F2 sem bloco correspondente", self.host_extra));
+        }
+        for (i, (b, h)) in blocos.iter().zip(&self.hosts).enumerate() {
+            let Some(h) = h else {
+                p.push(format!("bloco {i}: sem registro de F2 do host"));
+                continue;
+            };
+            if !h.i3(self.layers) {
+                p.push(format!("bloco {i}: I3 (estrutura: {} operações, esperadas {})", h.ops.len(), n_ops_esperado(self.layers)));
+                continue;
+            }
+            if !h.i1() {
+                p.push(format!("bloco {i}: I1 (monotonia/contenção)"));
+            }
+            if !h.i2() {
+                p.push(format!("bloco {i}: I2 (soma das operações mais R_borda contra t3 - t2)"));
+            }
+            if h.gen != b.gen || h.m != b.m || h.pos_ini != b.pos_ini {
+                p.push(format!("bloco {i}: I4 (gen/m/pos_ini do F2 diferem do perfil-bloco)"));
+            }
+            if h.t2 != b.t[2] || h.t3 != b.t[3] || (h.soma_ops_ns() + h.r_borda_ns()).abs_diff(b.f(2)) > TOL_RELOGIO_NS {
+                p.push(format!("bloco {i}: I4 (soma das operações mais R_borda contra F2 do registro por bloco)"));
+            }
+            if !h.i5(self.layers) {
+                p.push(format!("bloco {i}: I5 (soma por camada)"));
+            }
+        }
+        p
+    }
+    /// Problemas da coleta dos carimbos do serviço (I8): invalidam só a HI.
+    pub fn problemas_hi(&self, blocos: &[RecBloco]) -> Vec<String> {
+        let mut p = vec![];
+        for i in 0..blocos.len() {
+            match self.hosts.get(i).and_then(|h| h.as_ref()) {
+                Some(h) => p.extend(i8_problemas(h, self.tbs.get(i).and_then(|t| t.as_ref()), self.layers).into_iter().map(|s| format!("bloco {i}: {s}"))),
+                None => p.push(format!("bloco {i}: sem host para conferir os carimbos do serviço")),
+            }
+        }
+        if self.tb_extra > 0 {
+            p.push(format!("{} registros de serviço sem bloco correspondente", self.tb_extra));
+        }
+        p
+    }
+    /// Ressalva (I6): algum bloco com `R_borda`/F2 acima de 3%.
+    pub fn ressalva_borda(&self) -> bool {
+        self.hosts.iter().flatten().any(|h| h.ressalva_borda())
+    }
+}
+
+/// Percentil por posto mais próximo (`ceil(p * n)`; definição a aprovar pelo Breno).
+pub fn percentil_posto(v: &[f64], p: f64) -> Option<f64> {
+    if v.is_empty() {
+        return None;
+    }
+    let mut s = v.to_vec();
+    s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let k = ((p * s.len() as f64).ceil() as usize).clamp(1, s.len());
+    Some(s[k - 1])
+}
+
+fn dist(v: &[f64]) -> Value {
+    if v.is_empty() {
+        return json!({"n": 0, "min": null, "mediana": null, "p90": null, "max": null});
+    }
+    let min = v.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    json!({"n": v.len(), "min": min, "mediana": mediana(v), "p90": percentil_posto(v, 0.9), "max": max})
+}
+
+/// Relatório descritivo da HI: distribuições (mínimo, mediana, p90, máximo, COM SINAL, em ns) e medianas por camada de `defasagem_obs`,
+/// `defasagem`, `intervalo_obs`, `intervalo`, junto com a mediana das seis operações do host na mesma camada. Sem classe, sem limiar, sem regime
+/// e sem causa: os números e os limites de interpretação.
+pub fn relatorio_hi(amostras: &[(&BlocoF2, Vec<DefasL>)], layers: usize) -> Value {
+    let todas = |f: &dyn Fn(&DefasL) -> Option<i64>| -> Vec<f64> { amostras.iter().flat_map(|(_, d)| d.iter().filter_map(f)).map(|x| x as f64).collect() };
+    let por_camada = |f: &dyn Fn(&DefasL) -> Option<i64>| -> Vec<Value> {
+        (0..layers as u32)
+            .map(|l| {
+                let v: Vec<f64> = amostras.iter().flat_map(|(_, d)| d.iter().filter(|x| x.camada == l).filter_map(f)).map(|x| x as f64).collect();
+                json!({"camada": l, "n": v.len(), "mediana": mediana_opt(&v)})
+            })
+            .collect()
+    };
+    let host_camada: Vec<Value> = (0..layers)
+        .map(|l| {
+            let v: Vec<f64> = amostras.iter().map(|(h, _)| h.soma_camada_ns(l) as f64).collect();
+            json!({"camada": l, "n": v.len(), "mediana_ns": mediana_opt(&v)})
+        })
+        .collect();
+    json!({
+        "tipo": "hi", "descritivo": true, "unidade": "ns, com sinal",
+        "amostras": amostras.len(),
+        "distribuicao": {
+            "defasagem_obs": dist(&todas(&|d| Some(d.defasagem_obs))),
+            "defasagem": dist(&todas(&|d| Some(d.defasagem))),
+            "intervalo_obs": dist(&todas(&|d| d.intervalo_obs)),
+            "intervalo": dist(&todas(&|d| d.intervalo)),
+        },
+        "mediana_por_camada": {
+            "defasagem_obs": por_camada(&|d| Some(d.defasagem_obs)),
+            "defasagem": por_camada(&|d| Some(d.defasagem)),
+            "intervalo_obs": por_camada(&|d| d.intervalo_obs),
+            "intervalo": por_camada(&|d| d.intervalo),
+            "host_seis_operacoes": host_camada,
+        },
+        "limites": "defasagem negativa e conservada com sinal; tb_obs e tb nao medem a GPU nem identificam o mecanismo de espera; tb inclui leitura, copia e escalonamento do servico",
+    })
+}
+
+/// O JSON de um pedido com a F2 ligada.
+pub fn pedido_f2_json(p: &RecPedido) -> Option<Value> {
+    let d = p.f2.as_ref()?;
+    let blocos: Vec<Value> = p
+        .blocos
+        .iter()
+        .enumerate()
+        .map(|(i, b)| {
+            let h = d.hosts.get(i).and_then(|h| h.as_ref());
+            let tb = d.tbs.get(i).and_then(|t| t.as_ref());
+            let Some(h) = h else { return json!({"indice": i, "gen": b.gen, "sem_host": true}) };
+            let defs = tb.map(|t| defasagens(h, t));
+            json!({
+                "indice": i, "gen": h.gen, "m": h.m, "pos_ini": h.pos_ini, "n_ready": h.n_ready,
+                "t2_ns": h.t2, "t3_ns": h.t3, "entrada_ns": h.entrada, "saida_ns": h.saida,
+                "f2_ns": h.f2_ns(), "r_borda_ns": h.r_borda_ns(), "soma_ops_ns": h.soma_ops_ns(),
+                "ops": h.ops.iter().map(|o| json!([o.op, if o.camada == SEM_CAMADA { Value::Null } else { json!(o.camada) }, o.ini, o.fim])).collect::<Vec<_>>(),
+                "tb": tb.map(|t| t.camadas.iter().map(|c| json!({"camada": c.camada, "gen": c.gen, "tb_obs_ns": c.tb_obs, "tb_ns": c.tb})).collect::<Vec<_>>()),
+                "defasagens": defs.map(|v| v.iter().map(|x| json!({"camada": x.camada, "defasagem_obs_ns": x.defasagem_obs, "defasagem_ns": x.defasagem,
+                                                                     "intervalo_obs_ns": x.intervalo_obs, "intervalo_ns": x.intervalo})).collect::<Vec<_>>()),
+                "i1": h.i1(), "i2": h.i2(), "i3": h.i3(d.layers), "i5": h.i5(d.layers), "i6_ressalva_borda": h.ressalva_borda(),
+            })
+        })
+        .collect();
+    let problemas = d.problemas(&p.blocos);
+    let problemas_hi = d.problemas_hi(&p.blocos);
+    Some(json!({
+        "modelo": p.modelo, "indice": p.indice, "aquecimento": p.aquecimento, "n": p.n, "plano_m": p.plano, "layers": d.layers,
+        "blocos": blocos, "host_extra": d.host_extra, "tb_extra": d.tb_extra,
+        "valido": problemas.is_empty(), "problemas": problemas,
+        "hi_valida": problemas_hi.is_empty(), "problemas_hi": problemas_hi,
+        "i6_ressalva_borda": d.ressalva_borda(),
+    }))
+}
+
+/// O arquivo `perfil-f2.json` (esquema próprio, versão 1; só os pedidos com a F2 coletada).
+pub fn perfil_f2_json(pedidos: &[RecPedido]) -> Value {
+    json!({
+        "tipo": "perfil-f2",
+        "versao": 1,
+        "variavel": VARIAVEL_F2,
+        "exige": VARIAVEL,
+        "bloco": BLOCO,
+        "unidades": "carimbos e duracoes em ns desde a origem do processo; defasagens em ns com sinal",
+        "nomes_op": NOMES_H,
+        "tolerancias": {"relogio_ns": TOL_RELOGIO_NS, "cobertura_borda": LIM_COBERTURA_HOST},
+        "pedidos": pedidos.iter().filter_map(pedido_f2_json).collect::<Vec<_>>(),
+    })
+}
+
+// ---- Classificadores das hipóteses da F2 (seção 5 do plano; limiares são rascunho até o critério congelar) ----------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HipF2 {
+    Ha,
+    Hb,
+    Hc,
+    Hd,
+    He,
+    Hf,
+    Hg,
+    Hh,
+    Hi,
+}
+
+/// As medidas já calculadas (por modelo, sobre blocos cheios elegíveis). `None` = a medida não existe.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MedidasF2 {
+    /// (`H_PRE_LAYER` + `H_ROUTE` + `H_LAUNCH_HITS` + `H_ADD_Y`) / F2.
+    pub ha: Option<f64>,
+    /// `H_PRE_LAYER` / F2.
+    pub hb_frac: Option<f64>,
+    /// A soma de `H_PRE_LAYER` no bloco é maior que a de cada uma das outras operações por camada.
+    pub hb_maior: Option<bool>,
+    /// (`H_SEQ` + `H_WAIT_FLAG` + `H_SEQ_FIM` + `H_UPLOAD_TABELA` + `H_WAIT_EVENT` + `H_BEGIN_STEP`) / F2.
+    pub hc: Option<f64>,
+    /// Maior mediana por camada / menor mediana por camada (soma das seis operações).
+    pub hd: Option<f64>,
+    /// Parcela de F2 em chamadas acima de 10 vezes a mediana da mesma operação na mesma camada.
+    pub he: Option<f64>,
+    /// F2(bloco final com resto) / F2 mediano dos cheios (só descritiva).
+    pub hf_razao: Option<f64>,
+    /// ms por lançamento: só existe depois de fixar a contagem de kernels.
+    pub hg_ms_por_lancamento: Option<f64>,
+    /// F2 do bloco 0 / F2 mediano dos cheios.
+    pub hh: Option<f64>,
+    /// Há números de HI publicados (a HI é só descritiva).
+    pub hi_dados: bool,
+}
+
+/// Faixa prevista de HF para o resto `r`: `r/8` com 25% de margem (descritiva, sem classe).
+pub fn faixa_hf(r: usize) -> (f64, f64) {
+    let c = r as f64 / BLOCO as f64;
+    (c * 0.75, c * 1.25)
+}
+
+pub fn classifica_ha(x: Option<f64>) -> ClasseH {
+    simples_ge(x, 0.80, 0.50)
+}
+
+/// HB: dentro se frac >= 0,40 e a soma de `H_PRE_LAYER` é a maior; fora se frac < 0,25; senão sem leitura.
+pub fn classifica_hb(frac: Option<f64>, maior: Option<bool>) -> ClasseH {
+    match (fin(frac), maior) {
+        (None, _) => ClasseH::SemDado,
+        (Some(f), _) if f < 0.25 => ClasseH::Fora,
+        (Some(f), Some(true)) if f >= 0.40 => ClasseH::Dentro,
+        (Some(_), Some(_)) => ClasseH::SemLeitura,
+        (Some(_), None) => ClasseH::SemDado,
+    }
+}
+
+pub fn classifica_hc(x: Option<f64>) -> ClasseH {
+    simples_le(x, 0.05, 0.15)
+}
+
+/// HD: razão <= 1,5 dentro; > 3,0 fora; entre os dois sem leitura. Só uniformidade.
+pub fn classifica_hd(x: Option<f64>) -> ClasseH {
+    simples_le(x, 1.5, 3.0)
+}
+
+pub fn classifica_he(x: Option<f64>) -> ClasseH {
+    simples_le(x, 0.05, 0.20)
+}
+
+/// HH: dentro se F2(bloco 0)/F2 mediano >= 1,5; sem limiar de fora (descritivo abaixo disso).
+pub fn classifica_hh(x: Option<f64>) -> ClasseH {
+    match fin(x) {
+        None => ClasseH::SemDado,
+        Some(v) if v >= 1.5 => ClasseH::Dentro,
+        Some(_) => ClasseH::Descritivo,
+    }
+}
+
+/// Classifica `h` dado o controle do modelo (a classe do B contra A). Controle que não permite = `SemProva`, antes de olhar qualquer número.
+pub fn classifica_f2(h: HipF2, m: &MedidasF2, controle: &ClasseControle) -> ClasseH {
+    if !controle_permite(controle) {
+        return ClasseH::SemProva;
+    }
+    match h {
+        HipF2::Ha => classifica_ha(m.ha),
+        HipF2::Hb => classifica_hb(m.hb_frac, m.hb_maior),
+        HipF2::Hc => classifica_hc(m.hc),
+        HipF2::Hd => classifica_hd(m.hd),
+        HipF2::He => classifica_he(m.he),
+        HipF2::Hf => if fin(m.hf_razao).is_some() { ClasseH::Descritivo } else { ClasseH::SemDado },
+        HipF2::Hg => if fin(m.hg_ms_por_lancamento).is_some() { ClasseH::Descritivo } else { ClasseH::SemDado },
+        HipF2::Hh => classifica_hh(m.hh),
+        HipF2::Hi => if m.hi_dados { ClasseH::Descritivo } else { ClasseH::SemDado },
+    }
+}
+
+fn med(v: Vec<f64>) -> Option<f64> {
+    mediana_opt(&v)
+}
+
+fn razao(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+    match (a, b) {
+        (Some(x), Some(y)) if y > 0.0 => Some(x / y),
+        _ => None,
+    }
+}
+
+/// HE de UM pedido: a mediana de referência de cada grupo (op, camada, com SEM_CAMADA para as sete fixas) é tomada sobre os blocos elegíveis DO
+/// PEDIDO; HE = soma das durações estritamente acima de 10x essa mediana / soma de F2 do pedido. Conjunto elegível: todas as operações medidas.
+pub fn he_do_pedido(cheios: &[&BlocoF2]) -> Option<f64> {
+    let mut grupos: std::collections::BTreeMap<(u8, u32), Vec<f64>> = std::collections::BTreeMap::new();
+    let mut f2_total = 0f64;
+    for b in cheios {
+        f2_total += b.f2_ns() as f64;
+        for o in &b.ops {
+            grupos.entry((o.op, o.camada)).or_default().push(o.dur() as f64);
+        }
+    }
+    let longas: f64 = grupos.values().filter_map(|d| mediana_opt(d).map(|md| d.iter().filter(|&&x| x > 10.0 * md).sum::<f64>())).sum();
+    (f2_total > 0.0).then(|| longas / f2_total)
+}
+
+/// HE da célula: mediana entre os pedidos de [`he_do_pedido`] (cada pedido com a sua própria mediana de referência). Sem pedido, `None`.
+pub fn he_da_celula(pedidos: &[Vec<&BlocoF2>]) -> Option<f64> {
+    let v: Vec<f64> = pedidos.iter().filter_map(|p| he_do_pedido(p)).collect();
+    mediana_opt(&v)
+}
+
+/// Medianas, entre os blocos de UM pedido, da soma de cada tipo de operação por camada, na ordem PRE, ROUTE, SEQ, LAUNCH, WAIT_FLAG, ADD_Y.
+fn somas_por_tipo_do_pedido(cheios: &[&BlocoF2]) -> Option<[f64; 6]> {
+    let mut r = [0f64; 6];
+    for (i, &o) in OPS_CAMADA.iter().enumerate() {
+        r[i] = med(cheios.iter().map(|b| b.soma_op_ns(o) as f64).collect())?;
+    }
+    Some(r)
+}
+
+/// As medidas da célula: HA a HE calculadas POR PEDIDO ([`medidas_f2_pedido`], cada pedido com as próprias medianas) e agregadas pela mediana
+/// entre os pedidos da célula. HB: a comparação de maior soma usa a mediana entre pedidos dos valores por tipo de operação (não um booleano por
+/// pedido). Nunca mistura os blocos de pedidos diferentes numa mediana só. Sem blocos, tudo `None`.
+pub fn medidas_f2_celula(pedidos: &[Vec<&BlocoF2>], layers: usize) -> MedidasF2 {
+    let por_pedido: Vec<MedidasF2> = pedidos.iter().filter(|p| !p.is_empty()).map(|p| medidas_f2_pedido(p, layers)).collect();
+    let agrega = |f: &dyn Fn(&MedidasF2) -> Option<f64>| med(por_pedido.iter().filter_map(f).collect());
+    let tipos: Vec<[f64; 6]> = pedidos.iter().filter(|p| !p.is_empty()).filter_map(|p| somas_por_tipo_do_pedido(p)).collect();
+    let hb_maior = (!tipos.is_empty() && tipos.len() == por_pedido.len()).then(|| {
+        let m: Vec<f64> = (0..6).map(|i| mediana(&tipos.iter().map(|t| t[i]).collect::<Vec<_>>())).collect();
+        (1..6).all(|i| m[0] > m[i])
+    });
+    MedidasF2 { ha: agrega(&|m| m.ha), hb_frac: agrega(&|m| m.hb_frac), hb_maior, hc: agrega(&|m| m.hc), hd: agrega(&|m| m.hd), he: he_da_celula(pedidos), ..MedidasF2::default() }
+}
+
+/// Calcula as medidas de HA a HE de UM PEDIDO (seus blocos cheios elegíveis; razão de medianas, como no critério anterior); a célula usa
+/// [`medidas_f2_celula`], que agrega por mediana entre pedidos. Não chame com blocos de vários pedidos juntos. HF, HG, HH e HI vêm de quem monta os conjuntos. Sem blocos, tudo `None`.
+pub fn medidas_f2_pedido(cheios: &[&BlocoF2], layers: usize) -> MedidasF2 {
+    if cheios.is_empty() {
+        return MedidasF2::default();
+    }
+    let f2 = med(cheios.iter().map(|b| b.f2_ns() as f64).collect());
+    let grupo = |ops: &[u8]| med(cheios.iter().map(|b| ops.iter().map(|&o| b.soma_op_ns(o)).sum::<u64>() as f64).collect());
+    let ha = razao(grupo(&[H_PRE_LAYER, H_ROUTE, H_LAUNCH_HITS, H_ADD_Y]), f2);
+    let hb_frac = razao(grupo(&[H_PRE_LAYER]), f2);
+    // Soma por tipo de operação em cada bloco; a mediana entre os blocos decide quem é maior.
+    let pre = grupo(&[H_PRE_LAYER]);
+    let hb_maior = pre.map(|p| [H_ROUTE, H_SEQ, H_LAUNCH_HITS, H_WAIT_FLAG, H_ADD_Y].iter().all(|&o| grupo(&[o]).is_some_and(|x| p > x)));
+    let hc = razao(grupo(&[H_SEQ, H_WAIT_FLAG, H_SEQ_FIM, H_UPLOAD_TABELA, H_WAIT_EVENT, H_BEGIN_STEP]), f2);
+    let por_camada: Vec<f64> = (0..layers).filter_map(|l| med(cheios.iter().map(|b| b.soma_camada_ns(l) as f64).collect())).collect();
+    let hd = (por_camada.len() == layers && layers > 0).then(|| {
+        let mx = por_camada.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let mn = por_camada.iter().copied().fold(f64::INFINITY, f64::min);
+        (mn > 0.0).then(|| mx / mn)
+    }).flatten();
+    let he = he_do_pedido(cheios);
+    MedidasF2 { ha, hb_frac, hb_maior, hc, hd, he, ..MedidasF2::default() }
+}
+
+// ---- Planejamento da janela: teto global, tetos de processo e corte de 5 para 3 (critério, pontos 7 e 8 da seção 10) -------------------------------
+
+/// Teto global da janela por modelo (s), compartilhado entre todas as etapas; separado dos tetos dos processos.
+pub const TETO_JANELA_S: u64 = 1200;
+/// Folga única da projeção (s).
+pub const FOLGA_S: u64 = 180;
+/// Teto do smoke (s).
+pub const TETO_SMOKE_S: u64 = 60;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CelulaF2 {
+    Medio,
+    Curto,
+    Longo,
+}
+
+/// Teto de UM processo (s): 60 (1B) e 90 (3B) no médio e no curto; 75 (1B) e 120 (3B) no longo. Passar do teto = processo inválido, sem repetição.
+pub fn teto_processo_s(modelo_3b: bool, c: CelulaF2) -> u64 {
+    match (c, modelo_3b) {
+        (CelulaF2::Longo, false) => 75,
+        (CelulaF2::Longo, true) => 120,
+        (_, false) => 60,
+        (_, true) => 90,
+    }
+}
+
+/// Estimativa conservadora de uma célula (um único processo, 1 aquecimento + N medidas): com N = 5 é o teto do processo; com N = 3 é o
+/// teto x (1 + 3) / (1 + 5), arredondado para cima. Regra de rótulo: estimativa por N PROPORCIONAL ao número de pedidos, a confirmar na revisão;
+/// nunca passa do teto do processo.
+pub fn estimativa_celula_s(teto_s: u64, n: u32) -> u64 {
+    match n {
+        5 => teto_s,
+        3 => (teto_s * 4).div_ceil(6),
+        _ => teto_s,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlanoCelula {
+    /// Roda com 5 medidas.
+    Cinco,
+    /// Corte: roda com 3 medidas.
+    Tres,
+    /// Nem com 3 cabe: a célula não roda e nada é repetido.
+    NaoRodou,
+}
+
+/// Antes de iniciar uma célula: `restantes_s` são os tetos de processo de TODAS as células ainda não iniciadas, incluindo a que vai começar. Projeção
+/// `decorrido + soma + folga` contra o teto global; se passar com N = 5, tenta N = 3 em todas as restantes; se nem assim couber, NÃO RODOU.
+pub fn planeja_celula(decorrido_s: u64, restantes_s: &[u64], folga_s: u64, teto_global_s: u64) -> PlanoCelula {
+    let soma = |n: u32| -> u64 { restantes_s.iter().map(|&t| estimativa_celula_s(t, n)).sum() };
+    if decorrido_s + soma(5) + folga_s <= teto_global_s {
+        PlanoCelula::Cinco
+    } else if decorrido_s + soma(3) + folga_s <= teto_global_s {
+        PlanoCelula::Tres
+    } else {
+        PlanoCelula::NaoRodou
+    }
+}
+
+/// O controle de 9 processos nunca é cortado: cabe inteiro (smoke + nove tetos + folga dentro do teto global) ou o modelo fica incompleto/SEM PROVA.
+pub fn controle_cabe(decorrido_s: u64, tetos_dos_9_s: &[u64], folga_s: u64, teto_global_s: u64) -> bool {
+    tetos_dos_9_s.len() == ORDEM_CONTROLE_F2.len() && decorrido_s + tetos_dos_9_s.iter().sum::<u64>() + folga_s <= teto_global_s
+}
+
+// ---- Controle de três braços (3.5 do plano) -------------------------------------------------------------------------------------------------
+
+/// D: as duas variáveis desligadas; A: só `LASTRO_PERFIL_BLOCO=1`; B: as duas ligadas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Braco3 {
+    D,
+    A,
+    B,
+}
+
+/// Um processo do controle, na ordem em que rodou.
+#[derive(Clone, Debug)]
+pub struct ProcessoControleF2 {
+    pub braco: Braco3,
+    /// Mediana de `prefill_ms` dos pedidos medidos do processo.
+    pub prefill_ms_mediana: f64,
+    /// Mediana do `passo_ms` do decode do processo.
+    pub passo_ms_mediana: f64,
+    pub imprimiu_bloco_ligado: bool,
+    pub imprimiu_f2_ligado: bool,
+    pub produziu_bloco: bool,
+    pub produziu_f2: bool,
+    /// Terminou sem aborto e com os ids iguais aos da referência (I7).
+    pub valido: bool,
+}
+
+/// Quadrado latino de 9 processos por modelo: D A B, B D A, A B D.
+pub const ORDEM_CONTROLE_F2: [Braco3; 9] = [Braco3::D, Braco3::A, Braco3::B, Braco3::B, Braco3::D, Braco3::A, Braco3::A, Braco3::B, Braco3::D];
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DesvioF2 {
+    /// (mediana das medianas do braço alvo - a da referência) / a da referência; com sinal.
+    pub desvio: f64,
+    /// (maior mediana do alvo - menor da referência) / menor da referência.
+    pub pior_caso: f64,
+    /// Desvio em ms por bloco (diferença das medianas de `prefill_ms` dividida pelos blocos do pedido).
+    pub ms_por_bloco: f64,
+    /// Desvio relativo do `passo_ms` do decode.
+    pub desvio_passo: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResultadoControleF2 {
+    /// Classe pela magnitude de |B contra A| (a medida principal); manda em tudo.
+    pub classe: ClasseControle,
+    /// B contra A.
+    pub principal: Option<DesvioF2>,
+    /// B contra D (medida de apoio): classe só descritiva, não decide.
+    pub apoio: Option<DesvioF2>,
+    pub classe_apoio: Option<ClasseControle>,
+}
+
+fn classe_por_desvio(d: f64) -> ClasseControle {
+    match d.abs() {
+        x if x <= 0.03 + EPS => ClasseControle::Comprovada,
+        x if x <= 0.10 + EPS => ClasseControle::ComRessalva,
+        _ => ClasseControle::SemProva,
+    }
+}
+
+/// Classifica o controle de três braços de um modelo. Pura. `blocos_por_pedido` é o número de blocos totais executados no pedido do texto médio (22 em L100: 170 = 21 x 8 + 2): `ms_por_bloco` é a "diferença de prefill por bloco executado, incluindo primeiro e resto" (não isola o custo da F2).
+pub fn classifica_controle_f2(procs: &[ProcessoControleF2], orcamento_ok: bool, blocos_por_pedido: usize) -> ResultadoControleF2 {
+    let inc = |m: &str| ResultadoControleF2 { classe: ClasseControle::Incompleto(m.into()), principal: None, apoio: None, classe_apoio: None };
+    if !orcamento_ok {
+        return inc("orçamento insuficiente");
+    }
+    if procs.len() != ORDEM_CONTROLE_F2.len() {
+        return inc("menos (ou mais) de 9 processos: mínimo de 3 válidos por braço");
+    }
+    if procs.iter().map(|p| p.braco).ne(ORDEM_CONTROLE_F2) {
+        return inc("ordem diferente de D A B, B D A, A B D");
+    }
+    if procs.iter().any(|p| !p.valido || !p.prefill_ms_mediana.is_finite() || p.prefill_ms_mediana <= 0.0 || !p.passo_ms_mediana.is_finite() || p.passo_ms_mediana <= 0.0) {
+        return inc("processo de controle abortado ou inválido");
+    }
+    for p in procs {
+        let ok = match p.braco {
+            Braco3::D => !p.imprimiu_bloco_ligado && !p.imprimiu_f2_ligado && !p.produziu_bloco && !p.produziu_f2,
+            Braco3::A => p.imprimiu_bloco_ligado && !p.imprimiu_f2_ligado && p.produziu_bloco && !p.produziu_f2,
+            Braco3::B => p.imprimiu_bloco_ligado && p.imprimiu_f2_ligado && p.produziu_bloco && p.produziu_f2,
+        };
+        if !ok {
+            return inc(&format!("braço {:?} com linhas de estado ou arquivos de perfil que não são os do braço", p.braco));
+        }
+    }
+    let de = |b: Braco3, f: &dyn Fn(&ProcessoControleF2) -> f64| -> Vec<f64> { procs.iter().filter(|p| p.braco == b).map(f).collect() };
+    let pre = |p: &ProcessoControleF2| p.prefill_ms_mediana;
+    let passo = |p: &ProcessoControleF2| p.passo_ms_mediana;
+    let desvio = |alvo: Braco3, ref_: Braco3| -> DesvioF2 {
+        let (a, r) = (de(alvo, &pre), de(ref_, &pre));
+        let (ma, mr) = (mediana(&a), mediana(&r));
+        let min_r = r.iter().copied().fold(f64::INFINITY, f64::min);
+        let max_a = a.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let (pa, pr) = (mediana(&de(alvo, &passo)), mediana(&de(ref_, &passo)));
+        DesvioF2 { desvio: (ma - mr) / mr, pior_caso: (max_a - min_r) / min_r, ms_por_bloco: (ma - mr) / blocos_por_pedido.max(1) as f64, desvio_passo: (pa - pr) / pr }
+    };
+    let (principal, apoio) = (desvio(Braco3::B, Braco3::A), desvio(Braco3::B, Braco3::D));
+    ResultadoControleF2 { classe: classe_por_desvio(principal.desvio), classe_apoio: Some(classe_por_desvio(apoio.desvio)), principal: Some(principal), apoio: Some(apoio) }
+}
+
 // ---- Testes sem GPU -----------------------------------------------------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -972,7 +1898,7 @@ mod tests {
         let p = RecPedido {
             modelo: String::new(),
             indice: 0, aquecimento: false, n: 9, plano: vec![8, 1], blocos: vec![b0, b1], servico: vec![None, None], servico_extra: 0,
-            t_armado: 0, t_logits_ini: t_logits, t_desarmado: t_logits + 2 * MS, prefill_ms: 0.0, decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: t_logits, t_desarmado: t_logits + 2 * MS, prefill_ms: 0.0, f2: None, decode_passo_ms_mediana: 1.0,
         };
         let mut p = p;
         p.prefill_ms = ms(p.total_perfil_ns()) + 0.05; // diferença de relógio dentro da tolerância
@@ -998,7 +1924,7 @@ mod tests {
         let p = RecPedido {
             modelo: String::new(),
             indice: 0, aquecimento: false, n: 8, plano: vec![8], blocos: vec![b0], servico: vec![None], servico_extra: 0,
-            t_armado: 0, t_logits_ini: t_logits, t_desarmado: t_logits + MS, prefill_ms: ms(t_logits + MS), decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: t_logits, t_desarmado: t_logits + MS, prefill_ms: ms(t_logits + MS), f2: None, decode_passo_ms_mediana: 1.0,
         };
         assert!(p.cobertura_host() < LIM_COBERTURA_HOST);
     }
@@ -1045,7 +1971,7 @@ mod tests {
         let p = RecPedido {
             modelo: String::new(),
             indice: 0, aquecimento: false, n: 8, plano: vec![8], blocos: vec![b0.clone()], servico: vec![Some(serv(1, 10 * MS, 5 * MS, [0; 7]))], servico_extra: 0,
-            t_armado: 0, t_logits_ini: b0.t[4], t_desarmado: b0.t[4], prefill_ms: ms(b0.t[4]), decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: b0.t[4], t_desarmado: b0.t[4], prefill_ms: ms(b0.t[4]), f2: None, decode_passo_ms_mediana: 1.0,
         };
         assert!(p.problemas().iter().any(|x| x.contains("serviço gen 1")));
     }
@@ -1079,7 +2005,7 @@ mod tests {
         let p = RecPedido {
             modelo: String::new(),
             indice: 0, aquecimento: false, n: 8, plano: vec![8], blocos: vec![b.clone()], servico: vec![Some(s)], servico_extra: 0,
-            t_armado: 0, t_logits_ini: b.t[4], t_desarmado: b.t[4], prefill_ms: ms(b.t[4]), decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: b.t[4], t_desarmado: b.t[4], prefill_ms: ms(b.t[4]), f2: None, decode_passo_ms_mediana: 1.0,
         };
         assert!(mediana(&p.s_fora_fracoes()) > LIM_COBERTURA_SERVICO, "ressalva de cobertura do serviço");
         let j = p.para_json();
@@ -1212,7 +2138,7 @@ mod tests {
         let b = bloco(1, 8, 0, [0.1, 0.1, 0.1, 0.1]);
         let mk = |modelo: &str, indice: usize| RecPedido {
             modelo: modelo.into(), indice, aquecimento: indice == 0, n: 8, plano: vec![8], blocos: vec![b.clone()], servico: vec![None], servico_extra: 0,
-            t_armado: 0, t_logits_ini: b.t[4], t_desarmado: b.t[4], prefill_ms: ms(b.t[4]), decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: b.t[4], t_desarmado: b.t[4], prefill_ms: ms(b.t[4]), f2: None, decode_passo_ms_mediana: 1.0,
         };
         // cada motor reinicia `indice` em 0: o par (modelo, indice) é a chave
         let v = perfil_json(&[mk("1b", 0), mk("1b", 1), mk("3b", 0), mk("3b", 1)]);
@@ -1453,8 +2379,685 @@ mod tests {
         let p = RecPedido {
             modelo: String::new(),
             indice: 0, aquecimento: false, n: 17, plano: vec![8, 8, 1], blocos: vec![b0, b1, b2], servico: vec![None; 3], servico_extra: 0,
-            t_armado: 0, t_logits_ini: 0, t_desarmado: 0, prefill_ms: 0.0, decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: 0, t_desarmado: 0, prefill_ms: 0.0, f2: None, decode_passo_ms_mediana: 1.0,
         };
         assert!((p.r6().unwrap() - 0.6).abs() < 1e-9);
     }
 }
+
+// ---- Testes sem GPU da F2 do host ---------------------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests_f2 {
+    use super::*;
+
+    const T2: u64 = 1_000_000;
+
+    /// A ordem das operações do motor para `layers` camadas, na sequência exata da I3.
+    fn ordem(layers: usize) -> Vec<(u8, u32)> {
+        let mut v = vec![(H_ENTRADA, SEM_CAMADA), (H_BEGIN_STEP, SEM_CAMADA), (H_UPLOAD_TABELA, SEM_CAMADA), (H_WAIT_EVENT, SEM_CAMADA)];
+        for l in 0..layers as u32 {
+            v.extend(OPS_CAMADA.map(|o| (o, l)));
+        }
+        v.extend([(H_POST_LAYERS, SEM_CAMADA), (H_SEQ_FIM, SEM_CAMADA), (H_SAIDA, SEM_CAMADA)]);
+        v
+    }
+
+    /// Bloco sintético: operações encadeadas com as durações `d` (cíclicas), `b_ini` entre t2 e a entrada e `b_fim` entre a saída e t3.
+    fn bloco(layers: usize, d: &[u64], b_ini: u64, b_fim: u64) -> BlocoF2 {
+        let entrada = T2 + b_ini;
+        let mut t = entrada;
+        let mut ops = vec![];
+        for (i, (op, camada)) in ordem(layers).into_iter().enumerate() {
+            let fim = t + d[i % d.len()];
+            ops.push(OpH { op, camada, ini: t, fim });
+            t = fim;
+        }
+        BlocoF2 { gen: 7, m: 8, pos_ini: 0, n_ready: 0, ops, entrada, saida: t, t2: T2, t3: t + b_fim }
+    }
+
+    fn rec_bloco(h: &BlocoF2) -> RecBloco {
+        RecBloco { gen: h.gen, m: h.m, pos_ini: h.pos_ini, t: [h.t2 - 2000, h.t2 - 1000, h.t2, h.t3, h.t3 + 500], f0_pendente: false }
+    }
+
+    #[test]
+    fn variavel_f2_so_liga_com_o_valor_um_e_exige_o_bloco() {
+        assert_eq!(VARIAVEL_F2, "LASTRO_PERFIL_F2");
+        assert!(interpreta_f2(Some("1")));
+        for v in [None, Some(""), Some("0"), Some("true"), Some(" 1"), Some("1 "), Some("11"), Some("on")] {
+            assert!(!interpreta_f2(v), "{v:?}");
+        }
+        assert!(f2_efetivo(true, true));
+        assert!(!f2_efetivo(false, true) && !f2_efetivo(true, false) && !f2_efetivo(false, false));
+        assert_eq!(linha_estado_f2(true, true), "perfil-f2: ligado");
+        assert_eq!(linha_estado_f2(false, true), "perfil-f2: desligado (exige perfil-bloco)");
+        assert_eq!(linha_estado_f2(true, false), "perfil-f2: desligado");
+        assert_eq!(linha_estado_f2(false, false), "perfil-f2: desligado");
+    }
+
+    #[test]
+    fn acumulador_nao_aloca_no_caminho_quente_e_o_desligado_nao_existe() {
+        for layers in [24usize, 32] {
+            let mut a = AccHost::com_capacidade(layers);
+            let cap = a.capacidade();
+            assert!(cap >= capacidade_f2(layers) && capacidade_f2(layers) == layers * 6 + 8);
+            for bloco in 0..3 {
+                a.reinicia(agora_ns());
+                a.abre(bloco * 10);
+                for (op, c) in &ordem(layers)[1..ordem(layers).len() - 1] {
+                    a.marca(*op, *c);
+                }
+                a.fecha_saida(agora_ns());
+                assert_eq!(a.ops.len(), n_ops_esperado(layers));
+                assert_eq!(a.capacidade(), cap, "capacidade igual depois do bloco {bloco}");
+            }
+        }
+        assert_eq!(n_ops_esperado(24), 151);
+        assert_eq!(n_ops_esperado(32), 199);
+        // Sem instrumento: `Armado::arma(None, ..)` é inerte e `Compartilhado` sem F2 não guarda nada.
+        let pf = Compartilhado::novo();
+        assert!(!pf.f2());
+        let _ = Armado::arma(None, 1000);
+    }
+
+    #[test]
+    fn i3_recusa_uma_operacao_a_mais_ou_a_menos_com_24_e_32_camadas() {
+        for layers in [24usize, 32] {
+            let h = bloco(layers, &[100], 100, 100);
+            assert!(h.i1() && h.i2() && h.i3(layers) && h.i5(layers));
+            assert!(!h.i3(layers + 1) && !h.i3(layers - 1), "estrutura de outra profundidade");
+            let mut mais = h.clone();
+            mais.ops.push(OpH { op: H_ADD_Y, camada: 0, ini: mais.saida, fim: mais.saida });
+            assert!(!mais.i3(layers));
+            let mut menos = h.clone();
+            menos.ops.remove(10);
+            assert!(!menos.i3(layers));
+            // camada repetida no lugar de outra (mesma contagem)
+            let mut rep = h.clone();
+            rep.ops[4 + 6 * 3].camada = 2;
+            assert!(!rep.i3(layers));
+            // ordem trocada dentro da camada
+            let mut tro = h.clone();
+            let (a, b) = (tro.ops[4].op, tro.ops[5].op);
+            tro.ops[4].op = b;
+            tro.ops[5].op = a;
+            assert!(!tro.i3(layers));
+        }
+    }
+
+    #[test]
+    fn i1_i2_e_i5_pegam_carimbo_fora_de_ordem_sobreposicao_e_soma_errada() {
+        let h = bloco(2, &[500], 100, 100);
+        assert!(h.i1() && h.i2());
+        let mut fora = h.clone();
+        fora.ops[5].ini = fora.ops[4].fim.saturating_sub(10); // volta no tempo: sobreposição
+        assert!(!fora.i1());
+        let mut invertido = h.clone();
+        invertido.ops[3].fim = invertido.ops[3].ini - 1;
+        assert!(!invertido.i1());
+        let mut antes_de_t2 = h.clone();
+        antes_de_t2.t2 = antes_de_t2.entrada + 5_000; // a cadeia começaria antes de t2
+        assert!(!antes_de_t2.i1());
+        let mut depois_de_t3 = h.clone();
+        depois_de_t3.t3 = depois_de_t3.saida - 5_000;
+        assert!(!depois_de_t3.i1());
+        // soma não fecha: buraco de 10 µs entre duas operações (fim da cadeia não bate com a saída gravada)
+        let mut buraco = h.clone();
+        for o in &mut buraco.ops[6..] {
+            o.ini += 10_000;
+            o.fim += 10_000;
+        }
+        assert!(!buraco.i1() || !buraco.i2());
+        // t3 muito depois da saída: R_borda cresce, a soma continua batendo contra t3 - t2 (a cobertura vira ressalva, não invalida)
+        let borda = bloco(2, &[500], 100, 50_000);
+        assert!(borda.i1() && borda.i2() && borda.ressalva_borda());
+        assert!(h.i5(2));
+    }
+
+    #[test]
+    fn residuo_de_borda_0_meio_por_cento_3_por_cento_e_acima() {
+        // S = 9700 ns em 19 operações: 18 de 500 e uma de 700.
+        let mut d = vec![500u64; 19];
+        d[18] = 700;
+        let mk = |b_fim: u64| bloco(2, &d, 0, b_fim);
+        let h0 = mk(0);
+        assert_eq!((h0.soma_ops_ns(), h0.r_borda_ns(), h0.cobertura()), (9700, 0, 0.0));
+        let h05 = mk(50);
+        assert!((h05.cobertura() - 0.005).abs() < 1e-3 && !h05.ressalva_borda());
+        let h3 = mk(300);
+        assert_eq!(h3.cobertura(), 0.03, "exatamente 3%");
+        assert!(!h3.ressalva_borda(), "3% exato não passa do limite");
+        let h4 = mk(400);
+        assert!(h4.cobertura() > 0.03 && h4.ressalva_borda());
+        for h in [&h0, &h05, &h3, &h4] {
+            assert!(h.i1() && h.i2(), "nenhum invalida por cobertura");
+            let d = DadosF2 { layers: 2, hosts: vec![Some(h.clone())], tbs: vec![None], host_extra: 0, tb_extra: 0 };
+            assert!(d.problemas(&[rec_bloco(h)]).is_empty(), "{:?}", d.problemas(&[rec_bloco(h)]));
+        }
+        let d4 = DadosF2 { layers: 2, hosts: vec![Some(h4.clone())], tbs: vec![None], host_extra: 0, tb_extra: 0 };
+        assert!(d4.ressalva_borda());
+    }
+
+    #[test]
+    fn i4_junta_gen_m_e_f2_do_registro_por_bloco() {
+        let h = bloco(2, &[500], 100, 100);
+        let ok = rec_bloco(&h);
+        let mk = |h: &BlocoF2| DadosF2 { layers: 2, hosts: vec![Some(h.clone())], tbs: vec![None], host_extra: 0, tb_extra: 0 };
+        assert!(mk(&h).problemas(&[ok.clone()]).is_empty());
+        let mut gen = ok.clone();
+        gen.gen += 1;
+        assert!(!mk(&h).problemas(&[gen]).is_empty(), "gen que não casa");
+        let mut m = ok.clone();
+        m.m = 3;
+        assert!(!mk(&h).problemas(&[m]).is_empty());
+        let mut t3 = ok.clone();
+        t3.t[3] += 5_000; // F2 do registro por bloco diferente da soma
+        assert!(!mk(&h).problemas(&[t3]).is_empty());
+        // I3 invalida o pedido: uma operação a menos num dos blocos
+        let mut menos = h.clone();
+        menos.ops.pop();
+        assert!(mk(&menos).problemas(&[ok]).iter().any(|s| s.contains("I3")));
+    }
+
+    fn tb_de(h: &BlocoF2, layers: usize, f: impl Fn(usize, u64) -> (u64, u64)) -> RecTb {
+        let camadas = (0..layers).map(|l| {
+            let fim = h.fim_seq(l).unwrap();
+            let (obs, tb) = f(l, fim);
+            TbL { camada: l as u32, gen: h.gen, tb_obs: obs, tb }
+        });
+        RecTb { gen: h.gen, camadas: camadas.collect() }
+    }
+
+    #[test]
+    fn i8_valida_a_coleta_do_servico_e_conserva_delta_negativo() {
+        let layers = 3;
+        let h = bloco(layers, &[1_000], 100, 100);
+        let bom = tb_de(&h, layers, |l, fim| (fim + 100 * (l as u64 + 1), fim + 300 * (l as u64 + 1)));
+        assert!(i8_problemas(&h, Some(&bom), layers).is_empty());
+        // observação anterior ao retorno da chamada no host: defasagem negativa conservada com sinal, sem invalidar
+        let neg = tb_de(&h, layers, |l, fim| (fim - 700 + 5_000 * l as u64, fim - 300 + 5_000 * l as u64));
+        assert!(i8_problemas(&h, Some(&neg), layers).is_empty(), "{:?}", i8_problemas(&h, Some(&neg), layers));
+        let defs = defasagens(&h, &neg);
+        assert_eq!(defs[0].defasagem_obs, -700);
+        assert_eq!(defs[0].defasagem, -300);
+        assert!(defs[0].intervalo_obs.is_none() && defs[1].intervalo.is_some());
+        // tb_obs > tb
+        let mut ruim = bom.clone();
+        ruim.camadas[1].tb_obs = ruim.camadas[1].tb + 1;
+        assert!(!i8_problemas(&h, Some(&ruim), layers).is_empty());
+        // tb decrescente em l
+        let mut dec = bom.clone();
+        dec.camadas[2].tb = dec.camadas[1].tb - 1;
+        dec.camadas[2].tb_obs = dec.camadas[2].tb;
+        assert!(!i8_problemas(&h, Some(&dec), layers).is_empty());
+        // anterior ao início de H_SEQ (conferência causal)
+        let ini0 = h.ops.iter().find(|o| o.op == H_SEQ && o.camada == 0).unwrap().ini;
+        let ant = tb_de(&h, layers, |l, fim| (if l == 0 { ini0 - 100_000 } else { fim }, fim));
+        assert!(!i8_problemas(&h, Some(&ant), layers).is_empty());
+        // falta camada observada
+        let mut falta = bom.clone();
+        falta.camadas.pop();
+        assert!(!i8_problemas(&h, Some(&falta), layers).is_empty());
+        assert!(!i8_problemas(&h, None, layers).is_empty());
+        // geração de serviço trocada: não junta ao bloco
+        let mut gen = bom.clone();
+        gen.camadas[1].gen += 1;
+        assert!(!i8_problemas(&h, Some(&gen), layers).is_empty());
+        let mut gen2 = bom.clone();
+        gen2.gen += 1;
+        assert!(!i8_problemas(&h, Some(&gen2), layers).is_empty());
+        // a falha da coleta invalida só a HI, não o pedido
+        let d = DadosF2 { layers, hosts: vec![Some(h.clone())], tbs: vec![Some(gen2)], host_extra: 0, tb_extra: 0 };
+        assert!(d.problemas(&[rec_bloco(&h)]).is_empty());
+        assert!(!d.problemas_hi(&[rec_bloco(&h)]).is_empty());
+    }
+
+    #[test]
+    fn hi_mesma_publicacao_custos_de_copia_diferentes_e_publicacoes_distintas_com_o_mesmo_tb() {
+        let layers = 4;
+        let h1 = bloco(layers, &[1_000], 100, 100);
+        // mesma publicação (mesmo fim de H_SEQ): tb_obs igual, tb muda com o custo da cópia
+        let barato = tb_de(&h1, layers, |_, fim| (fim + 200, fim + 400));
+        let caro = tb_de(&h1, layers, |_, fim| (fim + 200, fim + 9_400));
+        let (db, dc) = (defasagens(&h1, &barato), defasagens(&h1, &caro));
+        assert!(db.iter().zip(&dc).all(|(a, b)| a.defasagem_obs == b.defasagem_obs && a.defasagem < b.defasagem));
+        // publicações distintas (hosts com H_SEQ em instantes diferentes) com o mesmo tb: defasagens distintas
+        let h2 = bloco(layers, &[2_000], 100, 100);
+        let mesmo_tb = |h: &BlocoF2| RecTb { gen: h.gen, camadas: (0..layers as u32).map(|l| TbL { camada: l, gen: h.gen, tb_obs: 30_000_000 + l as u64, tb: 30_000_100 + l as u64 }).collect() };
+        let (d1, d2) = (defasagens(&h1, &mesmo_tb(&h1)), defasagens(&h2, &mesmo_tb(&h2)));
+        assert!(d1.iter().zip(&d2).all(|(a, b)| a.defasagem != b.defasagem));
+        // o relatório da HI preserva os números com sinal, sem escolher regime nem emitir classe
+        let neg = tb_de(&h1, layers, |l, fim| (fim - 500 - l as u64, fim - 100));
+        let amostras = vec![(&h1, defasagens(&h1, &barato)), (&h1, defasagens(&h1, &neg)), (&h2, dc.clone())];
+        let r = relatorio_hi(&amostras, layers);
+        assert_eq!(r["descritivo"], true);
+        for chave in ["classe", "regime", "rotulo", "veredito"] {
+            assert!(r.get(chave).is_none(), "o relatório não carrega `{chave}`");
+        }
+        let txt = r.to_string();
+        assert!(!txt.contains("GPU espera"), "sem o rótulo causal");
+        let d = &r["distribuicao"]["defasagem_obs"];
+        assert_eq!(d["n"], 12);
+        assert_eq!(d["min"], -503.0, "o mínimo negativo é conservado com sinal");
+        assert!(d["max"].as_f64().unwrap() > 0.0 && d["mediana"].is_number() && d["p90"].is_number());
+        assert_eq!(r["mediana_por_camada"]["defasagem_obs"].as_array().unwrap().len(), layers);
+        assert_eq!(r["mediana_por_camada"]["host_seis_operacoes"][0]["n"], 3);
+        assert!(r["limites"].as_str().unwrap().contains("nao medem a GPU"));
+        // o JSON do pedido nunca vira zero um delta negativo
+        let pj = serde_json::to_string(&r).unwrap();
+        assert!(pj.contains("-503"));
+    }
+
+    #[test]
+    fn classificadores_nos_limites_exatos() {
+        use ClasseH::*;
+        // HA: >= 0,80 dentro; < 0,50 fora
+        assert_eq!((classifica_ha(Some(0.80)), classifica_ha(Some(0.7999)), classifica_ha(Some(0.50)), classifica_ha(Some(0.4999))), (Dentro, SemLeitura, SemLeitura, Fora));
+        // HB
+        assert_eq!(classifica_hb(Some(0.40), Some(true)), Dentro);
+        assert_eq!(classifica_hb(Some(0.40), Some(false)), SemLeitura, "40% sem ser a maior soma não é dentro");
+        assert_eq!(classifica_hb(Some(0.3999), Some(true)), SemLeitura);
+        assert_eq!((classifica_hb(Some(0.25), Some(true)), classifica_hb(Some(0.2499), Some(true))), (SemLeitura, Fora));
+        assert_eq!(classifica_hb(None, Some(true)), SemDado);
+        assert_eq!(classifica_hb(Some(0.5), None), SemDado);
+        // HC: <= 0,05 dentro; > 0,15 fora
+        assert_eq!((classifica_hc(Some(0.05)), classifica_hc(Some(0.0501)), classifica_hc(Some(0.15)), classifica_hc(Some(0.1501))), (Dentro, SemLeitura, SemLeitura, Fora));
+        // HD: <= 1,5 dentro; > 3,0 fora
+        assert_eq!((classifica_hd(Some(1.5)), classifica_hd(Some(1.5001)), classifica_hd(Some(3.0)), classifica_hd(Some(3.0001))), (Dentro, SemLeitura, SemLeitura, Fora));
+        // HE: <= 0,05 dentro; > 0,20 fora
+        assert_eq!((classifica_he(Some(0.05)), classifica_he(Some(0.0501)), classifica_he(Some(0.20)), classifica_he(Some(0.2001))), (Dentro, SemLeitura, SemLeitura, Fora));
+        // HH: >= 1,5 dentro; sem fora
+        assert_eq!((classifica_hh(Some(1.5)), classifica_hh(Some(1.4999)), classifica_hh(Some(0.1))), (Dentro, Descritivo, Descritivo));
+        assert_eq!(classifica_ha(Some(f64::NAN)), SemDado);
+        // as descritivas: HF, HG, HI não têm classe de dentro/fora
+        let c = ClasseControle::Comprovada;
+        let m = MedidasF2 { hf_razao: Some(0.25), hi_dados: true, ..MedidasF2::default() };
+        assert_eq!((classifica_f2(HipF2::Hf, &m, &c), classifica_f2(HipF2::Hi, &m, &c), classifica_f2(HipF2::Hg, &m, &c)), (Descritivo, Descritivo, SemDado));
+        // controle > 10% = SEM PROVA para todas
+        for h in [HipF2::Ha, HipF2::Hb, HipF2::Hc, HipF2::Hd, HipF2::He, HipF2::Hf, HipF2::Hg, HipF2::Hh, HipF2::Hi] {
+            assert_eq!(classifica_f2(h, &m, &ClasseControle::SemProva), SemProva);
+            assert_eq!(classifica_f2(h, &m, &ClasseControle::Incompleto("x".into())), SemProva);
+        }
+        assert_eq!(faixa_hf(2), (0.1875, 0.3125));
+    }
+
+    #[test]
+    fn medidas_de_blocos_sinteticos_dao_as_razoes_esperadas() {
+        // Cada camada: pre 600, route 100, seq 10, launch 200, waitflag 10, addy 80 = 1000; fixas 7 x 10.
+        let layers = 4;
+        let mut d = vec![10u64; 4];
+        for _ in 0..layers {
+            d.extend([600, 100, 10, 200, 10, 80]);
+        }
+        d.extend([10, 10, 10]);
+        let blocos: Vec<BlocoF2> = (0..5).map(|_| bloco(layers, &d, 0, 0)).collect();
+        let refs: Vec<&BlocoF2> = blocos.iter().collect();
+        let m = medidas_f2_pedido(&refs, layers);
+        let f2 = (4 * 1000 + 70) as f64;
+        assert!((m.ha.unwrap() - 4.0 * 980.0 / f2).abs() < 1e-9);
+        assert!((m.hb_frac.unwrap() - 2400.0 / f2).abs() < 1e-9 && m.hb_maior == Some(true));
+        assert!((m.hc.unwrap() - (4.0 * 20.0 + 40.0) / f2).abs() < 1e-9);
+        assert_eq!(m.hd, Some(1.0), "camadas iguais");
+        assert_eq!(m.he, Some(0.0));
+        assert_eq!(medidas_f2_pedido(&[], layers).ha, None);
+        // uma chamada 11x a mediana vira cauda
+        let mut cauda = blocos.clone();
+        cauda[0].ops[10].fim += 0; // sem alterar encadeamento
+        let alvo = cauda[0].ops.iter().position(|o| o.op == H_ROUTE && o.camada == 1).unwrap();
+        let extra = 100 * 10; // 11x a mediana (100)
+        cauda[0].ops[alvo].fim += extra;
+        for o in cauda[0].ops.iter_mut().skip(alvo + 1) {
+            o.ini += extra;
+            o.fim += extra;
+        }
+        cauda[0].saida += extra;
+        cauda[0].t3 += extra;
+        let refs: Vec<&BlocoF2> = cauda.iter().collect();
+        let m = medidas_f2_pedido(&refs, layers);
+        assert!(m.he.unwrap() > 0.0);
+    }
+
+    fn proc(b: Braco3, pre: f64, passo: f64) -> ProcessoControleF2 {
+        ProcessoControleF2 {
+            braco: b, prefill_ms_mediana: pre, passo_ms_mediana: passo,
+            imprimiu_bloco_ligado: b != Braco3::D, imprimiu_f2_ligado: b == Braco3::B,
+            produziu_bloco: b != Braco3::D, produziu_f2: b == Braco3::B, valido: true,
+        }
+    }
+
+    fn controle(db: f64) -> Vec<ProcessoControleF2> {
+        ORDEM_CONTROLE_F2.iter().map(|&b| proc(b, if b == Braco3::B { 100.0 * (1.0 + db) } else { 100.0 }, 10.0)).collect()
+    }
+
+    #[test]
+    fn controle_de_tres_bracos_classifica_3_10_e_acima() {
+        let c = |db: f64| classifica_controle_f2(&controle(db), true, 22);
+        assert_eq!(c(0.0).classe, ClasseControle::Comprovada);
+        assert_eq!(c(0.03).classe, ClasseControle::Comprovada, "3% exato");
+        assert_eq!(c(0.0301).classe, ClasseControle::ComRessalva);
+        assert_eq!(c(-0.10).classe, ClasseControle::ComRessalva, "10% exato, pela magnitude");
+        assert_eq!(c(0.1001).classe, ClasseControle::SemProva);
+        let r = c(0.05);
+        let p = r.principal.unwrap();
+        assert!((p.desvio - 0.05).abs() < 1e-9 && (p.ms_por_bloco - 5.0 / 22.0).abs() < 1e-9 && p.desvio_passo.abs() < 1e-12);
+        assert!(p.pior_caso >= p.desvio);
+        assert!(r.apoio.is_some() && r.classe_apoio == Some(ClasseControle::ComRessalva));
+        // o controle com SemProva derruba as classes das H
+        assert_eq!(classifica_f2(HipF2::Ha, &MedidasF2 { ha: Some(0.9), ..Default::default() }, &c(0.2).classe), ClasseH::SemProva);
+    }
+
+    #[test]
+    fn controle_de_tres_bracos_recusa_ordem_contagem_e_linhas_erradas() {
+        let inc = |v: &[ProcessoControleF2], orc: bool| matches!(classifica_controle_f2(v, orc, 22).classe, ClasseControle::Incompleto(_));
+        assert!(inc(&controle(0.0), false), "orçamento");
+        assert!(inc(&controle(0.0)[..6], true), "menos de 9");
+        let mut ordem_errada = controle(0.0);
+        ordem_errada.swap(0, 1);
+        assert!(inc(&ordem_errada, true));
+        let mut invalido = controle(0.0);
+        invalido[3].valido = false;
+        assert!(inc(&invalido, true), "I7 / processo abortado");
+        let mut a_com_f2 = controle(0.0);
+        a_com_f2[1].imprimiu_f2_ligado = true;
+        assert!(inc(&a_com_f2, true), "braço A não imprime perfil-f2: ligado");
+        let mut b_sem_f2 = controle(0.0);
+        b_sem_f2[2].produziu_f2 = false;
+        assert!(inc(&b_sem_f2, true), "braço B sem perfil-f2.json");
+        let mut d_com_bloco = controle(0.0);
+        d_com_bloco[0].produziu_bloco = true;
+        assert!(inc(&d_com_bloco, true));
+    }
+
+    #[test]
+    fn json_do_pedido_nao_altera_o_esquema_v2_do_perfil_bloco() {
+        let h = bloco(2, &[500], 100, 100);
+        let b = rec_bloco(&h);
+        let p = RecPedido {
+            modelo: "m".into(), indice: 0, aquecimento: false, n: 8, plano: vec![8], blocos: vec![b], servico: vec![None], servico_extra: 0,
+            t_armado: 0, t_logits_ini: 0, t_desarmado: 0, prefill_ms: 0.0, decode_passo_ms_mediana: 1.0,
+            f2: Some(DadosF2 { layers: 2, hosts: vec![Some(h)], tbs: vec![None], host_extra: 0, tb_extra: 0 }),
+        };
+        let v2 = perfil_json(std::slice::from_ref(&p));
+        assert_eq!(v2["versao"], 2);
+        assert!(v2["pedidos"][0].get("f2").is_none() && !v2.to_string().contains("H_SEQ"));
+        let f2 = perfil_f2_json(std::slice::from_ref(&p));
+        assert_eq!((f2["tipo"].as_str(), f2["versao"].as_u64()), (Some("perfil-f2"), Some(1)));
+        assert_eq!(f2["pedidos"][0]["blocos"][0]["i3"], true);
+        assert_eq!(f2["pedidos"][0]["hi_valida"], false, "sem carimbos do serviço a HI fica inválida, o resto segue");
+        assert_eq!(f2["pedidos"][0]["valido"], true);
+    }
+}
+
+#[cfg(test)]
+mod tests_f2_rodada148 {
+    use super::*;
+    use crate::motor::line::observa_seq;
+    use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering as O};
+    use std::sync::{Arc, Barrier};
+
+    const T2: u64 = 1_000_000;
+
+    fn bloco(layers: usize, d: &[u64]) -> BlocoF2 {
+        let mut ordem = vec![(H_ENTRADA, SEM_CAMADA), (H_BEGIN_STEP, SEM_CAMADA), (H_UPLOAD_TABELA, SEM_CAMADA), (H_WAIT_EVENT, SEM_CAMADA)];
+        for l in 0..layers as u32 {
+            ordem.extend(OPS_CAMADA.map(|o| (o, l)));
+        }
+        ordem.extend([(H_POST_LAYERS, SEM_CAMADA), (H_SEQ_FIM, SEM_CAMADA), (H_SAIDA, SEM_CAMADA)]);
+        let mut t = T2;
+        let mut ops = vec![];
+        for (i, (op, camada)) in ordem.into_iter().enumerate() {
+            ops.push(OpH { op, camada, ini: t, fim: t + d[i % d.len()] });
+            t += d[i % d.len()];
+        }
+        BlocoF2 { gen: 7, m: 8, pos_ini: 0, n_ready: 0, ops, entrada: T2, saida: t, t2: T2, t3: t }
+    }
+
+    /// Alonga a operação `idx` em `extra` ns, deslocando o resto da cadeia.
+    fn alonga(b: &mut BlocoF2, idx: usize, extra: u64) {
+        b.ops[idx].fim += extra;
+        for o in b.ops.iter_mut().skip(idx + 1) {
+            o.ini += extra;
+            o.fim += extra;
+        }
+        b.saida += extra;
+        b.t3 += extra;
+    }
+
+    #[test]
+    fn tb_obs_nunca_e_nulo_com_escritora_real_em_10000_rodadas() {
+        let _ = agora_ns();
+        let mut nulos = 0;
+        for r in 0..10_000u32 {
+            let seq = Arc::new(AtomicU32::new(0));
+            let w = seq.clone();
+            let h = std::thread::spawn(move || {
+                for _ in 0..(r % 7) * 40 {
+                    std::hint::spin_loop();
+                }
+                w.store(1, O::Release);
+            });
+            let obs = observa_seq::<()>(&seq, 1, false, &mut || true, &mut agora_ns, &mut || {
+                std::hint::spin_loop();
+                Ok(())
+            })
+            .unwrap();
+            h.join().unwrap();
+            if obs.unwrap_or(0) == 0 {
+                nulos += 1;
+            }
+        }
+        assert_eq!(nulos, 0, "a leitura que dá o carimbo é a que libera o read_step");
+    }
+
+    #[test]
+    fn sem_armamento_a_observacao_nao_le_o_relogio() {
+        let seq = AtomicU32::new(5);
+        let leituras = AtomicUsize::new(0);
+        let mut rel = || {
+            leituras.fetch_add(1, O::Relaxed);
+            42
+        };
+        let r = observa_seq::<()>(&seq, 5, false, &mut || false, &mut rel, &mut || Ok(())).unwrap();
+        assert_eq!((r, leituras.load(O::Relaxed)), (None, 0), "decode/aquecimento: nenhuma leitura de relógio");
+        let r = observa_seq::<()>(&seq, 5, false, &mut || true, &mut rel, &mut || Ok(())).unwrap();
+        assert_eq!((r, leituras.load(O::Relaxed)), (Some(42), 1));
+        // relógio em 0 nunca vira carimbo nulo
+        assert_eq!(observa_seq::<()>(&seq, 5, false, &mut || true, &mut || 0, &mut || Ok(())).unwrap(), Some(1));
+        // o erro do passo (cancelamento) sai sem carimbo
+        let ainda = AtomicU32::new(0);
+        assert_eq!(observa_seq::<&str>(&ainda, 1, false, &mut || true, &mut rel, &mut || Err("cancelado")), Err("cancelado"));
+    }
+
+    #[test]
+    fn i8_acusa_tb_obs_ausente_com_motivo_proprio() {
+        let layers = 2;
+        let h = bloco(layers, &[1_000]);
+        let tb = RecTb { gen: h.gen, camadas: (0..layers).map(|l| {
+            let fim = h.fim_seq(l).unwrap();
+            TbL { camada: l as u32, gen: h.gen, tb_obs: if l == 1 { 0 } else { fim + 1 }, tb: fim + 5 }
+        }).collect() };
+        let p = i8_problemas(&h, Some(&tb), layers);
+        assert!(p.iter().any(|s| s.contains("tb_obs ausente")), "{p:?}");
+        assert!(!p.iter().any(|s| s.contains("anterior")), "o zero não cai no motivo de 'anterior': {p:?}");
+    }
+
+    #[test]
+    fn rectb_e_publicado_antes_do_recservico_e_o_merge_sem_decode_ve_os_dois() {
+        let layers = 2;
+        let h = bloco(layers, &[1_000]);
+        let pf = Arc::new(Compartilhado::novo_f2(true, layers));
+        let a = Armado::arma(Some(pf.clone()), 1);
+        pf.registra_bloco(RecBloco { gen: h.gen, m: h.m, pos_ini: 0, t: [T2 - 2000, T2 - 1000, h.t2, h.t3, h.t3 + 500], f0_pendente: false });
+        pf.registra_f2_bloco(h.clone());
+        let tb = RecTb { gen: h.gen, camadas: (0..layers).map(|l| {
+            let fim = h.fim_seq(l).unwrap();
+            TbL { camada: l as u32, gen: h.gen, tb_obs: fim + 10, tb: fim + 20 }
+        }).collect() };
+        let (b1, b2) = (Arc::new(Barrier::new(2)), Arc::new(Barrier::new(2)));
+        let (pf2, c1, c2) = (pf.clone(), b1.clone(), b2.clone());
+        let srv = RecServico::de_somas(h.gen, T2 - 2000, h.t3 + 400, [0; 7]);
+        let t = std::thread::spawn(move || {
+            pf2.publica_servico(Some(srv), Some(tb), &mut || {
+                c1.wait(); // pausa do serviço entre as duas publicações
+                c2.wait();
+            });
+        });
+        b1.wait();
+        assert_eq!(trava(&pf.servico).len(), 0, "o marcador de conclusão ainda não existe");
+        assert_eq!(trava(&pf.f2_tb).len(), 1, "o RecTb já está publicado quando o RecServico ainda não está");
+        b2.wait();
+        t.join().unwrap();
+        let mut a = a;
+        a.logits_ini();
+        let d = DadosPedido { modelo: String::new(), indice: 0, aquecimento: false, n: 8, plano: vec![8], prefill_ms: 1.0, decode_passo_ms_mediana: 1.0 };
+        let p = a.fecha_com(d, &mut || {}).unwrap();
+        let f = p.f2.as_ref().unwrap();
+        assert!(!p.servico_aberto());
+        assert!(f.problemas_hi(&p.blocos).is_empty(), "{:?}", f.problemas_hi(&p.blocos));
+        assert_eq!(f.tbs[0].as_ref().unwrap().gen, h.gen);
+    }
+
+    #[test]
+    fn he_inclui_as_operacoes_fixas_e_o_limite_de_10x_e_exclusivo() {
+        let layers = 2;
+        let base: Vec<BlocoF2> = (0..5).map(|_| bloco(layers, &[100])).collect();
+        let f2_base = base[0].f2_ns() as f64;
+        let he = |bs: &[BlocoF2]| medidas_f2_pedido(&bs.iter().collect::<Vec<_>>(), layers).he;
+        assert_eq!(he(&base), Some(0.0));
+        // exatamente 10x a mediana: excluída
+        let mut dez = base.clone();
+        let i = dez[0].ops.iter().position(|o| o.op == H_UPLOAD_TABELA).unwrap();
+        alonga(&mut dez[0], i, 900); // 1000 = 10 x 100
+        assert_eq!(he(&dez), Some(0.0));
+        // cauda em fixa (H_UPLOAD_TABELA): 1001 ns > 10x
+        let mut fixa = base.clone();
+        alonga(&mut fixa[0], i, 901);
+        let esperado = 1001.0 / (4.0 * f2_base + fixa[0].f2_ns() as f64);
+        assert!((he(&fixa).unwrap() - esperado).abs() < 1e-12, "{:?} {esperado}", he(&fixa));
+        // cauda em H_POST_LAYERS (fixa)
+        let mut post = base.clone();
+        let j = post[1].ops.iter().position(|o| o.op == H_POST_LAYERS).unwrap();
+        alonga(&mut post[1], j, 5_000);
+        assert!(he(&post).unwrap() > 0.0);
+        // cauda em operação por camada
+        let mut cam = base.clone();
+        let k = cam[2].ops.iter().position(|o| o.op == H_ROUTE && o.camada == 1).unwrap();
+        alonga(&mut cam[2], k, 2_000);
+        assert!(he(&cam).unwrap() > 0.0);
+        // mais de 20% de F2 numa cauda: classe fora
+        let mut grande = base.clone();
+        alonga(&mut grande[0], i, 100_000);
+        let x = he(&grande);
+        assert!(x.unwrap() > 0.20, "{x:?}");
+        assert_eq!(classifica_he(x), ClasseH::Fora);
+    }
+
+    #[test]
+    fn he_e_por_pedido_e_agrega_por_mediana_entre_pedidos() {
+        let layers = 2;
+        // Pedidos de patamares distintos: A com operações de 100 ns, B com 1.000 ns. Juntos, a mediana do grupo ficaria entre os dois patamares.
+        let pa: Vec<BlocoF2> = (0..4).map(|_| bloco(layers, &[100])).collect();
+        let pb: Vec<BlocoF2> = (0..4).map(|_| bloco(layers, &[1_000])).collect();
+        let (ra, rb): (Vec<&BlocoF2>, Vec<&BlocoF2>) = (pa.iter().collect(), pb.iter().collect());
+        assert_eq!(he_do_pedido(&ra), Some(0.0));
+        assert_eq!(he_do_pedido(&rb), Some(0.0), "cada pedido é lido contra a própria mediana");
+        assert_eq!(he_da_celula(&[ra.clone(), rb.clone()]), Some(0.0));
+        // misturados num conjunto só, o valor mudaria: a mediana do grupo (op, camada) passa a ser ~550 e as chamadas de 1.000 ainda não passam de 10x; o patamar
+        // de 100 também não. Para provar a diferença, um pedido com uma cauda de 2.000 ns sobre base de 100 ns:
+        let mut pc = pa.clone();
+        let i = pc[0].ops.iter().position(|o| o.op == H_UPLOAD_TABELA).unwrap();
+        alonga(&mut pc[0], i, 1_900);
+        let rc: Vec<&BlocoF2> = pc.iter().collect();
+        let hc = he_do_pedido(&rc).unwrap();
+        assert!(hc > 0.0);
+        // junto com um pedido de patamar alto, a mediana pooled do grupo sobe e a cauda de 2.000 deixa de passar de 10x: por isso a HE é por pedido
+        let pooled: Vec<&BlocoF2> = rc.iter().chain(rb.iter()).copied().collect();
+        assert_eq!(he_do_pedido(&pooled), Some(0.0), "pooled esconde a cauda");
+        // célula com três pedidos (cauda, limpo, limpo): a mediana entre pedidos é 0; com dois pedidos de cauda e um limpo, é > 0
+        assert_eq!(he_da_celula(&[rc.clone(), ra.clone(), rb.clone()]), Some(0.0));
+        assert!(he_da_celula(&[rc.clone(), rc.clone(), ra.clone()]).unwrap() > 0.0);
+        // o calculador da célula chama HE por pedido e o resto sobre o conjunto
+        let m = medidas_f2_celula(&[rc.clone(), rb.clone()], layers);
+        assert_eq!(m.he, he_da_celula(&[rc, rb]));
+        assert!(m.ha.is_some());
+    }
+
+    #[test]
+    fn celula_preserva_os_pedidos_em_ha_a_hd() {
+        let layers = 1;
+        // Exemplo do parecer: 9 pedidos de 20 blocos, F2 = 100. Em 6 pedidos, 11 blocos com HA = 90 e 9 com HA = 1; nos outros 3, todos com HA = 1.
+        let alto = [2u64, 1, 1, 1, 90, 0, 1, 0, 1, 0, 1, 1, 1]; // HA = pre + route + launch + addy = 90; soma 100
+        let baixo = [91u64, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1]; // HA = 1; soma 100
+        assert_eq!((alto.iter().sum::<u64>(), baixo.iter().sum::<u64>()), (100, 100));
+        let mut dados: Vec<Vec<BlocoF2>> = vec![];
+        for p in 0..9 {
+            dados.push((0..20).map(|i| bloco(layers, if p < 6 && i < 11 { &alto } else { &baixo })).collect());
+        }
+        let pedidos: Vec<Vec<&BlocoF2>> = dados.iter().map(|v| v.iter().collect()).collect();
+        let m = medidas_f2_celula(&pedidos, layers);
+        assert!((m.ha.unwrap() - 0.90).abs() < 1e-9, "{:?}", m.ha);
+        assert_eq!(classifica_ha(m.ha), ClasseH::Dentro);
+        // misturando os 180 blocos (o que o parecer apontou), a mediana cairia para 0,01: a função de pedido, chamada de propósito com tudo junto, mostra a diferença
+        let todos: Vec<&BlocoF2> = pedidos.iter().flatten().copied().collect();
+        assert!((medidas_f2_pedido(&todos, layers).ha.unwrap() - 0.01).abs() < 1e-9);
+    }
+
+    #[test]
+    fn celula_hb_hc_hd_mesma_quantidade_de_blocos_e_distribuicoes_internas_diferentes() {
+        let layers = 2;
+        // Camada 1 com a primeira operação (PRE) valendo x; o resto 100. P1 e P2: [5100, 5100, 100]; P3: [100, 100, 100].
+        let mk = |x: u64| {
+            let mut d = vec![100u64; 19];
+            d[10] = x;
+            bloco(layers, &d)
+        };
+        let dados: Vec<Vec<BlocoF2>> = vec![
+            vec![mk(5100), mk(5100), mk(100)],
+            vec![mk(5100), mk(5100), mk(100)],
+            vec![mk(100), mk(100), mk(100)],
+        ];
+        let pedidos: Vec<Vec<&BlocoF2>> = dados.iter().map(|v| v.iter().collect()).collect();
+        let m = medidas_f2_celula(&pedidos, layers);
+        let por: Vec<MedidasF2> = pedidos.iter().map(|p| medidas_f2_pedido(p, layers)).collect();
+        let esperado = |f: &dyn Fn(&MedidasF2) -> f64| mediana(&por.iter().map(f).collect::<Vec<_>>());
+        assert!((m.hd.unwrap() - esperado(&|x| x.hd.unwrap())).abs() < 1e-12);
+        assert!((m.hb_frac.unwrap() - esperado(&|x| x.hb_frac.unwrap())).abs() < 1e-12);
+        assert!((m.hc.unwrap() - esperado(&|x| x.hc.unwrap())).abs() < 1e-12);
+        let todos: Vec<&BlocoF2> = pedidos.iter().flatten().copied().collect();
+        let junto = medidas_f2_pedido(&todos, layers);
+        assert!(m.hd.unwrap() > 9.0 && junto.hd.unwrap() < 1.5, "por pedido {:?}, misturado {:?}", m.hd, junto.hd);
+        assert_ne!(m.hb_frac, junto.hb_frac);
+        assert_eq!(m.hb_maior, Some(true), "PRE tem a maior soma pelos valores por tipo preservados");
+    }
+
+    #[test]
+    fn planejamento_da_janela_3b_cortes_e_tetos() {
+        // 3B: 200 s decorridos, duas células restantes (curto 90, longo 120), folga 180: 590 s, cabe com cinco medidas.
+        let r = [teto_processo_s(true, CelulaF2::Curto), teto_processo_s(true, CelulaF2::Longo)];
+        assert_eq!(r, [90, 120]);
+        assert_eq!(200 + r.iter().sum::<u64>() + FOLGA_S, 590);
+        assert_eq!(planeja_celula(200, &r, FOLGA_S, TETO_JANELA_S), PlanoCelula::Cinco);
+        // saldo insuficiente para cinco: 5 s a mais que o limite com N=5 (decorrido 871: 871 + 210 + 180 = 1261 > 1200); com N=3 (140 + ...) = 871 + 140 + 180 = 1191 cabe
+        assert_eq!(planeja_celula(871, &r, FOLGA_S, TETO_JANELA_S), PlanoCelula::Tres);
+        assert_eq!(estimativa_celula_s(90, 3) + estimativa_celula_s(120, 3), 60 + 80);
+        // nem com três cabe
+        assert_eq!(planeja_celula(900, &r, FOLGA_S, TETO_JANELA_S), PlanoCelula::NaoRodou);
+        // limite exato: soma == teto global cabe
+        assert_eq!(planeja_celula(1200 - 210 - 180, &r, FOLGA_S, TETO_JANELA_S), PlanoCelula::Cinco);
+        assert_eq!(planeja_celula(1200 - 210 - 180 + 1, &r, FOLGA_S, TETO_JANELA_S), PlanoCelula::Tres);
+        // a estimativa por N nunca passa do teto do processo
+        for t in [60u64, 75, 90, 120] {
+            assert!(estimativa_celula_s(t, 3) <= t && estimativa_celula_s(t, 5) == t);
+        }
+        // tetos dos processos: 60/90 médio e curto, 75/120 longo, separados do teto global
+        assert_eq!([60, 60, 75], [(false, CelulaF2::Medio), (false, CelulaF2::Curto), (false, CelulaF2::Longo)].map(|(m, c)| teto_processo_s(m, c)));
+        assert_eq!([90, 90, 120], [(true, CelulaF2::Medio), (true, CelulaF2::Curto), (true, CelulaF2::Longo)].map(|(m, c)| teto_processo_s(m, c)));
+        assert_eq!((TETO_JANELA_S, FOLGA_S, TETO_SMOKE_S), (1200, 180, 60));
+        // controle: nunca cortado; 9 processos de 90 s + smoke 60 s + folga cabem (1B e 3B); com decorrido alto, incompleto (não há corte)
+        let nove = [90u64; 9];
+        assert!(controle_cabe(TETO_SMOKE_S, &nove, FOLGA_S, TETO_JANELA_S));
+        assert!(!controle_cabe(400, &nove, FOLGA_S, TETO_JANELA_S));
+        assert!(!controle_cabe(0, &nove[..8], FOLGA_S, TETO_JANELA_S), "só vale com os 9 processos");
+    }
+}
+

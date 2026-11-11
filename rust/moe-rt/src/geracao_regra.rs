@@ -671,7 +671,7 @@ mod tests {
         );
         let cfg = Config { layers: 2, experts: 4, topk: 2, width: 3, slots: 0, backlog: 0, admit: AdmitMode::TokenBarrier, first_token: 1, prefill: vec![], max_positions: 8, mutant: None };
         let parts = gpu.parts(&cfg);
-        let eng = crate::motor::Engine::new_pf(gpu.clone(), parts, cfg, FakeCpu { weighted: true, ..FakeCpu::default() }, perfil).expect("motor");
+        let eng = crate::motor::Engine::new_pf2(gpu.clone(), parts, cfg, FakeCpu { weighted: true, ..FakeCpu::default() }, perfil, true).expect("motor");
         (gpu, eng)
     }
 
@@ -1224,6 +1224,11 @@ mod tests {
             assert_eq!(e.blocos[0].f0_pendente, i > 0, "pedido {i}: só o motor reutilizado começa com `Published` pendente");
             assert!(e.blocos.iter().skip(1).all(|b| !b.f0_pendente));
             assert!(e.problemas().is_empty(), "pedido {i}: {:?}", e.problemas());
+            // F2 do host (ligada junto, I7: os ids acima já são iguais com tudo ligado e desligado): estrutura válida e uma entrada por bloco.
+            let f2 = e.f2.as_ref().expect("F2 coletada");
+            assert!(f2.problemas(&e.blocos).is_empty(), "pedido {i}: {:?}", f2.problemas(&e.blocos));
+            assert!(f2.problemas_hi(&e.blocos).is_empty(), "pedido {i}: {:?}", f2.problemas_hi(&e.blocos));
+            assert_eq!(f2.hosts.len(), e.blocos.len());
             assert!((e.prefill_ms - v_on[i].geracao.as_ref().unwrap().prefill_ms).abs() < 1e-9);
             assert!(e.decode_passo_ms_mediana.is_finite());
         }

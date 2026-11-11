@@ -509,3 +509,114 @@ fn engine_desligado_nao_aloca_e_a_guarda_e_inerte() {
     assert!(!eng.perfil_ativo());
     fecha(&gpu, eng);
 }
+
+// ---- F2 do host por operação (perfil_bloco, plano da F2): estrutura, desligado e ids ------------------------------------------------------
+
+/// Motor falso com `layers` camadas e `slots` slots (prefill = as primeiras `slots` chaves, que viram `n_ready` do primeiro bloco).
+fn motor_f2(layers: usize, slots: usize, total: usize, perfil: bool, f2: bool) -> (Arc<FakeGpu>, Engine<FakeGpu>) {
+    let routing: Vec<Vec<Vec<u32>>> = (0..total.max(1)).map(|p| (0..layers).map(|l| rota(p, l)).collect()).collect();
+    let gpu = FakeGpu::new_sched(
+        FakeCfg { layers, experts: 4, topk: 2, width: 3, routing, fail_main_at: None, copy_immediate: false, max_positions: 8 },
+        SchedCfg { seed: 0xA0A, weights: [1, 1, 1, 1], budget: 3_000_000 },
+    );
+    let cfg = Config { layers, experts: 4, topk: 2, width: 3, slots, backlog: 0, admit: AdmitMode::TokenBarrier, first_token: 1,
+                       prefill: (0..slots as u32).collect(), max_positions: 8, mutant: None };
+    let parts = gpu.parts(&cfg);
+    let eng = Engine::new_pf2(gpu.clone(), parts, cfg, FakeCpu { weighted: true, ..FakeCpu::default() }, perfil, f2).expect("motor");
+    (gpu, eng)
+}
+
+fn roda_f2(layers: usize, slots: usize, n: usize, perfil: bool, f2: bool) -> (Option<crate::perfil_bloco::RecPedido>, Option<usize>, Option<usize>, Vec<(u64, Vec<usize>)>, Vec<(u64, usize)>) {
+    let (gpu, mut eng) = motor_f2(layers, slots, n, perfil, f2);
+    let cap0 = eng.perfil_f2_capacidade();
+    let prep = Prep::com_gpu(n + 8, &gpu);
+    let mut pf = eng.perfil_armar(plano_blocos(n, 8).len());
+    le_ids(&mut eng, &prep, &ids(n)).unwrap();
+    pf.logits_ini();
+    pf.desarma();
+    let d = DadosPedido { modelo: String::new(), indice: 0, aquecimento: false, n, plano: plano_blocos(n, 8), prefill_ms: 0.0, decode_passo_ms_mediana: 1.0 };
+    let mut e = pf.fecha_com(d, &mut || {
+        let _ = super::backend::Backend::relax(&*gpu);
+    });
+    if let Some(e) = e.as_mut() {
+        e.prefill_ms = e.total_perfil_ns() as f64 / 1e6;
+    }
+    let r = (e, cap0, eng.perfil_f2_capacidade(), prep.blocos(), gpu.begin_steps());
+    fecha(&gpu, eng);
+    r
+}
+
+#[test]
+fn f2_do_host_tem_6_x_layers_mais_7_operacoes_com_n_ready_0_1_e_maior_que_16() {
+    use crate::perfil_bloco::{capacidade_f2, n_ops_esperado};
+    for layers in [24usize, 32] {
+        for slots in [0usize, 1, 20] {
+            let (e, cap0, cap1, ..) = roda_f2(layers, slots, 17, true, true);
+            let e = e.expect("ligado");
+            let d = e.f2.as_ref().expect("F2 coletada");
+            assert_eq!(d.layers, layers);
+            assert_eq!(e.blocos.len(), 3, "17 posições = 8 + 8 + 1");
+            let hosts: Vec<_> = d.hosts.iter().map(|h| h.as_ref().expect("host do bloco")).collect();
+            for (i, h) in hosts.iter().enumerate() {
+                assert_eq!(h.ops.len(), n_ops_esperado(layers), "layers {layers}, slots {slots}, bloco {i}: 6 x layers + 7 (1B: 151, 3B: 199)");
+                assert!(h.i1() && h.i2() && h.i3(layers) && h.i5(layers), "bloco {i}");
+            }
+            assert_eq!(hosts[0].n_ready, slots, "o prefill vira os `ready` do primeiro bloco");
+            assert_eq!(cap0, cap1, "o acumulador não realoca: capacidade igual antes e depois");
+            assert!(cap0.unwrap() >= capacidade_f2(layers));
+            assert!(d.problemas(&e.blocos).is_empty(), "{:?}", d.problemas(&e.blocos));
+            assert!(d.problemas_hi(&e.blocos).is_empty(), "{:?}", d.problemas_hi(&e.blocos));
+            let j = crate::perfil_bloco::perfil_f2_json(std::slice::from_ref(&e));
+            assert_eq!(j["tipo"], "perfil-f2");
+            assert_eq!(j["pedidos"][0]["blocos"][0]["ops"].as_array().unwrap().len(), n_ops_esperado(layers));
+        }
+    }
+}
+
+#[test]
+fn f2_desligada_ou_sem_perfil_de_bloco_nao_aloca_nem_coleta() {
+    // F2 pedida sem o instrumento de bloco: nada existe.
+    let (gpu, eng) = motor_f2(2, 0, 8, false, true);
+    assert!(!eng.perfil_ligado() && !eng.perfil_f2_ligado() && eng.perfil_f2_capacidade().is_none());
+    fecha(&gpu, eng);
+    // Bloco ligado e F2 desligada: o instrumento anterior existe, a F2 não.
+    let (gpu, eng) = motor_f2(2, 0, 8, true, false);
+    assert!(eng.perfil_ligado() && !eng.perfil_f2_ligado() && eng.perfil_f2_capacidade().is_none());
+    fecha(&gpu, eng);
+    let (e, c0, c1, ..) = roda_f2(2, 0, 13, true, false);
+    assert!(e.expect("bloco ligado").f2.is_none() && c0.is_none() && c1.is_none());
+    let (e, ..) = roda_f2(2, 0, 13, false, true);
+    assert!(e.is_none(), "sem perfil de bloco a F2 também não grava");
+}
+
+#[test]
+fn f2_ligada_nao_muda_o_que_o_motor_faz() {
+    for (layers, slots, n) in [(2usize, 0usize, 13usize), (2, 2, 24), (24, 1, 17)] {
+        let (_, _, _, b_off, s_off) = roda_f2(layers, slots, n, true, false);
+        let (e, _, _, b_on, s_on) = roda_f2(layers, slots, n, true, true);
+        assert_eq!((&b_off, &s_off), (&b_on, &s_on), "layers {layers}, slots {slots}, n {n}: ligar a F2 não pode mudar o que o motor faz");
+        assert!(e.unwrap().f2.is_some());
+        let (_, _, _, b_d, s_d) = roda_f2(layers, slots, n, false, false);
+        assert_eq!((&b_d, &s_d), (&b_on, &s_on), "nem contra tudo desligado");
+    }
+}
+
+#[test]
+fn f2_nao_coleta_no_decode() {
+    let (gpu, mut eng) = motor_f2(2, 0, 20, true, true);
+    let prep = Prep::com_gpu(30, &gpu);
+    let mut pf = eng.perfil_armar(1);
+    le_ids(&mut eng, &prep, &ids(8)).unwrap();
+    pf.logits_ini();
+    pf.desarma();
+    for k in 0..3 {
+        le_ids(&mut eng, &prep, &[(k * 5 + 1) % VOCAB]).unwrap();
+    }
+    let d = DadosPedido { modelo: String::new(), indice: 0, aquecimento: false, n: 8, plano: vec![8], prefill_ms: 0.0, decode_passo_ms_mediana: 1.0 };
+    let e = pf.fecha_com(d, &mut || {
+        let _ = super::backend::Backend::relax(&*gpu);
+    }).unwrap();
+    let f = e.f2.as_ref().unwrap();
+    assert_eq!((f.hosts.len(), f.host_extra, f.tb_extra), (1, 0, 0), "o decode não registra host nem serviço");
+    fecha(&gpu, eng);
+}

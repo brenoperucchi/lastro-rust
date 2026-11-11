@@ -1,0 +1,95 @@
+# Critério: F2 do host por operação em L100, prefill do Lastro, janelas na 3080 Ti (11/11/2026, rascunho para congelar, antes de qualquer dado)
+
+Deriva só do plano `plano-f2-host-20261111.md` (versão 3, aprovada na rodada 147): seções 3 (operações e carimbos), 3.5 (controle), 4 (invariantes), 5 (hipóteses) e 8 (ordem de trabalho). Descritivo: sem meta, sem PASSA, sem veredito geral, sem frase causal. O tempo com instrumento não é o tempo de produção. Onde o plano não traz um número ou uma regra, este texto NÃO inventa: o valor vem da seção 10. Pontos 1 a 10 decididos pelo Breno em 11/11 08:20 ("Aceito o pacote"), conforme `/home/brenoperucchi/Devs/lastro-rust/.herdr/DECISAO-BRENO-F2-CRITERIO-20261111-0820.txt`.
+
+## 1. Escopo e ambiente
+- Só L100, por modelo (1B e 3B), em duas janelas separadas, uma invocação por modelo, no máximo 1200 s cada, sem repetição automática depois de SEM PROVA.
+- Só a RTX 3080 Ti, UUID GPU-b22d9465-8552-9f97-812e-380b590645f8. 4090 e 5090 nunca entram. Só o Lastro.
+- Sem mudança de desempenho no motor nesta fase: só medição. Nível B (dentro de `CudaBackend`), F1, F0, F3 por operação, L10, LC, decode, nível GPU, llama.cpp e Strata ficam fora. Partição de F3 fora (padrão do plano, seção 9 item 4).
+- Integridade, como no critério anterior: voxtype parado antes e religado depois (passo manual do Breno), `power.limit` de 370 W conferido no começo e no fim, nenhum `cargo test`/`bench` nem outro uso da GPU durante a janela, portão de sha do binário antes de tocar em timers.
+
+## 2. O que liga e o que sai
+- `LASTRO_PERFIL_F2`: só o valor exato `1` liga; ausente, vazia, `0`, `true`, ` 1` ou não UTF-8 = desligado. Só vale com `LASTRO_PERFIL_BLOCO=1`; sem ele a linha de estado diz `perfil-f2: desligado (exige perfil-bloco)` e nada muda. Linhas de estado do binário: `perfil-f2: ligado` ou `perfil-f2: desligado`.
+- Desligado (padrão), `enqueue_inner` recebe `None`: não há acumulador, relógio nem gravação, e o que o motor faz é o mesmo (teste com o `Fake`).
+- Saída separada `perfil-f2.json` (esquema próprio, versão 1). O `perfil-bloco.json` versão 2 e o `instrumento-extrai.py` não mudam. Extrator novo próprio (ainda não escrito).
+
+## 3. Operações do host (nível A) e carimbos
+Fixas por bloco (7): `H_ENTRADA`, `H_BEGIN_STEP`, `H_UPLOAD_TABELA`, `H_WAIT_EVENT` (uma entrada com a soma, sempre presente, `n_ready` à parte), `H_POST_LAYERS`, `H_SEQ_FIM`, `H_SAIDA`. Por camada (6): `H_PRE_LAYER`, `H_ROUTE`, `H_SEQ`, `H_LAUNCH_HITS`, `H_WAIT_FLAG`, `H_ADD_Y`. Total 6 x layers + 7 (1B, 24 camadas: 151; 3B, 32 camadas: 199). Capacidade do acumulador layers x 6 + 8, independente de `n_ready`, reservada na criação do motor, sem alocar no caminho quente.
+- Carimbos encadeados com `agora_ns()`: o fim de uma operação é o início da seguinte. `H_ENTRADA` vai do `agora_ns()` próprio tomado na entrada de `enqueue_step` até o início de `enqueue_inner`; `H_SAIDA` vai do fim de `H_SEQ_FIM` até um `agora_ns()` próprio tomado depois de `cur_m` e `current`, antes do `Ok(())`.
+- `R_borda = (entrada - t2) + (t3 - saída)`, com t2 e t3 os carimbos externos de `leitura.rs` (os do `RecBloco`).
+- Serviço (`line.rs`, sem mudar o protocolo): por camada e bloco, `tb_obs_l` (primeira observação de `seq[l]`, tomada na mesma leitura que libera `read_step`, antes das cópias, só com o armamento; intervalos desarmados, incluindo decode, não tomam tb_obs; o prefill do aquecimento descartado continua coletado e validado, mas fora das medianas; o `RecTb` é publicado antes do `RecServico`) e `tb_l` (carimbo pós-leitura em `apos_espera`), cada registro com a geração `t` do bloco. `tb_l` inclui leitura, cópia e escalonamento do serviço, sem separá-los. Nem um nem outro mede a GPU. Cobrem as camadas 0 a layers-1; `seq[layers]` é esperada em `end_token` e não tem carimbo `tb`.
+- Grandezas descritivas, em ns, com sinal: `defasagem_l = tb_l - fim(H_SEQ_l)`, `defasagem_obs_l = tb_obs_l - fim(H_SEQ_l)`, `intervalo_l = tb_l - tb_(l-1)`, `intervalo_obs_l = tb_obs_l - tb_obs_(l-1)`. Negativos são conservados com sinal: nunca viram zero e não invalidam.
+- Agrupamentos (derivados, não são carimbos novos): preparação = `H_ENTRADA` + `H_BEGIN_STEP` + `H_UPLOAD_TABELA` + `H_WAIT_EVENT`; lançamento por camada = `H_PRE_LAYER` + `H_ROUTE` + `H_LAUNCH_HITS` + `H_ADD_Y` (+ `H_POST_LAYERS`); sinalização = `H_SEQ` + `H_WAIT_FLAG` + `H_SEQ_FIM`; fecho = `H_SAIDA`.
+
+## 4. Invariantes (I1 a I8)
+Por bloco cheio (m = 8), com t2 e t3 do registro atual como fronteiras de F2. Tolerância de relógio `TOL_RELOGIO_NS` = 1 µs. Os carimbos das operações nunca são ajustados para fechar a soma.
+- I1 (monotonia e contenção): carimbos internos não decrescentes, encadeados sem sobreposição, dentro de [t2, t3] com 1 µs nas bordas. Falha invalida o pedido.
+- I2 (soma): soma(operações) + `R_borda` = t3 - t2, dentro de 1 µs por carimbo de borda (2 µs no total), conferido contra t2 e t3 lidos fora do encadeamento. Falha invalida o pedido.
+- I3 (estrutura): 6 x layers + 7 operações na ordem do motor, independente de `n_ready`, camadas 0 a layers-1 sem repetir nem faltar. Divergência invalida o pedido inteiro.
+- I4 (junção): `gen` e `m` (e `pos_ini`) do `perfil-f2.json` iguais aos do `perfil-bloco.json` do mesmo pedido; a geração em cada registro de serviço igual à `gen` do bloco; soma(operações) + `R_borda` igual ao F2 do registro por bloco dentro de 1 µs. Falha invalida o pedido.
+- I5 (por camada): soma por camada das seis operações mais as fixas = soma de todas as operações. Falha invalida o pedido.
+- I6 (cobertura, ressalva): `R_borda`/F2 <= 3%; acima disso, ressalva sobre `R_borda`. Nunca invalida por cobertura.
+- I7 (saída intacta): ids gerados do braço B iguais aos do braço D e à referência 5c, igualdade estrita. Falha invalida o processo.
+- I8 (carimbos do serviço): `tb_obs_l <= tb_l` na mesma camada; `tb_l` e `tb_obs_l` não decrescentes em `l` e `tb_obs_l >= ini(H_SEQ_l) - TOL_RELOGIO_NS` (a GPU não escreve `seq[l]` antes de o host começar a chamada que a enfileira); `tb_obs == 0` é acusado à parte como "tb_obs ausente"; camada observada sem carimbo ou geração que não case com o bloco invalida só a HI do pedido; as demais hipóteses seguem. Defasagem negativa não é violação. A I8 só trata da coleta e não identifica o mecanismo de espera.
+- Blocos tratados à parte, fora das medianas: o primeiro bloco de cada pedido (reportado para a HH) e o bloco final com resto (m < 8, reportado para a HF).
+- Medianas: razão de medianas (mediana da operação sobre mediana de F2 no mesmo conjunto de blocos cheios), não mediana de razões.
+
+## 5. Hipóteses e classes (por modelo, sobre blocos cheios elegíveis, mediana por pedido e depois do braço B)
+Classes: dentro, fora, sem leitura (faixa intermediária), sem dado (ausente ou sem previsão), SEM PROVA (controle > 10%, integridade quebrada, referência ausente) e descritivo. **Os limiares abaixo são os da seção 5 do plano, decididos pelo Breno em 11/11 08:20 (ponto 1 da seção 10; `/home/brenoperucchi/Devs/lastro-rust/.herdr/DECISAO-BRENO-F2-CRITERIO-20261111-0820.txt`).**
+- HA, lançamento domina F2: (`H_PRE_LAYER` + `H_ROUTE` + `H_LAUNCH_HITS` + `H_ADD_Y`)/F2: dentro se >= 0,80; fora se < 0,50.
+- HB, o pré-roteador é a maior operação: dentro se `H_PRE_LAYER`/F2 >= 0,40 e a soma de `H_PRE_LAYER` no bloco é maior que a soma de cada uma das outras operações por camada no mesmo bloco; fora se `H_PRE_LAYER`/F2 < 0,25. Fração >= 0,40 sem ser a maior soma = sem leitura. Agregação entre blocos (ponto 3 da seção 10) (implementado: mediana, entre blocos, da soma de cada tipo de operação).
+- HC, a sinalização é barata: (`H_SEQ` + `H_WAIT_FLAG` + `H_SEQ_FIM` + `H_UPLOAD_TABELA` + `H_WAIT_EVENT` + `H_BEGIN_STEP`)/F2: dentro se <= 0,05; fora se > 0,15.
+- HD, uniformidade por camada: razão entre a maior e a menor mediana por camada (soma das seis operações da camada): dentro se <= 1,5; fora se > 3,0; entre os dois, sem leitura. Mede só uniformidade; nenhum resultado afirma ou exclui bloqueio de fila.
+- HE, caudas por chamada: parcela de F2 em chamadas estritamente acima de 10 vezes a mediana do mesmo grupo (op, camada), com SEM_CAMADA para as sete fixas. Conjunto elegível: TODAS as operações medidas (as 6 por camada e as 7 fixas, inclusive `H_ENTRADA` e `H_SAIDA`); nenhuma exclusão intencional. Exatamente 10 vezes não conta: dentro se <= 0,05; fora se > 0,20. Localiza chamadas demoradas; o mecanismo fica não identificado. Por PEDIDO: a mediana de referência de cada (op, camada) é tomada sobre os blocos elegíveis do pedido; HE do pedido = soma das durações acima de 10x essa mediana / soma de F2 do pedido; a HE da célula é a mediana entre os pedidos da célula (ponto 3 da seção 10).
+- HF, escala com m (somente descritiva): razão F2(bloco final com resto r)/F2(bloco cheio) e faixa prevista r/8 com 25% de margem (resto 1: 0,09375 a 0,15625; resto 2: 0,1875 a 0,3125; resto 4: 0,375 a 0,625). Sem classe dentro/fora. Só vale com resto 1, 2 ou 4; resto 6 ou 7 fica descritivo. Classes só com tabela numérica aprovada (item 7 da seção 9 do plano).
+- HG, ms por lançamento: só reportado depois de fixar a contagem de kernels por bloco; sem a contagem, "sem dado". Levantamento parcial feito na leitura do código: `attn_block_at` faz 15 chamadas por posição fora a atenção (9 kernels cutile e 6 `dtod`) mais as chamadas de `attention` (número não contado); `route`, `launch_hits` e `add_y` não foram levantados. Portanto HG segue "sem dado".
+- HH, primeiro bloco do pedido: F2 do bloco 0 / F2 mediano dos cheios >= 1,5 dentro; reportado, sem limiar de fora. Abaixo de 1,5: descritivo (ponto 5 da seção 10).
+- HI, defasagem do host ao serviço (somente descritiva): por modelo e sobre as amostras elegíveis, distribuições (mínimo, mediana, p90, máximo, com sinal) e medianas por camada de `defasagem_obs_l`, `defasagem_l`, `intervalo_obs_l`, `intervalo_l`, junto com a mediana das seis operações do host na mesma camada. Sem classes, sem limiar, sem o rótulo "GPU espera o host", sem afirmar causa. Definição do p90 (ponto 2 da seção 10) (implementado: posto mais próximo, `ceil(0,9 n)`). Classes só com regras numéricas aprovadas (item 9 da seção 9 do plano).
+- Contagem: blocos cheios por pedido em L100: 11 (89 posições), 21 (170) e 45 (364). Totais brutos: curto 55 (5 pedidos), médio 189 (9 pedidos), longo 225 (5 pedidos). Amostras elegíveis depois de excluir o primeiro bloco de cada pedido: curto 50, médio 180, longo 220; com corte de 5 para 3 pedidos no curto e no longo, 30 e 132. Curto fica descritivo para HD, HE e HI. Mínimo para classificar: 3 pedidos válidos em curto e longo e os 9 do médio (ponto 6 da seção 10).
+- Controle > 10% (B contra A): todas as hipóteses daquele modelo SEM PROVA, dados brutos preservados. A leitura final usa as classes e as razões, sem frase causal e sem veredito geral.
+
+## 6. Controle do custo do instrumento (três braços)
+- Braços por modelo, só na série L100, texto médio (170 posições, resto 2): D (as duas variáveis desligadas), A (só `LASTRO_PERFIL_BLOCO=1`, o instrumento anterior) e B (`LASTRO_PERFIL_BLOCO=1` e `LASTRO_PERFIL_F2=1`).
+- Medida principal: desvio do `prefill_ms` de B contra A. Medida de apoio: B contra D. Os dois com sinal; a classe pela magnitude de |B contra A|: <= 3% comprovada; <= 10% com ressalva; > 10% SEM PROVA. B contra D traz classe só descritiva. Reportar também pior caso, desvio em ms por bloco (divisor: 22 blocos totais do texto médio; medida "diferença de prefill por bloco executado, incluindo primeiro e resto") e desvio do `passo_ms` do decode.
+- Ordem, quadrado latino de 9 processos por modelo: D A B, B D A, A B D, cada processo com `--repete 3` (1 aquecimento descartado + 3 medidas). Mínimo inviolável: 3 processos válidos por braço; o classificador exige os 9 na ordem, válidos.
+- A variável é passada por processo (`env VAR=1` nos que ligam, `env -u VAR` nos que desligam), com `prova-variavel.txt` por processo e recusa se o ambiente de quem chama já trouxer qualquer das duas. Cada braço confere suas linhas de estado e seus arquivos (D sem nenhum perfil; A só `perfil-bloco.json`; B os dois).
+- Os processos B valem como dados principais da série (9 pedidos medidos por modelo).
+
+## 7. Ordem das células dentro de cada janela
+1. Preflight e smoke L100: 1 processo no texto curto, em B, 1 aquecimento e 1 medida, conferindo linhas de estado, os dois arquivos e I1 a I8; teto de 60 s (ponto 8 da seção 10).
+2. Controle de 9 processos (D A B, B D A, A B D, `--repete 3`) no texto médio.
+3. Célula curto em B (1 processo, 1 aquecimento + 5 medidas).
+4. Célula longo em B (1 processo, 1 aquecimento + 5 medidas).
+- Corte de 5 para 3 pedidos só nas células ainda não iniciadas, pela projeção do ponto 7 da seção 10; NÃO RODOU se nem 3 couber; o controle nunca é cortado.
+- Voxtype parado antes e religado depois, 370 W no começo e no fim, portão de sha do binário antes de tocar em timers, recusa se houver `cargo test`/`bench` ou GPU em uso.
+
+## 8. Orçamento de tempo
+- No máximo 1200 s por janela/modelo (uma por modelo, 1B e 3B), sem repetição automática após SEM PROVA. O teto de 1200 s é global, compartilhado entre smoke, controle, curto e longo (nunca 1200 s por etapa). Tetos de processo e smoke: ponto 8 da seção 10. Orçamento insuficiente para o controle = controle incompleto, e todas as hipóteses daquele modelo ficam SEM PROVA.
+
+## 9. FIXO do pacote (por lista; sha256 registrado antes da primeira janela)
+| Item | Estado em 11/11 |
+|---|---|
+| Este critério (`criterio-f2-host-20261111.md`) | congelar depois da seção 10; sha a registrar |
+| Plano `plano-f2-host-20261111.md` (versão 3) | sha a registrar |
+| Binário instrumentado `primeira-palavra` (cópia congelada) | compilado de árvore sem commit em `/home/brenoperucchi/Devs/lastro-rust-build-f2/release/primeira-palavra`, sha256 932c8015b15e6e85d5bd6fac41398fa94cffef59ce569b2ad7b01eca49ad6f54 (recompilado na rodada 152, 11/11 09:15); cópia congelada e nome com o sha a criar |
+| Binário `lastro` (mesma compilação) | `/home/brenoperucchi/Devs/lastro-rust-build-f2/release/lastro`, sha256 52c64dadbdd831f359161f82b290401dfbb593702c5c1576bde50ec63dc346b8 |
+| Binário `lastro-servidor` (mesma compilação) | `/home/brenoperucchi/Devs/lastro-rust-build-f2/release/lastro-servidor`, sha256 fe84abb60a2a71172fe8dcf6c0e45aaeec96c3f90de6923062b81c100e53980b |
+| Extrator novo da F2 (próprio, sem alterar `instrumento-extrai.py`) | não escrito |
+| Roteiro novo (a partir de `roda-instrumento-janela.sh`) e seus testes sem GPU | não escrito |
+| Referência 5c e critérios congelados já usados pelo binário | os mesmos do critério anterior |
+| `--verifica-fixos` antes da janela | passo 6 do plano |
+
+## 10. Números e regras que o plano não traz. Pontos 1 a 10 decididos pelo Breno em 11/11 08:20 ("Aceito o pacote"), conforme `/home/brenoperucchi/Devs/lastro-rust/.herdr/DECISAO-BRENO-F2-CRITERIO-20261111-0820.txt`. Ressalva honesta: o ponto 3 (HA a HE calculadas por pedido, com mediana entre os pedidos da célula) mudou DEPOIS da decisão do Breno de 08:20, por recomendação da revisão nível 2 e alinhado à seção 5 do plano ("mediana por pedido"); isso será informado ao Breno via coordenador.
+1. Os limiares HA a HH (o plano os chama de rascunho até a aprovação).
+2. Definição do p90 (implementado: posto mais próximo).
+3. Agregação: HA a HE são calculadas POR PEDIDO (medianas dentro do pedido) e agregadas pela mediana entre os pedidos da célula (nunca com os blocos de pedidos diferentes numa mediana só). HB: a comparação de maior soma usa a mediana entre pedidos dos valores por tipo de operação (cada um a mediana, entre os blocos do pedido, da soma do tipo). HE = por PEDIDO: a mediana de referência de cada (op, camada, com SEM_CAMADA para as fixas) é tomada sobre os blocos elegíveis do pedido; HE do pedido = soma das durações acima de 10x essa mediana / soma de F2 do pedido; a HE da célula é a mediana entre os pedidos da célula.
+4. Referência da conferência causal da I8 (implementado: `ini(H_SEQ_l) - 1 µs`, adotada na rodada 148; substitui o t0 do bloco).
+5. Classe de HH abaixo de 1,5 (implementado: descritivo).
+6. Mínimo de amostras (versão rígida do rev-1): 3 pedidos válidos em curto e longo e os 9 do médio (30, 180 e 132 elegíveis; aquecimento não conta). Falta do mínimo = SEM PROVA na classificação afetada, dados brutos preservados. Controle incompleto invalida todas as H do modelo.
+7. Gatilho do corte: antes de cada célula ainda não iniciada (curto, longo), projeção `decorrido + soma das estimativas das células restantes (incluindo a que vai começar) + folga de 180 s` contra o teto global de 1200 s por janela/modelo (separado dos tetos dos processos). Cada célula é UM processo (1 aquecimento + N medidas), então conta UM teto de processo do ponto 8 por célula restante: 60 s/90 s (curto, 1B/3B) e 75 s/120 s (longo, 1B/3B); com N = 5 a estimativa é esse teto. Exemplo 3B: 200 s decorridos + 90 + 120 + 180 = 590 s, cabe com cinco medidas. Se a projeção com N = 5 passar de 1200 s, tenta N = 3 em todas as restantes com a estimativa por N (rótulo: proporcional ao número de pedidos, teto x (1 + 3)/(1 + 5) arredondado para cima, nunca acima do teto do processo; os tetos não aumentam); só se couber o corte vale, e ele só atinge células não iniciadas. NÃO RODOU se nem com 3 couber. O `decorrido` é o relógio real. O controle de 9 processos não sofre corte: cabe inteiro (smoke + nove tetos + folga) ou o modelo fica incompleto/SEM PROVA. Sem repetição automática. Implementado e testado sem GPU em `planeja_celula`, `estimativa_celula_s` e `controle_cabe`.
+8. Teto global de 1200 s por janela/modelo, compartilhado entre todas as etapas. Smoke: 1 processo no texto curto, em B, 1 aquecimento e 1 medida, conferindo linhas de estado, `perfil-bloco.json`, `perfil-f2.json` e I1 a I8, teto de 60 s. Teto de processo: 60 s (1B) e 90 s (3B) no médio e no curto; 75 s (1B) e 120 s (3B) no longo. Passar do teto = processo inválido, sem repetição.
+9. Divisor do "desvio em ms por bloco": 22 (blocos totais do texto médio, 170 = 21 x 8 + 2); a medida se chama "diferença de prefill por bloco executado, incluindo primeiro e resto" e não isola o custo da F2.
+10. Itens 9.1, 9.3, 9.4, 9.7, 9.8 e 9.9 do plano nos padrões usados aqui: limiares implementados, controle de três braços, sem partição de F3, HF e HI somente descritivas, carimbos `tb_obs_l` e `tb_l` só como coleta.
+
+## 11. Pedido aos revisores
+Os pontos 1 a 10 da seção 10 estão decididos pelo Breno (ver o cabeçalho da seção 10). Cada revisor confere se o código e este texto implementam esses valores, um por um. Qualquer valor que afrouxe o teto global de 1200 s por janela/modelo, o controle D/A/B ou o SEM PROVA em caso de falha sobe ao Breno via coordenador.

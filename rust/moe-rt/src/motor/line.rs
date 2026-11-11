@@ -161,6 +161,19 @@ pub(crate) fn seq_reached(seq: &AtomicU32, t: u32, relaxed: bool) -> bool {
     geq(seq.load(if relaxed { Ordering::Relaxed } else { Ordering::Acquire }), t)
 }
 
+/// Espera `seq >= t` e devolve o carimbo da leitura que a viu, se `armado()` (lido depois de ver `seq`); `passo` roda entre as tentativas (cancelamento e
+/// `relax`) e decide o erro. A leitura que dá o carimbo é a que libera o `read_step` seguinte (`seq` é monotônico): nunca há carimbo nulo com
+/// armamento. Sem armamento não lê o relógio. Nunca devolve 0 (o relógio é limitado a 1 no mínimo).
+pub(crate) fn observa_seq<E>(seq: &AtomicU32, t: u32, relaxed: bool, armado: &mut dyn FnMut() -> bool, relogio: &mut dyn FnMut() -> u64,
+                             passo: &mut dyn FnMut() -> Result<(), E>) -> Result<Option<u64>, E> {
+    loop {
+        if seq_reached(seq, t, relaxed) {
+            return Ok(armado().then(|| relogio().max(1)));
+        }
+        passo()?;
+    }
+}
+
 /// A saída da CPU (`Relaxed`) e depois a flag com `Release`; o mutante `FlagBeforeY` inverte a ordem.
 pub(crate) fn write_answer(y_io: &[AtomicU32], flag: &AtomicU32, t: u32, y: &[u32], flag_first: bool) {
     if flag_first {
@@ -282,6 +295,8 @@ pub struct Service<B: Backend> {
     stats: Stats,
     /// Acumuladores do instrumento de prefill (só mexem com `sh.pf` presente).
     acc: crate::perfil_bloco::AccServ,
+    /// `tb_obs_l` e `tb_l` por camada (F2 do host, HI): só existe com `LASTRO_PERFIL_F2` ligada; capacidade `layers`.
+    tb: Option<crate::perfil_bloco::AccTb>,
 }
 
 impl<B: Backend> Service<B> {
@@ -290,6 +305,7 @@ impl<B: Backend> Service<B> {
         let keys = cfg.layers * cfg.experts;
         let [s0, s1] = sides;
         // Capacidade das operações de um bloco (até ~10 por camada), reservada só com o instrumento ligado: o caminho quente não aloca.
+        let sh_f2 = sh.pf.as_ref().is_some_and(|p| p.f2());
         let acc = if sh.pf.is_some() { crate::perfil_bloco::AccServ::com_capacidade(cfg.layers * 10 + 8) } else { Default::default() };
         Self {
             b,
@@ -307,6 +323,7 @@ impl<B: Backend> Service<B> {
             sides: [Some(s0), Some(s1)],
             stats: Stats::default(),
             acc,
+            tb: sh_f2.then(|| crate::perfil_bloco::AccTb::com_capacidade(cfg.layers)),
             cfg,
         }
     }
@@ -338,10 +355,12 @@ impl<B: Backend> Service<B> {
     /// armado (decidido na camada 0).
     fn pf_fecha_bloco(&mut self, gen: u32) {
         if let Some(pf) = &self.sh.pf {
+            let armado = self.acc.armado;
             let fim = crate::perfil_bloco::agora_ns();
-            if let Some(r) = self.acc.fecha(gen, fim) {
-                pf.registra_servico(r);
-            }
+            let srv = self.acc.fecha(gen, fim);
+            let tb = if armado { self.tb.as_mut().map(|t| t.fecha(gen)) } else { None };
+            // O `RecServico` é o marcador de conclusão que o merge espera: o `RecTb` vai antes dele.
+            pf.publica_servico(srv, tb, &mut || {});
         }
     }
 
@@ -364,15 +383,34 @@ impl<B: Backend> Service<B> {
     }
 
     /// Espera `seq[l] >= t` e lê ids e `x` (por [`read_layer`]), consultando o cancelamento.
-    fn wait_layer(&self, l: usize, t: u32) -> R<LayerRead, B> {
+    fn wait_layer(&self, l: usize, t: u32) -> R<(LayerRead, u64), B> {
         let relaxed = self.cfg.is(Mutant::SeqRelaxed);
         let since = crate::diag::now();
         let mut first = true;
+        // F2 do host: instante da primeira observação de `seq[l]`, tomado na MESMA leitura que libera o `read_step` e antes das cópias
+        // (0 sem a coleta ou sem armamento). Desligado, o laço abaixo é o de sempre. O armamento é lido depois de ver `seq` (na camada 0, o
+        // do `Compartilhado`; nas seguintes, o já fixado na camada 0): decode e aquecimento não leem relógio.
+        let mut tb_obs = 0u64;
+        if self.tb.is_some() {
+            let pf = self.sh.pf.as_ref();
+            tb_obs = observa_seq(
+                &self.sh.seq[l], t, relaxed,
+                &mut || if l == 0 { pf.is_some_and(|p| p.armado_acq()) } else { self.acc.armado },
+                &mut crate::perfil_bloco::agora_ns,
+                &mut || {
+                    if self.sh.cancel.load(Ordering::Acquire) {
+                        return Err(Error::Cancelled);
+                    }
+                    Self::be(self.b.relax())
+                },
+            )?
+            .unwrap_or(0);
+        }
         loop {
             if let Some(r) = read_step(&self.sh.seq[l], &self.sh.io[l], t, relaxed, self.cfg.topk, self.cfg.width, self.cfg.max_positions) {
                 crate::diag::wait_done(since, first);
                 // Os pesos e o `m` vêm da mesma publicação: lidos depois do `Acquire` de `seq`, como ids e `x`.
-                return r.map_err(|_| Error::Config("m publicado fora de 1..=max_positions"));
+                return r.map(|lr| (lr, tb_obs)).map_err(|_| Error::Config("m publicado fora de 1..=max_positions"));
             }
             first = false;
             if self.sh.cancel.load(Ordering::Acquire) {
@@ -474,10 +512,16 @@ impl<B: Backend> Service<B> {
     pub fn serve_layer<'t>(&mut self, epoch: &'t TokenEpoch, l: usize) -> R<LayerView<'t>, B> {
         let t = epoch.t;
         let t_esp = self.pf_t();
-        let LayerRead { m, ids, w, x } = self.wait_layer(l, t)?;
+        let (LayerRead { m, ids, w, x }, tb_obs) = self.wait_layer(l, t)?;
         if let Some(pf) = &self.sh.pf {
             // O armamento é lido DEPOIS de ver `seq[0]`: o host armou antes de enfileirar o bloco.
-            self.acc.apos_espera(l, t_esp, crate::perfil_bloco::agora_ns(), pf.armado_acq(), pf.t_armado());
+            let tb = crate::perfil_bloco::agora_ns();
+            self.acc.apos_espera(l, t_esp, tb, pf.armado_acq(), pf.t_armado());
+            if self.acc.armado {
+                if let Some(a) = self.tb.as_mut() {
+                    a.grava(l, t, tb_obs, tb);
+                }
+            }
         }
         // O `m` é o mesmo em todas as camadas do passo: fixado na camada 0 e conferido nas seguintes.
         if l == 0 {

@@ -984,6 +984,10 @@ fn gera_prova(args: &Args, exe: &Path) -> Result<i32, String> {
     // Instrumento de prefill: o estado lido da variável (a validade do par de controle confere esta linha em cada processo).
     let perfil_ligado = moe_rt::perfil_bloco::ligado_do_ambiente();
     println!("{}", moe_rt::perfil_bloco::linha_estado(perfil_ligado));
+    // F2 do host por operação: só vale com o perfil de bloco ligado (a linha de estado diz quando foi pedida sem ele).
+    let f2_pedido = moe_rt::perfil_bloco::f2_do_ambiente();
+    let f2_ligado = moe_rt::perfil_bloco::f2_efetivo(perfil_ligado, f2_pedido);
+    println!("{}", moe_rt::perfil_bloco::linha_estado_f2(perfil_ligado, f2_pedido));
     let mut perfil_pedidos: Vec<moe_rt::perfil_bloco::RecPedido> = vec![];
     moe_rt::affinity::set_compute_plan(moe_rt::affinity::Afin::A0.compute_plan(args.threads));
     let device = Device::new(0).map_err(|e| format!("{e:?}"))?;
@@ -1013,6 +1017,9 @@ fn gera_prova(args: &Args, exe: &Path) -> Result<i32, String> {
     if perfil_ligado {
         grava_json(&args.saida.join("perfil-bloco.json"), &moe_rt::perfil_bloco::perfil_json(&perfil_pedidos))?;
     }
+    if f2_ligado {
+        grava_json(&args.saida.join("perfil-f2.json"), &moe_rt::perfil_bloco::perfil_f2_json(&perfil_pedidos))?;
+    }
     integro = agora(integro);
     std::fs::write(args.saida.join("gera-final.txt"), format!("tipo=gera-final\nintegro={}\n", integro as u8)).map_err(|e| e.to_string())?;
     let (dec, _conj) = gr::decisao_conjunto(&linhas, &rotulos, integro);
@@ -1030,6 +1037,7 @@ fn gera_livre(args: &Args) -> Result<i32, String> {
         return Err("texto vazio".into());
     }
     eprintln!("{}", moe_rt::perfil_bloco::linha_estado(moe_rt::perfil_bloco::ligado_do_ambiente()));
+    eprintln!("{}", moe_rt::perfil_bloco::linha_estado_f2(moe_rt::perfil_bloco::ligado_do_ambiente(), moe_rt::perfil_bloco::f2_do_ambiente()));
     let tok_sha = sha256(&mdir.join("tokenizer.json"))?;
     if sha_esperado("tokenizer.json") != Some(tok_sha.as_str()) {
         return Err(format!("tokenizer.json com sha256 {tok_sha}, não o do Granite 3.1 congelado"));
