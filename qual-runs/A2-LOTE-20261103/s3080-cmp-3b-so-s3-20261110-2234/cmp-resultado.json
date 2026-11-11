@@ -1,0 +1,396 @@
+{
+ "tipo": "cmp-resultado",
+ "so_s3": true,
+ "criterio": "criterio-comparacao-llamacpp-20261108.md, Emenda 12 (emendas 1 a 12)",
+ "descritivo": true,
+ "modelos_da_janela": [
+  "3b"
+ ],
+ "aviso_rotulo": "Janela --so-s3 (Emenda 12): só a S3 do llama.cpp (KV f32, -fa off); sem Lastro na janela, logo SEM razão; medidas descritivas do llama.cpp, sem meta e sem PASSA/REPROVA.",
+ "integridade_problemas": [],
+ "observacoes_ambiente": [
+  "memória do host (MT/s) não conferida pelo roteiro: declarar à parte"
+ ],
+ "orcamento": {
+  "modelos": [
+   "3b"
+  ],
+  "limite_s": 1800,
+  "folga_s": 180,
+  "decorrido_s": 77,
+  "cortes": [],
+  "degrau1": false,
+  "degrau2": false,
+  "so_s3": true,
+  "reps": {
+   "quente_nominal": 5,
+   "frio_nominal": 3
+  },
+  "reps_finais": {
+   "quente": 5,
+   "frio": 3
+  },
+  "s3_ativa_no_fim": true,
+  "nao_rodou": [],
+  "estimativas_sao_palpites": true
+ },
+ "ordem": [
+  "01 llamacpp-3b-S3-curto-frio n=3 inicio=6s fim=19s rc=0",
+  "02 llamacpp-3b-S3-curto-quente n=5 inicio=19s fim=28s rc=0",
+  "03 llamacpp-3b-S3-medio-frio n=3 inicio=28s fim=41s rc=0",
+  "04 llamacpp-3b-S3-medio-quente n=5 inicio=41s fim=50s rc=0",
+  "05 llamacpp-3b-S3-longo-frio n=3 inicio=50s fim=64s rc=0",
+  "06 llamacpp-3b-S3-longo-quente n=5 inicio=64s fim=73s rc=0"
+ ],
+ "celulas": {
+  "llamacpp-3b-S3-curto-frio": {
+   "chave": "llamacpp-3b-S3-curto-frio",
+   "lado": "llamacpp",
+   "modelo": "3b",
+   "texto": "curto",
+   "estado": "frio",
+   "serie": "S3",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 90.793,
+    "min": 90.378,
+    "max": 93.165,
+    "ruidosa": false,
+    "valores": [
+     90.378,
+     93.165,
+     90.793
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 4.096634920634921,
+    "min": 4.095063492063492,
+    "max": 4.1155873015873015,
+    "ruidosa": false,
+    "valores": [
+     4.095063492063492,
+     4.1155873015873015,
+     4.096634920634921
+    ]
+   },
+   "temp_max": 56.0,
+   "observacoes": [],
+   "dmon_sm_antes": 0,
+   "desktop_g_sm_antes": 0,
+   "desktop_g_sm_depois": 0,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 1262.0,
+    "min": 1258.0,
+    "max": 1267.0,
+    "ruidosa": false,
+    "valores": [
+     1258.0,
+     1262.0,
+     1267.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.01.228.734 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-3b-S3-curto-quente": {
+   "chave": "llamacpp-3b-S3-curto-quente",
+   "lado": "llamacpp",
+   "modelo": "3b",
+   "texto": "curto",
+   "estado": "quente",
+   "serie": "S3",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 19.869,
+    "min": 19.829,
+    "max": 20.068,
+    "ruidosa": false,
+    "valores": [
+     19.829,
+     20.032,
+     20.068,
+     19.865,
+     19.869
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 4.082253968253968,
+    "min": 4.081285714285714,
+    "max": 4.092079365079365,
+    "ruidosa": false,
+    "valores": [
+     4.082253968253968,
+     4.081285714285714,
+     4.092079365079365,
+     4.081761904761905,
+     4.087238095238095
+    ]
+   },
+   "temp_max": 59.0,
+   "observacoes": [],
+   "dmon_sm_antes": 0,
+   "desktop_g_sm_antes": 0,
+   "desktop_g_sm_depois": 0,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 1294.0,
+    "min": 1294.0,
+    "max": 1294.0,
+    "ruidosa": false,
+    "valores": [
+     1294.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.01.200.984 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-3b-S3-medio-frio": {
+   "chave": "llamacpp-3b-S3-medio-frio",
+   "lado": "llamacpp",
+   "modelo": "3b",
+   "texto": "medio",
+   "estado": "frio",
+   "serie": "S3",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 116.29,
+    "min": 116.012,
+    "max": 118.104,
+    "ruidosa": false,
+    "valores": [
+     116.012,
+     118.104,
+     116.29
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 4.104111111111112,
+    "min": 4.096920634920635,
+    "max": 4.113333333333333,
+    "ruidosa": false,
+    "valores": [
+     4.096920634920635,
+     4.113333333333333,
+     4.104111111111112
+    ]
+   },
+   "temp_max": 60.0,
+   "observacoes": [],
+   "dmon_sm_antes": 0,
+   "desktop_g_sm_antes": 0,
+   "desktop_g_sm_depois": 0,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 1274.0,
+    "min": 1259.0,
+    "max": 1284.0,
+    "ruidosa": false,
+    "valores": [
+     1284.0,
+     1259.0,
+     1274.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.01.181.052 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-3b-S3-medio-quente": {
+   "chave": "llamacpp-3b-S3-medio-quente",
+   "lado": "llamacpp",
+   "modelo": "3b",
+   "texto": "medio",
+   "estado": "quente",
+   "serie": "S3",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 38.188,
+    "min": 38.041,
+    "max": 39.915,
+    "ruidosa": false,
+    "valores": [
+     38.06,
+     38.365,
+     38.041,
+     38.188,
+     39.915
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 4.07131746031746,
+    "min": 4.067571428571429,
+    "max": 4.092126984126984,
+    "ruidosa": false,
+    "valores": [
+     4.070809523809524,
+     4.067571428571429,
+     4.07131746031746,
+     4.078539682539682,
+     4.092126984126984
+    ]
+   },
+   "temp_max": 63.0,
+   "observacoes": [],
+   "dmon_sm_antes": 0,
+   "desktop_g_sm_antes": 0,
+   "desktop_g_sm_depois": 0,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 1270.0,
+    "min": 1270.0,
+    "max": 1270.0,
+    "ruidosa": false,
+    "valores": [
+     1270.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.01.190.981 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-3b-S3-longo-frio": {
+   "chave": "llamacpp-3b-S3-longo-frio",
+   "lado": "llamacpp",
+   "modelo": "3b",
+   "texto": "longo",
+   "estado": "frio",
+   "serie": "S3",
+   "n_medidas_previstas": 3,
+   "n_medidas": 3,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 3,
+    "mediana": 137.573,
+    "min": 136.318,
+    "max": 139.103,
+    "ruidosa": false,
+    "valores": [
+     137.573,
+     139.103,
+     136.318
+    ]
+   },
+   "decode": {
+    "n": 3,
+    "mediana": 4.328746031746032,
+    "min": 4.319396825396826,
+    "max": 4.340603174603175,
+    "ruidosa": false,
+    "valores": [
+     4.328746031746032,
+     4.340603174603175,
+     4.319396825396826
+    ]
+   },
+   "temp_max": 64.0,
+   "observacoes": [],
+   "dmon_sm_antes": 0,
+   "desktop_g_sm_antes": 0,
+   "desktop_g_sm_depois": 0,
+   "carga_ms": {
+    "n": 3,
+    "mediana": 1259.0,
+    "min": 1254.0,
+    "max": 1259.0,
+    "ruidosa": false,
+    "valores": [
+     1254.0,
+     1259.0,
+     1259.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.01.175.204 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  },
+  "llamacpp-3b-S3-longo-quente": {
+   "chave": "llamacpp-3b-S3-longo-quente",
+   "lado": "llamacpp",
+   "modelo": "3b",
+   "texto": "longo",
+   "estado": "quente",
+   "serie": "S3",
+   "n_medidas_previstas": 5,
+   "n_medidas": 5,
+   "status": "OK",
+   "motivos": [],
+   "prefill": {
+    "n": 5,
+    "mediana": 59.523,
+    "min": 59.332,
+    "max": 59.794,
+    "ruidosa": false,
+    "valores": [
+     59.388,
+     59.794,
+     59.523,
+     59.626,
+     59.332
+    ]
+   },
+   "decode": {
+    "n": 5,
+    "mediana": 4.291412698412698,
+    "min": 4.286714285714286,
+    "max": 4.3011904761904765,
+    "ruidosa": false,
+    "valores": [
+     4.296047619047619,
+     4.3011904761904765,
+     4.286714285714286,
+     4.291412698412698,
+     4.28684126984127
+    ]
+   },
+   "temp_max": 65.0,
+   "observacoes": [],
+   "dmon_sm_antes": 0,
+   "desktop_g_sm_antes": 0,
+   "desktop_g_sm_depois": 0,
+   "carga_ms": {
+    "n": 1,
+    "mediana": 1304.0,
+    "min": 1304.0,
+    "max": 1304.0,
+    "ruidosa": false,
+    "valores": [
+     1304.0
+    ]
+   },
+   "fonte_decode": [
+    "predicted_per_token_ms"
+   ],
+   "kv_fa_log": "0.01.201.931 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 2048, kv_unified = 'false'"
+  }
+ },
+ "razoes": []
+}
