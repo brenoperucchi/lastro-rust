@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Extrator da comparação Lastro x llama.cpp (opção d), conforme criterio-comparacao-llamacpp-20261108.md (emendas 1 a 6).
 
-    python3 -I cmp-extrai.py --saida DIR_DA_JANELA [--ids cmp-ids-prompt.json] [--refs 5c-referencia] [--textos 5c-textos/textos.json] [--degrau1|--degrau2]
+    python3 -I cmp-extrai.py --saida DIR_DA_JANELA [--ids cmp-ids-prompt.json] [--refs 5c-referencia] [--textos 5c-textos/textos.json] [--degrau1|--degrau2|--so-s3]
     python3 -I cmp-extrai.py --smoke DIR_DO_SMOKE --modelo 1b|3b [--degrau2] [--ids ...] [--refs ...] [--textos ...]   (degrau 1, seção 3: grava DIR_DO_SMOKE/veredito.txt)
 
 --degrau1 (criterio-degrau1-100pct-20261109.md): séries L100 (Lastro com --fracao-slots 1.0) contra S1 SÓ (sem S2/S3); o rótulo de toda razão é o da seção 4 do critério;
 a seção 5 (faixas de leitura do decode) é citada e diz onde o dado caiu, sem virar decisão; sem DIR/smoke/veredito.txt com veredito=OK, nenhuma razão é publicada.
+
+--so-s3 (Emenda 12 do critério base): janela só com a S3 do llama.cpp (KV f32, -fa off). Nenhuma célula do Lastro é prevista (nem como NÃO RODOU) e `razoes` fica VAZIO:
+o critério exige o Lastro na MESMA janela, então a S3 sozinha dá só medidas descritivas do llama.cpp (mediana/min/max de prefill e decode, carga), nunca razão.
 
 Só biblioteca padrão. NÃO roda nada, NÃO usa GPU: lê o que a janela gravou, confere ids e contagens, calcula mediana/min/max por célula e as razões
 Lastro/llama.cpp (S1, S2 e S3 sempre SEPARADAS e rotuladas) e grava DIR/cmp-resultado.json e DIR/cmp-resultado.md.
@@ -45,6 +48,8 @@ TEXTOS = ("curto", "medio", "longo")
 ESTADOS = ("frio", "quente")
 SERIES = ("S1", "S2", "S3")
 SERIE_L = "L"
+ROTULO_S3 = ("Janela --so-s3 (Emenda 12): só a S3 do llama.cpp (KV f32, -fa off); sem Lastro na janela, logo SEM razão; medidas descritivas do llama.cpp, "
+             "sem meta e sem PASSA/REPROVA.")
 D1 = False                # degrau 1: processa() liga; séries L100 contra S1, rótulo da seção 4
 ROTULO_D1 = "Lastro 100% experts GPU contra llama.cpp S1; KV f32 no Lastro contra f16 no llama.cpp"
 D2 = False                # degrau 2 (criterio-degrau2-camadas-20261109.md): séries LC (Lastro --camadas-cpu N) contra S2 SÓ
@@ -978,14 +983,14 @@ def le_veredito_smoke(saida):
     return None if t is None else le_chave_valor(os.path.join(saida, "smoke", "veredito.txt"))
 
 
-def processa(saida, ids_arq, refs_dir, textos_arq, degrau1=False, degrau2=False):
+def processa(saida, ids_arq, refs_dir, textos_arq, degrau1=False, degrau2=False, so_s3=False):
     global D1, D2, SERIE_L
-    if degrau1 and degrau2:
-        raise ValueError("--degrau1 e --degrau2 são exclusivos")
+    if (degrau1 and degrau2) or (so_s3 and (degrau1 or degrau2)):
+        raise ValueError("--degrau1, --degrau2 e --so-s3 são exclusivos")
     D1 = bool(degrau1)
     D2 = bool(degrau2)
     SERIE_L = "L100" if D1 else ("LC" if D2 else "L")
-    series_uso = ("S1",) if D1 else (("S2",) if D2 else SERIES)
+    series_uso = ("S3",) if so_s3 else (("S1",) if D1 else (("S2",) if D2 else SERIES))
     refs = Refs(ids_arq, refs_dir, textos_arq)
     integ = integridade(saida)
     smoke = None
@@ -1029,7 +1034,8 @@ def processa(saida, ids_arq, refs_dir, textos_arq, degrau1=False, degrau2=False)
     for m in modelos:
         for t in TEXTOS:
             for est in ESTADOS:
-                previstas = [("lastro", SERIE_L)] + [("llamacpp", s) for s in series_uso]
+                # --so-s3 (Emenda 12): NENHUMA célula do Lastro é prevista (nem como NÃO RODOU); só a S3 do llama.cpp
+                previstas = ([] if so_s3 else [("lastro", SERIE_L)]) + [("llamacpp", s) for s in series_uso]
                 for lado, serie in previstas:
                     k = chave(lado, m, serie, t, est)
                     meta0 = {"chave": k, "lado": lado, "modelo": m, "texto": t, "estado": est, "serie": serie}
@@ -1040,7 +1046,7 @@ def processa(saida, ids_arq, refs_dir, textos_arq, degrau1=False, degrau2=False)
                     dados, mot = (le_celula_lastro if lado == "lastro" else le_celula_llama)(d, meta, refs)
                     celulas[k] = resume_celula(meta, dados, mot)
     razoes = []
-    for m in modelos:
+    for m in ([] if so_s3 else modelos):      # --so-s3: sem Lastro na janela, logo nenhuma razão (o critério exige o Lastro na MESMA janela)
         for t in TEXTOS:
             for est in ESTADOS:
                 cl = celulas[chave("lastro", m, SERIE_L, t, est)]
@@ -1058,6 +1064,13 @@ def processa(saida, ids_arq, refs_dir, textos_arq, degrau1=False, degrau2=False)
     ordem = (le_txt(os.path.join(saida, "ordem.txt")) or "").splitlines()
     for c in celulas.values():
         c.pop("_meds", None)
+    if so_s3:
+        return {
+            "tipo": "cmp-resultado", "so_s3": True, "criterio": "criterio-comparacao-llamacpp-20261108.md, Emenda 12 (emendas 1 a 12)", "descritivo": True,
+            "modelos_da_janela": list(modelos), "aviso_rotulo": ROTULO_S3,
+            "integridade_problemas": integ, "observacoes_ambiente": obs_amb, "orcamento": orc, "ordem": ordem,
+            "celulas": celulas, "razoes": [],
+        }
     if D1:
         return {
             "tipo": "cmp-resultado", "degrau1": True, "criterio": "criterio-degrau1-100pct-20261109.md (herda criterio-comparacao-llamacpp-20261108.md, emendas 1 a 9)", "descritivo": True,
@@ -1095,7 +1108,69 @@ def faixa(e, n=2):
     return "-" if not e else "%s (%s a %s)%s" % (f(e["mediana"], n), f(e["min"], n), f(e["max"], n), " ruidosa" if e["ruidosa"] else "")
 
 
+def relatorio_so_s3(res):
+    L = []
+    L.append("# S3 do llama.cpp sozinha (modo --so-s3, Emenda 12): medidas descritivas, SEM razão")
+    L.append("")
+    L.append("Critério: %s. %s" % (res["criterio"], ROTULO_S3))
+    L.append("")
+    L.append("Esta janela NÃO tem células do Lastro: nenhuma razão Lastro/llama.cpp é calculada ou publicada, nem como NÃO RODOU, porque o critério exige o Lastro na MESMA janela. "
+             "Os números abaixo são só do llama.cpp S3 (KV f32, -fa off), descritivos; não são comparáveis com razões de outras janelas nem entram em razão nova. "
+             "Prefill = `prompt_ms` (termina depois de amostrar o 1º token); decode = média por passo (63 passos).")
+    L.append("")
+    if res["integridade_problemas"]:
+        L.append("## Integridade QUEBRADA: tudo SEM PROVA")
+        L += ["- " + x for x in res["integridade_problemas"]]
+        L.append("")
+    for o in res["observacoes_ambiente"]:
+        L.append("Observação: " + o)
+    orc = res.get("orcamento") or {}
+    if orc:
+        L.append("")
+        L.append("## Orçamento e cortes")
+        L.append("Cortes aplicados: %s" % (", ".join(orc.get("cortes") or []) or "nenhum"))
+        L.append("Repetições finais: %s" % json.dumps(orc.get("reps_finais", orc.get("reps", {})), ensure_ascii=False))
+    if res.get("ordem"):
+        L.append("")
+        L.append("## Ordem de execução gravada")
+        L += ["    " + x for x in res["ordem"]]
+    L.append("")
+    L.append("## llama.cpp S3, medidas descritivas")
+    L.append("")
+    L.append("| célula | status | n | prefill ms (mediana, min a max) | decode ms/passo | decode tokens/s | carga ms |")
+    L.append("|---|---|---|---|---|---|---|")
+    for k, c in res["celulas"].items():
+        if c["status"] == "NÃO RODOU":
+            continue
+        tps = (1000.0 / c["decode"]["mediana"]) if c.get("decode") and c["decode"]["mediana"] else None
+        if c["status"] == "OK":
+            L.append("| %s | OK | %d | %s | %s | %s | %s |" % (k, c["n_medidas"], faixa(c.get("prefill"), 1), faixa(c.get("decode"), 2), f(tps, 1), faixa(c.get("carga_ms"), 0)))
+        else:
+            L.append("| %s | SEM PROVA | %d | - | - | - | - |" % (k, c["n_medidas"]))
+    L.append("")
+    L.append("## SEM PROVA (sem número publicado)")
+    sp = [(k, c) for k, c in res["celulas"].items() if c["status"] == "SEM PROVA"]
+    if not sp:
+        L.append("Nenhuma célula.")
+    for k, c in sp:
+        L.append("- %s: %s" % (k, "; ".join(c["motivos"])))
+    obs = [(k, c) for k, c in res["celulas"].items() if c.get("observacoes")]
+    if obs:
+        L.append("")
+        L.append("## Observações informativas (não são prova nem falha)")
+        for k, c in obs:
+            L.append("- %s: %s" % (k, "; ".join(c["observacoes"])))
+    nr = [k for k, c in res["celulas"].items() if c["status"] == "NÃO RODOU"]
+    L.append("")
+    L.append("## NÃO RODOU (nunca vira número nem estimativa)")
+    L.append(", ".join(nr) if nr else "Nenhuma célula.")
+    L.append("")
+    return "\n".join(L) + "\n"
+
+
 def relatorio(res):
+    if res.get("so_s3"):
+        return relatorio_so_s3(res)
     if res.get("degrau1") or res.get("degrau2"):
         return relatorio_d1(res)
     L = []
@@ -1349,12 +1424,13 @@ def main(argv=None):
     ap.add_argument("--modelo", choices=MODELOS)
     ap.add_argument("--degrau1", action="store_true")
     ap.add_argument("--degrau2", action="store_true")
+    ap.add_argument("--so-s3", action="store_true")
     ap.add_argument("--ids", default=os.path.join(aqui, "cmp-ids-prompt.json"))
     ap.add_argument("--refs", default=os.path.join(aqui, "5c-referencia"))
     ap.add_argument("--textos", default=os.path.join(aqui, "5c-textos", "textos.json"))
     a = ap.parse_args(argv)
-    if a.degrau1 and a.degrau2:
-        print("--degrau1 e --degrau2 são exclusivos", file=sys.stderr)
+    if (a.degrau1 and a.degrau2) or (a.so_s3 and (a.degrau1 or a.degrau2 or a.smoke)):
+        print("--degrau1, --degrau2 e --so-s3 são exclusivos (e --so-s3 não tem smoke)", file=sys.stderr)
         return 2
     if a.smoke:
         if not a.modelo or not os.path.isdir(a.smoke):
@@ -1370,7 +1446,7 @@ def main(argv=None):
     if not a.saida or not os.path.isdir(a.saida):
         print("pasta de saída inexistente: %s" % a.saida, file=sys.stderr)
         return 2
-    res = processa(a.saida, a.ids, a.refs, a.textos, degrau1=a.degrau1, degrau2=a.degrau2)
+    res = processa(a.saida, a.ids, a.refs, a.textos, degrau1=a.degrau1, degrau2=a.degrau2, so_s3=a.so_s3)
     limpa_nao_finitos(res)     # rede de segurança: o JSON final é estrito (allow_nan=False)
     with open(os.path.join(a.saida, "cmp-resultado.json"), "w", encoding="utf-8") as fo:
         json.dump(res, fo, ensure_ascii=False, indent=1, allow_nan=False)

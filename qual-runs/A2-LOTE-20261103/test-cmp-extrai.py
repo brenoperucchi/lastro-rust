@@ -1405,5 +1405,73 @@ class TestDegrau2Extrator(BaseD2):
         self.assertTrue(self.razao(res)["rotulo"].startswith("Lastro 10% experts GPU contra llama.cpp S1"))
 
 
+class TestSoS3(Base):
+    """Emenda 12 do critério base: --so-s3, janela só com a S3 do llama.cpp; sem Lastro, sem razão."""
+
+    def roda3(self):
+        return X.processa(self.saida, self.ids, self.refs, self.textos, so_s3=True)
+
+    def test_s3_sozinha_so_medidas_descritivas_sem_razao_e_sem_celula_do_lastro(self):
+        self.llama(estado="frio", serie="S3", n=3, prefill=50.0, per_token=2.0)
+        self.llama(estado="quente", serie="S3", n=5, prefill=40.0, per_token=2.0)
+        grava(os.path.join(self.saida, "orcamento.json"), {"modelos": ["1b"], "cortes": [], "so_s3": True})
+        res = self.roda3()
+        self.assertTrue(res["so_s3"])
+        self.assertEqual(res["razoes"], [], "sem Lastro na MESMA janela não há razão")
+        self.assertEqual({c["lado"] for c in res["celulas"].values()}, {"llamacpp"})
+        self.assertEqual({c["serie"] for c in res["celulas"].values()}, {"S3"})
+        self.assertEqual(len(res["celulas"]), 6, "3 textos x frio/quente do modelo, nada de S1/S2")
+        c = res["celulas"]["llamacpp-1b-S3-curto-frio"]
+        self.assertEqual(c["status"], "OK", c.get("motivos"))
+        self.assertAlmostEqual(c["prefill"]["mediana"], 50.0)
+        nr = [k for k, v in res["celulas"].items() if v["status"] == "NÃO RODOU"]
+        self.assertEqual(len(nr), 4)
+        self.assertFalse(any(k.startswith("lastro") for k in res["celulas"]), "Lastro nem aparece como NÃO RODOU")
+
+    def test_relatorio_diz_explicitamente_que_nao_ha_razao_e_nao_inventa_numero(self):
+        self.llama(estado="frio", serie="S3", n=3)
+        md = X.relatorio(self.roda3())
+        self.assertIn("SEM razão", md)
+        self.assertIn("NÃO tem células do Lastro", md)
+        self.assertIn("MESMA janela", md)
+        self.assertNotIn("razão prefill", md)
+        self.assertNotIn("| Lastro prefill", md)
+        self.assertIn("llamacpp-1b-S3-curto-frio", md)
+
+    def test_integridade_quebrada_vira_sem_prova(self):
+        self.llama(estado="frio", serie="S3", n=3)
+        self.integra(depois={"binario-lastro": "outro"})
+        res = self.roda3()
+        self.assertTrue(res["integridade_problemas"])
+        self.assertEqual(res["celulas"]["llamacpp-1b-S3-curto-frio"]["status"], "SEM PROVA")
+        self.assertIn("Integridade QUEBRADA", X.relatorio(res))
+
+    def test_celula_com_erro_fica_sem_prova_e_modelo_declarado_filtra(self):
+        self.llama(estado="frio", serie="S3", n=3, predicted_n=10)
+        grava(os.path.join(self.saida, "orcamento.json"), {"modelos": ["3b"], "cortes": [], "so_s3": True})
+        res = self.roda3()
+        self.assertEqual({c["modelo"] for c in res["celulas"].values()}, {"3b"})
+        self.assertTrue(all(c["status"] == "NÃO RODOU" for c in res["celulas"].values()))
+
+    def test_main_so_s3_grava_resultado_e_e_exclusivo(self):
+        self.llama(estado="frio", serie="S3", n=3)
+        base = ["--saida", self.saida, "--ids", self.ids, "--refs", self.refs, "--textos", self.textos]
+        self.assertEqual(X.main(base + ["--so-s3"]), 0)
+        res = json.load(open(os.path.join(self.saida, "cmp-resultado.json"), encoding="utf-8"))
+        self.assertTrue(res["so_s3"])
+        self.assertEqual(res["razoes"], [])
+        self.assertIn("S3 do llama.cpp sozinha", open(os.path.join(self.saida, "cmp-resultado.md"), encoding="utf-8").read())
+        for extra in (["--degrau1"], ["--degrau2"]):
+            self.assertEqual(X.main(base + ["--so-s3"] + extra), 2)
+        self.assertEqual(X.main(["--smoke", self.saida, "--modelo", "1b", "--so-s3"]), 2)
+
+    def test_modos_antigos_intactos(self):
+        self.lastro(estado="frio", n=3)
+        self.llama(estado="frio", serie="S1", n=3)
+        res = self.roda()
+        self.assertFalse(res.get("so_s3"))
+        self.assertTrue(res["razoes"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

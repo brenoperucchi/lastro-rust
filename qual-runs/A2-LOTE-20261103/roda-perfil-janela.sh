@@ -83,12 +83,12 @@ declare -A FIXO=(
   [binario-lastro]=65faf6e712276b2c6a6029fdd0ac8315fe1f707920f2b18e0205ef511d38a3e4
   [script-perfil-extrai]=755e1d7dd622e98dce9513ef30584e21667a5bc9d8c08cce4198090b2c34ba68
   [script-amostra-cpu]=de17df09d75015b54bc527954dc54944c465328a9bab1fbce6e20bb5a8adb3f4
-  [script-cmp-extrai]=22d32816ca9b298eb1ca63b3079ea9a6c681519224726b285153bec697f58865
+  [script-cmp-extrai]=c5e44529c7ca958f6943ce12381b1da1a4eadd64453cb271cbc0d1b7536e7585
   [script-lastro]=8e924a36fff414f337857ffc75fc88c5b23e4cf12c3d6314384f3979cab80757
   [script-monitor]=3252c690ea38c447ec7dda24bbbe4ca801f3daefb93e63009564df3c62eac017
   [script-janela]=a168e6672ba87429b8c5ccc0c80ba7daa36335f6a911b91a3744454cf7e63d60
   [script-limite]=196c05649b43e64361766e98e5bab9873636799dfa5d83f70a468436cd4759cc
-  [criterio-cmp]=954ec594ec51d1ccff3239c8dba33f86a01363b82330181b2a9ced918abdcd5f
+  [criterio-cmp]=8d9d6ad3ff1ef23d417e41982228ec55638823c613b4a2cbf00d813dc1f85b35
   [criterio-degrau1]=8c3406a9fd3ba55133dfb2c2d3800076c6ee0a765735edf8be65f6ba1a72c7de
   [criterio-degrau2]=bd8cb0510d5a6c3f55ec320a3177e2bec7ebce7b5776529989f0c45a61599b2a
   [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
@@ -130,8 +130,8 @@ coleta_shas() {
   for i in "${!CHAVES[@]}"; do ( sha "${CAMINHOS[$i]}" > "$tmp/$i" ) & done
   wait
   : > "$1"
-  for i in "${!CHAVES[@]}"; do echo "${CHAVES[$i]} $(cat "$tmp/$i" 2>/dev/null)" >> "$1"; rm -f "$tmp/$i"; done
-  rmdir "$tmp" 2>/dev/null || true
+  for i in "${!CHAVES[@]}"; do echo "${CHAVES[$i]} $(cat "$tmp/$i" 2>/dev/null)" >> "$1"; done
+  # sem remoção (regra do Breno: nada de rm com caminho montado por variável): os temporários ficam em $SAIDA/.shas.PID
 }
 
 # --verifica-fixos: só lê (sem GPU, sem autorização, sem tocar em timers). AUSENTE = arquivo que não existe aqui (ex.: tokenizer fora do repositório) e conta como falha (código 1).

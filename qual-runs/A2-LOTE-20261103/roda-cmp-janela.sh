@@ -7,6 +7,7 @@
 #   roda-cmp-janela.sh --modelos 1b|3b --saida DIR [--estado-janela DIR] [--bin PRIMEIRA_PALAVRA] [--limite S] [--sem-s3]
 #   roda-cmp-janela.sh --degrau1 --modelos 1b|3b --saida DIR [...]   (degrau 1, criterio-degrau1-100pct-20261109.md: séries L100 e S1 SÓ, sem S2/S3; smoke antes das medidas)
 #   roda-cmp-janela.sh --degrau2 --modelos 1b|3b --saida DIR [...]   (degrau 2, criterio-degrau2-camadas-20261109.md: séries LC e S2 SÓ, sem S1/S3; smoke antes das medidas)
+#   roda-cmp-janela.sh --so-s3 --modelos 1b|3b --saida DIR [...]    (Emenda 12 do critério base: SÓ as 6 células da S3 do llama.cpp, janela própria; sem Lastro, sem S1/S2, sem smoke, sem razão)
 #   roda-cmp-janela.sh --verifica-fixos     (sem GPU, sem autorização, só lê: confere os shas congelados do FIXO contra os arquivos reais; código 0 se todos OK)
 #
 # Antes da janela: systemctl --user stop voxtype; ao fim: systemctl --user start voxtype (passo manual, não automatizado; o voxtype em compute na 3080 Ti recusa a janela com código 2).
@@ -33,6 +34,10 @@
 # MODO --degrau2: o Lastro roda com `--camadas-cpu N` (CMP_CAMADAS_CPU=22 no 1B, 29 no 3B, definida só aqui por dentro; série LC) contra a S2 do llama.cpp remedida NA MESMA JANELA; S1 e S3 não rodam e não
 # aparecem como NÃO RODOU. Smoke antes das células, julgado por `cmp-extrai.py --smoke --degrau2`; falha do smoke PARA a janela do modelo ("SMOKE DO DEGRAU 2 FALHOU: <motivo>"), sem repetição.
 # Orçamento: só os cortes (3) quente 5->3 e (4) frio 3->2; o que não couber é NÃO RODOU. --degrau1 e --degrau2 são exclusivos.
+#
+# MODO --so-s3 (Emenda 12): só a S3 do llama.cpp (KV f32, -fa off), 3 textos x frio/quente (6 células), na janela própria; o teto de 1800 s e a folga de 180 s ficam como estão. Sem células do Lastro, sem S1/S2 e sem smoke
+# (o smoke é do Lastro). Orçamento: só os cortes (3) quente 5->3 e (4) frio 3->2; bloco que não couber é NÃO RODOU (nunca estimado). Sem Lastro na janela o extrator NÃO calcula razão: só medidas descritivas do llama.cpp.
+# --so-s3 é exclusivo com --degrau1, --degrau2 e --sem-s3.
 #
 # Falha FECHADA antes de tocar em timers ou na GPU (emenda 9: também se houver PID C ou C+G na 3080 Ti; durante a janela o voxtype e o processo de GPU do Chrome ficam FECHADOS): PRIMEIRA_PALAVRA_AUTORIZADA=1 e CUDA_VISIBLE_DEVICES igual ao UUID da 3080 Ti (a 5090 NUNCA entra, nem no llama-server)
 # têm de estar no ambiente de quem chama (o "autorizo" do Breno); --saida e --estado-janela têm de ser pastas novas ou vazias. Rede só em 127.0.0.1. Limite padrão 1800 s
@@ -62,8 +67,8 @@ CRIT=${CRITERIO_CMP:-$AQUI/criterio-comparacao-llamacpp-20261108.md}
 CRIT_D1=${CRITERIO_D1:-$AQUI/criterio-degrau1-100pct-20261109.md}
 CRIT_D2=${CRITERIO_D2:-$AQUI/criterio-degrau2-camadas-20261109.md}
 FOLGA=${CMP_FOLGA:-180}
-SAIDA=; ESTADO=; LIMITE=1800; INTERNO=0; COM_S3=1; MODELOS=; VERIFICA=0; DEGRAU1=0; DEGRAU2=0
-usa() { echo "uso: roda-cmp-janela.sh [--degrau1|--degrau2] --modelos 1b|3b --saida DIR [--estado-janela DIR] [--bin PRIMEIRA_PALAVRA] [--limite S] [--sem-s3] | --verifica-fixos" >&2; }
+SAIDA=; ESTADO=; LIMITE=1800; INTERNO=0; COM_S3=1; MODELOS=; VERIFICA=0; DEGRAU1=0; DEGRAU2=0; SO_S3=0
+usa() { echo "uso: roda-cmp-janela.sh [--degrau1|--degrau2|--so-s3] --modelos 1b|3b --saida DIR [--estado-janela DIR] [--bin PRIMEIRA_PALAVRA] [--limite S] [--sem-s3] | --verifica-fixos" >&2; }
 recusa() { echo "roda-cmp-janela: $*" >&2; exit 2; }
 # Portão e registro da potência (Emenda 2 do perfil, Emenda 10 do cmp): le_pot lê só o power.limit da 3080 Ti (vazio se a leitura falhar); tem de ser 370.00 W no preflight (senão recusa 2) e de novo ao fim (senão a janela vira SEM PROVA via manifesto)
 POT_OK="370.00 W"
@@ -80,16 +85,18 @@ while [ $# -gt 0 ]; do
     --verifica-fixos) VERIFICA=1; shift;;
     --degrau1) DEGRAU1=1; shift;;
     --degrau2) DEGRAU2=1; shift;;
+    --so-s3) SO_S3=1; shift;;
     --interno) INTERNO=1; shift;;
     *) usa; exit 2;;
   esac
 done
 [ $DEGRAU1 = 0 ] || [ $DEGRAU2 = 0 ] || { echo "roda-cmp-janela: --degrau1 e --degrau2 são exclusivos" >&2; exit 2; }
+[ $SO_S3 = 0 ] || { [ $DEGRAU1 = 0 ] && [ $DEGRAU2 = 0 ] && [ $COM_S3 = 1 ]; } || { echo "roda-cmp-janela: --so-s3 é exclusivo com --degrau1, --degrau2 e --sem-s3" >&2; exit 2; }
 sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados (valem onde o critério já os fixa; binários, GGUF e safetensors só precisam ser iguais antes e depois).
 declare -A FIXO=(
-  [criterio-cmp]=954ec594ec51d1ccff3239c8dba33f86a01363b82330181b2a9ced918abdcd5f
+  [criterio-cmp]=8d9d6ad3ff1ef23d417e41982228ec55638823c613b4a2cbf00d813dc1f85b35
   [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
   [texto-curto]=5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d
   [texto-medio]=bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a
@@ -129,8 +136,8 @@ coleta_shas() {
   for i in "${!CHAVES[@]}"; do ( sha "${CAMINHOS[$i]}" > "$tmp/$i" ) & done
   wait
   : > "$1"
-  for i in "${!CHAVES[@]}"; do echo "${CHAVES[$i]} $(cat "$tmp/$i" 2>/dev/null)" >> "$1"; rm -f "$tmp/$i"; done
-  rmdir "$tmp" 2>/dev/null || true
+  for i in "${!CHAVES[@]}"; do echo "${CHAVES[$i]} $(cat "$tmp/$i" 2>/dev/null)" >> "$1"; done
+  # sem remoção (regra do Breno: nada de rm com caminho montado por variável): os temporários ficam em $SAIDA/.shas.PID
 }
 
 # --verifica-fixos: só lê (sem GPU, sem autorização, sem tocar em timers): sha dos arquivos reais contra os congelados do FIXO. AUSENTE = arquivo fora do repositório que não existe aqui.
@@ -163,6 +170,7 @@ if [ $INTERNO = 1 ]; then
   # degrau 1: a fração vai por variável ao roda-cmp-lastro.sh (série L100); fora dele, nunca (a janela antiga roda a 10%)
   unset CMP_CAMADAS_CPU
   if [ $DEGRAU1 = 1 ]; then export CMP_FRACAO_SLOTS=1.0; SL=L100; COM_S3=0
+  elif [ $SO_S3 = 1 ]; then unset CMP_FRACAO_SLOTS; SL=L; COM_S3=1   # SL não é usado: nenhuma célula do Lastro roda
   elif [ $DEGRAU2 = 1 ]; then
     unset CMP_FRACAO_SLOTS; SL=LC; COM_S3=0
     case $MODELOS in 1b) export CMP_CAMADAS_CPU=22;; 3b) export CMP_CAMADAS_CPU=29;; *) recusa "--degrau2 exige --modelos 1b ou 3b";; esac
@@ -219,11 +227,14 @@ if [ $INTERNO = 1 ]; then
   if [ $DEGRAU1 = 1 ]; then S2_1B=0; S2_3B=0; PROX_CORTE=4; fi
   # degrau 2: a S2 é a única série do llama.cpp (sem S1, sem S3); só valem os cortes (3) e (4)
   if [ $DEGRAU2 = 1 ]; then PROX_CORTE=4; fi
+  # --so-s3: sem S1/S2 (fora do desenho) e a S3 é o objetivo, não um corte; só valem os cortes (3) e (4)
+  if [ $SO_S3 = 1 ]; then S2_1B=0; S2_3B=0; PROX_CORTE=4; fi
   # blocos: "main:modelo:texto" ou "s3:modelo:texto"
   BLOCOS=()
   case $MODELOS in 1b) LISTA_M=(1b);; 3b) LISTA_M=(3b);; *) LISTA_M=(1b 3b);; esac
-  for m in "${LISTA_M[@]}"; do for t in curto medio longo; do BLOCOS+=("main:$m:$t"); done; done
-  [ $DEGRAU1 = 1 ] || [ $DEGRAU2 = 1 ] || for m in "${LISTA_M[@]}"; do for t in curto medio longo; do BLOCOS+=("s3:$m:$t"); done; done
+  [ $SO_S3 = 1 ] || for m in "${LISTA_M[@]}"; do for t in curto medio longo; do BLOCOS+=("main:$m:$t"); done; done
+  [ $SO_S3 = 0 ] || for m in "${LISTA_M[@]}"; do for t in curto medio longo; do BLOCOS+=("s3:$m:$t"); done; done
+  [ $SO_S3 = 1 ] || [ $DEGRAU1 = 1 ] || [ $DEGRAU2 = 1 ] || for m in "${LISTA_M[@]}"; do for t in curto medio longo; do BLOCOS+=("s3:$m:$t"); done; done
   est_bloco() { # tipo modelo texto -> segundos com a configuração ATUAL
     local tipo=$1 m=$2 tot=0 s
     if [ "$tipo" = main ]; then
@@ -327,6 +338,14 @@ if [ $INTERNO = 1 ]; then
         if [ "$m" = 1b ] && [ $S2_1B = 0 ]; then nr "llamacpp-$m-S2-$t-$estado"; fi
         if [ "$m" = 3b ] && [ $S2_3B = 0 ]; then nr "llamacpp-$m-S2-$t-$estado"; fi
       done
+    elif [ $SO_S3 = 1 ]; then
+      # --so-s3: corta em ordem (3) e (4) enquanto a projeção estourar; as repetições são as da configuração atual (não há Lastro a acompanhar)
+      while [ $(( $(decorrido) + $(projeta_restante "$bi") + FOLGA )) -gt "$LIMITE" ]; do aplica_corte || break; done
+      nf=$REPS_F; nq=$REPS_Q
+      custo=$(( $(est_celula llamacpp S3 "$m" frio "$nf") + $(est_celula llamacpp S3 "$m" quente "$nq") ))
+      if [ $(( $(decorrido) + custo + FOLGA )) -gt "$LIMITE" ]; then nr "llamacpp-$m-S3-$t (frio e quente): não cabe, sem mais cortes"; continue; fi
+      roda_celula llamacpp S3 "$m" "$t" frio "$nf"; [ $ABORTA = 0 ] || break
+      roda_celula llamacpp S3 "$m" "$t" quente "$nq"
     else
       # S3: só se sobrar, com as repetições do Lastro correspondente (sem novos cortes)
       nf=${LREPS["$m-$t-frio"]:-}; nq=${LREPS["$m-$t-quente"]:-}
@@ -362,14 +381,17 @@ if [ $INTERNO = 1 ]; then
   {
     printf '{"modelos": [%s], "limite_s": %s, "folga_s": %s, "decorrido_s": %s, "cortes": [' "$(printf '"%s", ' "${LISTA_M[@]}" | sed 's/, $//')" "$LIMITE" "$FOLGA" "$(decorrido)"
     sep=; for c in "${CORTES[@]:-}"; do [ -n "$c" ] || continue; printf '%s"%s"' "$sep" "$c"; sep=', '; done
-    printf '], "degrau1": %s, "degrau2": %s, "reps": {"quente_nominal": 5, "frio_nominal": 3}, "reps_finais": {"quente": %s, "frio": %s}, "s3_ativa_no_fim": %s, "nao_rodou": [' "$([ $DEGRAU1 = 1 ] && echo true || echo false)" "$([ $DEGRAU2 = 1 ] && echo true || echo false)" "$REPS_Q" "$REPS_F" "$([ $S3 = 1 ] && echo true || echo false)"
+    printf '], "degrau1": %s, "degrau2": %s, "so_s3": %s, "reps": {"quente_nominal": 5, "frio_nominal": 3}, "reps_finais": {"quente": %s, "frio": %s}, "s3_ativa_no_fim": %s, "nao_rodou": [' "$([ $DEGRAU1 = 1 ] && echo true || echo false)" "$([ $DEGRAU2 = 1 ] && echo true || echo false)" "$([ $SO_S3 = 1 ] && echo true || echo false)" "$REPS_Q" "$REPS_F" "$([ $S3 = 1 ] && echo true || echo false)"
     sep=; for c in "${NAO_RODOU[@]:-}"; do [ -n "$c" ] || continue; printf '%s"%s"' "$sep" "$(echo "$c" | tr -d '"\\')"; sep=', '; done
     printf '], "estimativas_sao_palpites": true}\n'
   } > "$SAIDA/orcamento.json"
-  EXT_ARGS=(); [ $DEGRAU1 = 0 ] || EXT_ARGS=(--degrau1); [ $DEGRAU2 = 0 ] || EXT_ARGS=(--degrau2)
+  EXT_ARGS=(); [ $DEGRAU1 = 0 ] || EXT_ARGS=(--degrau1); [ $DEGRAU2 = 0 ] || EXT_ARGS=(--degrau2); [ $SO_S3 = 0 ] || EXT_ARGS=(--so-s3)
   python3 -I "$EXTRAI" --saida "$SAIDA" --ids "$IDS" --refs "$REFS" --textos "$TEXTOS/textos.json" "${EXT_ARGS[@]}" > "$SAIDA/cmp-extrai.out" 2>&1; RC_EXT=$?
   {
-    if [ $DEGRAU1 = 1 ]; then
+    if [ $SO_S3 = 1 ]; then
+      echo "S3 sozinha do llama.cpp (--so-s3, Emenda 12), janela do modelo ${LISTA_M[*]}, critério base sha256 $(sha "$CRIT")"
+      echo "resultado DESCRITIVO: sem meta, sem PASSA/REPROVA; SEM Lastro na janela, logo SEM razão Lastro/llama.cpp (o critério exige o Lastro na MESMA janela): só medidas do llama.cpp S3 (KV f32, -fa off)"
+    elif [ $DEGRAU1 = 1 ]; then
       echo "degrau 1, Lastro x llama.cpp S1, janela do modelo ${LISTA_M[*]}, critério do degrau 1 sha256 $(sha "$CRIT_D1"), critério base sha256 $(sha "$CRIT")"
       echo "resultado DESCRITIVO: sem meta, sem PASSA/REPROVA de velocidade; todo rótulo: Lastro 100% experts GPU contra llama.cpp S1; KV f32 no Lastro contra f16 no llama.cpp"
       if [ -n "$SMOKE_FALHA" ]; then echo "L100 NÃO SUSTENTA 100%: $SMOKE_FALHA"; else echo "smoke: $(grep -E '^(veredito|ids|gpu_pico_pct|cpu_needed)=' "$SAIDA/smoke/veredito.txt" 2> /dev/null | tr '\n' ' ')"; fi
@@ -451,13 +473,14 @@ coleta início "$SAIDA.carga-antes.txt"
 EXTRA=(); [ $COM_S3 = 1 ] || EXTRA=(--sem-s3)
 [ $DEGRAU1 = 0 ] || EXTRA+=(--degrau1)
 [ $DEGRAU2 = 0 ] || EXTRA+=(--degrau2)
+[ $SO_S3 = 0 ] || EXTRA+=(--so-s3)
 "$JANELA" --estado "$ESTADO" "${TIMERS[@]}" --limite $((LIMITE + 120)) --kill-apos 30 -- \
   "$LIMITE_SH" --limite "$LIMITE" -- env "${PASSA[@]}" "$AQUI/roda-cmp-janela.sh" --interno --modelos "$MODELOS" --saida "$SAIDA" --bin "$BIN" --limite "$LIMITE" "${EXTRA[@]}"
 RC=$?
 coleta fim "$SAIDA.carga-depois.txt"
 lista_systemd depois
 # aviso no fim da janela (sempre, qualquer que seja o código): arquivo ao lado da pasta e notificação se houver como
-MSG="janela da comparação Lastro x llama.cpp ($MODELOS$([ $DEGRAU1 = 1 ] && echo ', degrau 1, L100 contra S1')$([ $DEGRAU2 = 1 ] && echo ', degrau 2, LC contra S2')) terminou (código $RC): $SAIDA"
+MSG="janela da comparação Lastro x llama.cpp ($MODELOS$([ $DEGRAU1 = 1 ] && echo ', degrau 1, L100 contra S1')$([ $DEGRAU2 = 1 ] && echo ', degrau 2, LC contra S2')$([ $SO_S3 = 1 ] && echo ', só a S3 do llama.cpp')) terminou (código $RC): $SAIDA"
 echo "$MSG" > "$SAIDA.aviso.txt"
 if [ -n "${CMP_AVISO_CMD:-}" ]; then "$CMP_AVISO_CMD" "$MSG" > /dev/null 2>&1 || true
 elif command -v notify-send > /dev/null 2>&1; then notify-send "Lastro x llama.cpp" "$MSG" > /dev/null 2>&1 || true; fi

@@ -160,6 +160,45 @@ for casom in "" "5b" "1b,3b" "ambos"; do
   confere "--modelos '${casom:-ausente}': recusa 2, nada rodou" "[ $rcm = 2 ] && [ ! -s $D/log-m ] && [ ! -e '$D/si-m-$casom/ordem.txt' ]"
 done
 
+# ---- Emenda 12: --so-s3 (só as 6 células da S3 do llama.cpp, janela própria; teto de 1800 s intacto)
+interno_s3() { # nome modelo limite [opções...]; estimativas FINAIS (sem CMP_EST_*/CMP_FOLGA) e células que gastam a estimativa (CMP_FAKE_EST=1)
+  local n=$1 m=$2 lim=$3 us=() v; shift 3
+  for v in $(compgen -e | grep -E '^CMP_(EST|FOLGA)'); do us+=(-u "$v"); done
+  echo 0 > "$D/clock"; : > "$D/log-$n"
+  env "${us[@]}" PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID CMP_RELOGIO_ARQ=$D/clock CMP_FAKE_RELOGIO=$D/clock CMP_FAKE_LOG=$D/log-$n CMP_FAKE_EST=1 \
+    "$J" --interno --so-s3 --modelos "$m" --saida "$D/si-$n" --bin "$D/pp" --limite "$lim" "$@" > "$D/outi-$n" 2>&1
+  RC=$?
+}
+interno_s3 S3A 3b 1800; CLK_S3A=$(cat "$D/clock")
+echo "simulação --so-s3 (3B, estimativas finais): $(nceluas S3A) células, $CLK_S3A s de 1800 (folga 180); cortes: $(cortes S3A)"
+confere "S3A (3B, 1800 s, estimativas finais): cabe com folga, 6 células SÓ da S3 (3 textos x frio/quente), sem cortes, 390 s decorridos" "[ $RC = 0 ] && [ \$(nceluas S3A) = 6 ] && [ \$(cortes S3A) = 0 ] && [ $CLK_S3A = 390 ] && [ \$(grep -c 'llamacpp-3b-S3-' $D/si-S3A/ordem.txt) = 6 ] && [ \$(grep -c 'frio n=3' $D/si-S3A/ordem.txt) = 3 ] && [ \$(grep -c 'quente n=5' $D/si-S3A/ordem.txt) = 3 ] && [ \$(grep -c 'NÃO RODOU' $D/si-S3A/orcamento-log.txt) = 0 ]"
+confere "S3A: nem Lastro, nem S1, nem S2, nem smoke rodam (ordem, log das células e pasta)" "! grep -q 'lastro\|S1\|S2\|smoke' $D/si-S3A/ordem.txt && ! grep -q 'lastro\|S1\|S2' $D/log-S3A && [ ! -e $D/si-S3A/smoke ] && ! ls $D/si-S3A/celulas | grep -q 'lastro\|S1\|S2'"
+confere "S3A: ordem frio antes do quente, curto, médio, longo; sem alternância de lados" "[ \$(ordem S3A 1) = llamacpp-3b-S3-curto-frio ] && [ \$(ordem S3A 2) = llamacpp-3b-S3-curto-quente ] && [ \$(ordem S3A 3) = llamacpp-3b-S3-medio-frio ] && [ \$(ordem S3A 6) = llamacpp-3b-S3-longo-quente ]"
+confere "S3A: orcamento.json declara so_s3 e não degraus; decisão e extrator dizem que não há razão (sem Lastro na janela)" "grep -q '\"so_s3\": true' $D/si-S3A/orcamento.json && grep -q '\"degrau1\": false, \"degrau2\": false' $D/si-S3A/orcamento.json && grep -q 'SEM razão Lastro/llama.cpp' $D/si-S3A/decisao.txt && grep -q 'S3 sozinha do llama.cpp (--so-s3, Emenda 12)' $D/si-S3A/decisao.txt && python3 -I -c \"import json; r=json.load(open('$D/si-S3A/cmp-resultado.json')); assert r['so_s3'] and r['razoes']==[] and not any(k.startswith('lastro') for k in r['celulas']) and len(r['celulas'])==6\" && grep -q 'SEM razão' $D/si-S3A/cmp-resultado.md"
+interno_s3 S3B 1b 1800
+confere "S3B (1B, trivial): 6 células da S3 do 1B, sem Lastro/S1/S2" "[ $RC = 0 ] && [ \$(nceluas S3B) = 6 ] && [ \$(grep -c 'llamacpp-1b-S3-' $D/si-S3B/ordem.txt) = 6 ] && ! grep -q 'lastro\|S1\|S2\|3b' $D/si-S3B/ordem.txt"
+# não cabe: estimativas dos testes (S3 = 50 s por texto, folga 0). 100 s: corte (3) e (4), 2 textos cabem, o terceiro é NÃO RODOU; 20 s: nada cabe
+MODELOS_T=3b interno S3C 100 --so-s3
+confere "S3C (limite 100, estimativas de teste): cortes (3) e (4) em ordem; 4 células com frio n=2 e quente n=3; longo é NÃO RODOU; nenhum corte (1) ou (2)" "[ $RC = 0 ] && [ \$(cortes S3C) = 2 ] && grep -q '(3) quente cai' $D/si-S3C/orcamento.json && grep -q '(4) frio cai' $D/si-S3C/orcamento.json && ! grep -q '(1)\|(2)' $D/si-S3C/orcamento.json && [ \$(nceluas S3C) = 4 ] && [ \$(grep -c 'frio n=2' $D/si-S3C/ordem.txt) = 2 ] && [ \$(grep -c 'quente n=3' $D/si-S3C/ordem.txt) = 2 ] && grep -q 'NÃO RODOU: llamacpp-3b-S3-longo (frio e quente): não cabe' $D/si-S3C/orcamento-log.txt"
+confere "S3C: o extrator lista a S3 do longo como NÃO RODOU, sem número nem razão, sem Lastro" "grep -q 'llamacpp-3b-S3-longo-frio' $D/si-S3C/cmp-resultado.md && python3 -I -c \"import json; r=json.load(open('$D/si-S3C/cmp-resultado.json')); assert r['razoes']==[] and r['celulas']['llamacpp-3b-S3-longo-quente']['status']=='NÃO RODOU' and r['celulas']['llamacpp-3b-S3-longo-quente']['prefill'] is None\""
+MODELOS_T=3b interno S3D 20 --so-s3
+confere "S3D (limite 20): nada cabe, 0 células, 3 blocos NÃO RODOU, sai 0 com decisão" "[ $RC = 0 ] && [ \$(nceluas S3D) = 0 ] && [ \$(grep -c 'NÃO RODOU: llamacpp-3b-S3' $D/si-S3D/orcamento-log.txt) = 3 ] && [ -s $D/si-S3D/decisao.txt ]"
+# recusas de uso: exclusivo com --degrau1, --degrau2 e --sem-s3 (interno e externo); modelo obrigatório; teto de 1800 s intacto
+for ex in --degrau1 --degrau2 --sem-s3; do
+  : > "$D/log-X"
+  PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID CMP_FAKE_LOG=$D/log-X "$J" --interno --so-s3 "$ex" --modelos 3b --saida "$D/si-X$ex" --bin "$D/pp" --limite 1800 > "$D/outi-X" 2>&1; rcx=$?
+  confere "--so-s3 com $ex: recusa 2, nada roda nem é criado" "[ $rcx = 2 ] && grep -q 'exclusivo' $D/outi-X && [ ! -s $D/log-X ] && [ ! -e '$D/si-X$ex' ]"
+done
+PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID "$J" --interno --so-s3 --saida "$D/si-Xm" --bin "$D/pp" --limite 1800 > "$D/outi-Xm" 2>&1
+confere "--so-s3 sem --modelos: recusa 2 (uma janela por modelo)" "[ $? = 2 ] && [ ! -e $D/si-Xm ]"
+for lim in 1801 3000; do
+  env -i PATH="$PATH" HOME="$HOME" PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID "$J" --so-s3 --modelos 3b --bin "$D/pp" --saida "$D/se-teto-$lim" --limite "$lim" > "$D/oute-teto-$lim" 2>&1; rct=$?
+  confere "--so-s3 com limite $lim (> 1800): recusa 2 citando 1..1800, nada criado, teto mantido" "[ $rct = 2 ] && grep -q 'limite fora de 1..1800 s' $D/oute-teto-$lim && [ ! -e $D/se-teto-$lim ] && [ ! -e $D/se-teto-$lim-estado-janela ]"
+done
+env -i PATH="$PATH" HOME="$HOME" PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID "$J" --so-s3 --degrau2 --modelos 3b --bin "$D/pp" --saida "$D/se-teto-ex" > "$D/oute-ex" 2>&1
+confere "externo: --so-s3 com --degrau2: recusa 2" "[ $? = 2 ] && grep -q 'exclusivo' $D/oute-ex && [ ! -e $D/se-teto-ex ]"
+confere "modos antigos intactos: janela sem --so-s3 não grava so_s3 verdadeiro" "grep -q '\"so_s3\": false' $D/si-K/orcamento.json && grep -q '\"so_s3\": false' $D/si-A/orcamento.json"
+
 echo "== Parte 2: envelope (portões, pastas novas, unidades transitórias, aviso, limite)"
 cat > "$D/fake-systemctl" <<'F'
 #!/bin/bash
