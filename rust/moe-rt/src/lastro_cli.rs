@@ -14,7 +14,7 @@ use std::time::Instant;
 
 /// O mesmo portão e o mesmo UUID dos outros binários que usam a GPU.
 pub const VARIAVEL: &str = "PRIMEIRA_PALAVRA_AUTORIZADA";
-pub const UUID_4090: &str = "GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd";
+pub const UUID_3080TI: &str = "GPU-b22d9465-8552-9f97-812e-380b590645f8";
 /// Máximo de tokens novos aceito nesta etapa.
 pub const MAX_NOVOS: usize = 64;
 const MESES: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -151,8 +151,8 @@ pub fn exige_autorizacao(valor: Option<&str>) -> Result<(), String> {
 
 pub fn exige_uuid(valor: Option<&str>) -> Result<(), String> {
     match valor {
-        Some(UUID_4090) => Ok(()),
-        outro => Err(format!("CUDA_VISIBLE_DEVICES tem de ser {UUID_4090} (a 4090 combinada); veio {outro:?}")),
+        Some(UUID_3080TI) => Ok(()),
+        outro => Err(format!("CUDA_VISIBLE_DEVICES tem de ser {UUID_3080TI} (a 3080 Ti combinada); veio {outro:?}")),
     }
 }
 
@@ -331,9 +331,22 @@ mod tests {
         for v in [None, Some(""), Some("0"), Some("true")] {
             assert!(exige_autorizacao(v).unwrap_err().contains(VARIAVEL));
         }
-        assert!(exige_uuid(Some(UUID_4090)).is_ok());
-        for v in [None, Some(""), Some("GPU-00000000-0000-0000-0000-000000000000")] {
-            assert!(exige_uuid(v).unwrap_err().contains("CUDA_VISIBLE_DEVICES"));
+        assert!(exige_uuid(Some(UUID_3080TI)).is_ok());
+        for v in [None, Some(""), Some("0"), Some("GPU-00000000-0000-0000-0000-000000000000"), Some("GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd")] {
+            assert!(exige_uuid(v).unwrap_err().contains("CUDA_VISIBLE_DEVICES"), "{v:?}");
+        }
+        assert!(exige_uuid(Some(&format!("{UUID_3080TI},0"))).is_err(), "lista de devices");
+        assert_eq!(UUID_3080TI, "GPU-b22d9465-8552-9f97-812e-380b590645f8");
+        // composição: o portão real (portoes) só abre com a autorização e o UUID certos
+        assert!(exige_autorizacao(Some("1")).is_ok() && exige_uuid(Some(UUID_3080TI)).is_ok());
+        assert!(exige_autorizacao(Some("1")).is_ok() && exige_uuid(Some("GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd")).is_err());
+    }
+
+    #[test]
+    fn portoes_reais_recusam_sem_autorizacao() {
+        // o portão real: sem a variável de autorização (o ambiente de teste não a define), recusa antes de olhar o device
+        if std::env::var(VARIAVEL).is_err() {
+            assert!(portoes().unwrap_err().contains(VARIAVEL));
         }
     }
 

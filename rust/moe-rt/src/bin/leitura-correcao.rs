@@ -3,7 +3,7 @@
 //! dado real). NÃO RODA SEM AUTORIZAÇÃO. Não mede velocidade.
 //!
 //! Só abre a GPU com `LEITURA_CORRECAO_AUTORIZADA=1` (variável própria: nenhuma guarda antiga abre este programa) e com
-//! `CUDA_VISIBLE_DEVICES` igual ao UUID combinado da 4090. `--ensaio` imprime o plano e confere ids e hashes SEM abrir o device e sem a variável.
+//! `CUDA_VISIBLE_DEVICES` igual ao UUID combinado da RTX 3080 Ti. A 4090, a 5090 e qualquer outra nunca. `--ensaio` imprime o plano e confere ids e hashes SEM abrir o device e sem a variável.
 //!
 //! Por célula (um modelo; nome `1b` ou `3b`), nesta ordem:
 //!  1. ids dos traços de conversa (cenário C: 500 ids; cenário A: 2.003 ids; continuação: 1.205 e 798 dos mesmos ids de A);
@@ -30,8 +30,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 const VARIAVEL: &str = "LEITURA_CORRECAO_AUTORIZADA";
-/// O UUID da RTX 4090 combinado para a janela: `CUDA_VISIBLE_DEVICES` tem de ser exatamente isto.
-const UUID_4090: &str = "GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd";
+/// O UUID da RTX 3080 Ti combinado para a janela: `CUDA_VISIBLE_DEVICES` tem de ser exatamente isto.
+const UUID_3080TI: &str = "GPU-b22d9465-8552-9f97-812e-380b590645f8";
 /// O hash do critério aprovado e congelado: um `--criterio` com outro conteúdo recusa antes de abrir a GPU.
 const CRITERIO_SHA: &str = "f18f659797582f45d3d8732fb89a08c8451bd28c3c5dde295e3b2b6a572eba12";
 const FRACAO_SLOTS: f64 = 0.10;
@@ -113,11 +113,11 @@ fn exige_autorizacao(valor: Option<&str>) -> Result<(), String> {
     }
 }
 
-/// O UUID da GPU: `CUDA_VISIBLE_DEVICES` tem de ser exatamente o da 4090 combinada.
+/// O UUID da GPU: `CUDA_VISIBLE_DEVICES` tem de ser exatamente o da 3080 Ti combinada.
 fn exige_uuid(valor: Option<&str>) -> Result<(), String> {
     match valor {
-        Some(UUID_4090) => Ok(()),
-        outro => Err(format!("CUDA_VISIBLE_DEVICES tem de ser {UUID_4090} (a 4090 combinada); veio {outro:?}")),
+        Some(UUID_3080TI) => Ok(()),
+        outro => Err(format!("CUDA_VISIBLE_DEVICES tem de ser {UUID_3080TI} (a 3080 Ti combinada); veio {outro:?}")),
     }
 }
 
@@ -461,13 +461,14 @@ mod tests {
     }
 
     #[test]
-    fn so_o_uuid_da_4090_combinada_passa() {
-        assert!(exige_uuid(Some(UUID_4090)).is_ok());
+    fn so_o_uuid_da_3080ti_combinada_passa() {
+        assert!(exige_uuid(Some(UUID_3080TI)).is_ok());
         assert!(exige_uuid(None).is_err(), "sem CUDA_VISIBLE_DEVICES");
         assert!(exige_uuid(Some("")).is_err());
         assert!(exige_uuid(Some("0")).is_err());
-        assert!(exige_uuid(Some("GPU-00000000-0000-0000-0000-000000000000")).is_err());
-        assert!(exige_uuid(Some(&format!("{UUID_4090},0"))).is_err(), "lista com mais de um device");
+        assert!(exige_uuid(Some("GPU-00000000-0000-0000-0000-000000000000")).is_err(), "a 5090 e qualquer outra GPU nunca");
+        assert!(exige_uuid(Some("GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd")).is_err(), "a 4090 antiga nunca");
+        assert!(exige_uuid(Some(&format!("{UUID_3080TI},0"))).is_err(), "lista com mais de um device");
     }
 
     #[test]
