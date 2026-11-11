@@ -1,0 +1,170 @@
+{
+ "tipo": "f2c-resultado",
+ "contrato_b": 2,
+ "criterio": "criterio-f2c-20261111.md",
+ "modelo_da_janela": "1b",
+ "layers": 24,
+ "integridade_problemas": [],
+ "referencia_problemas": [],
+ "bloqueios": [],
+ "motivos_controle": [],
+ "ordem_efetiva": "confere com ordem.txt (quadrado latino, rc 0, n 3)",
+ "processos": [
+  {
+   "nn": 1,
+   "braco": "Dvelho",
+   "pasta": "ctrl-1b-L100-medio-01-Dvelho",
+   "valido": true,
+   "prefill_ms_mediana": 412.304642,
+   "passo_ms_mediana": 2.7948
+  },
+  {
+   "nn": 2,
+   "braco": "Dnovo",
+   "pasta": "ctrl-1b-L100-medio-02-Dnovo",
+   "valido": true,
+   "prefill_ms_mediana": 387.491272,
+   "passo_ms_mediana": 2.647909
+  },
+  {
+   "nn": 3,
+   "braco": "B2novo",
+   "pasta": "ctrl-1b-L100-medio-03-B2novo",
+   "valido": true,
+   "prefill_ms_mediana": 387.867366,
+   "passo_ms_mediana": 2.6412190000000004
+  },
+  {
+   "nn": 4,
+   "braco": "B2novo",
+   "pasta": "ctrl-1b-L100-medio-04-B2novo",
+   "valido": true,
+   "prefill_ms_mediana": 388.084608,
+   "passo_ms_mediana": 2.64854
+  },
+  {
+   "nn": 5,
+   "braco": "Dvelho",
+   "pasta": "ctrl-1b-L100-medio-05-Dvelho",
+   "valido": true,
+   "prefill_ms_mediana": 413.40180300000003,
+   "passo_ms_mediana": 2.7969209999999998
+  },
+  {
+   "nn": 6,
+   "braco": "Dnovo",
+   "pasta": "ctrl-1b-L100-medio-06-Dnovo",
+   "valido": true,
+   "prefill_ms_mediana": 389.029246,
+   "passo_ms_mediana": 2.64278
+  },
+  {
+   "nn": 7,
+   "braco": "Dnovo",
+   "pasta": "ctrl-1b-L100-medio-07-Dnovo",
+   "valido": true,
+   "prefill_ms_mediana": 388.368772,
+   "passo_ms_mediana": 2.640869
+  },
+  {
+   "nn": 8,
+   "braco": "B2novo",
+   "pasta": "ctrl-1b-L100-medio-08-B2novo",
+   "valido": true,
+   "prefill_ms_mediana": 388.051631,
+   "passo_ms_mediana": 2.640709
+  },
+  {
+   "nn": 9,
+   "braco": "Dvelho",
+   "pasta": "ctrl-1b-L100-medio-09-Dvelho",
+   "valido": true,
+   "prefill_ms_mediana": 412.84031100000004,
+   "passo_ms_mediana": 2.7890200000000003
+  }
+ ],
+ "prefill_ms_mediana_por_braco": {
+  "Dvelho": 412.84031100000004,
+  "Dnovo": 388.368772,
+  "B2novo": 388.051631
+ },
+ "passo_ms_mediana_por_braco": {
+  "Dvelho": 2.7948,
+  "Dnovo": 2.64278,
+  "B2novo": 2.6412190000000004
+ },
+ "comparacao": {
+  "razao_prefill_novo_sobre_velho": -0.05927604051242963,
+  "razao_decode_novo_sobre_velho": -0.054393874338056314,
+  "razao_prefill_b2_sobre_dnovo": -0.0008165975816407656,
+  "razao_decode_b2_sobre_dnovo": -0.0005906658897069095,
+  "HC3": "dentro do limite",
+  "HC4": "dentro do limite",
+  "HC6": "comprovada",
+  "regressao": []
+ },
+ "HC1": "dentro",
+ "HC1b": {
+  "classe": "SEM PROVA",
+  "divergencias": [],
+  "motivo": "pasta da coleta não fornecida (--coleta): a coleta é uma execução própria",
+  "problemas": []
+ },
+ "HC2a": "descritivo",
+ "HC2b": {
+  "soma_antes_do_degrau_ns": 2662004.0,
+  "soma_patamar_ns": 6782797.5,
+  "camadas_antes": 11,
+  "camada_transicao": 11,
+  "camadas_patamar_de": 12,
+  "b_lanca_parcela": 0.8327338880723013,
+  "b_dtod_parcela": 0.11382379675681838,
+  "b_lanca_mais_b_dtod_parcela": 0.9465576848291197
+ },
+ "HC5": "ressalva",
+ "h_pre_layer_mediana_camada_ns_b2_novo": [
+  258252.0,
+  239382.0,
+  244117.0,
+  237822.0,
+  241276.5,
+  239227.0,
+  241066.5,
+  239251.5,
+  241646.5,
+  240721.5,
+  239241.5,
+  241337.0,
+  287317.0,
+  590654.0,
+  591079.0,
+  590744.0,
+  590959.0,
+  589619.0,
+  590429.0,
+  590714.0,
+  590119.5,
+  590394.5,
+  590159.5,
+  590609.0
+ ],
+ "ids_iguais_entre_braços": true,
+ "divergencias_5c": [],
+ "regressao": [],
+ "orcamento": {
+  "modelos": [
+   "1b"
+  ],
+  "limite_s": 1200,
+  "folga_s": 180,
+  "decorrido_s": 147,
+  "cortes": [],
+  "reps": {
+   "controle": 3
+  },
+  "cortado": false,
+  "nao_rodou": [],
+  "estimativas_sao_tetos_de_processo": true
+ },
+ "teto_excedido": []
+}

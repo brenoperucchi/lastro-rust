@@ -1,0 +1,29 @@
+{
+ "tipo": "f2c-coleta-resultado",
+ "modelo": "1b",
+ "HC1b": {
+  "classe": "dentro",
+  "divergencias": [],
+  "problemas": [],
+  "arquivos_sha": {
+   "original": "9e5bb8c2438f2566895d935aa1060aba800a595f00704271a1b4dbba7ec37a27",
+   "candidato": "9e5bb8c2438f2566895d935aa1060aba800a595f00704271a1b4dbba7ec37a27"
+  },
+  "binarios": {
+   "original": "a76a9e72b962d0f6ecec7a65a47c8506b1f7f65d0c68d0c2414e03148f6a2540",
+   "candidato": "504eca75b908716ee8e75dcdd0c4e859d76207af82071484ed716426d48216f8"
+  },
+  "par_aplicavel": {
+   "base": "a76a9e72b962d0f6ecec7a65a47c8506b1f7f65d0c68d0c2414e03148f6a2540",
+   "candidato": "504eca75b908716ee8e75dcdd0c4e859d76207af82071484ed716426d48216f8"
+  }
+ },
+ "teste_gpu": {
+  "executado": true,
+  "rc": 0,
+  "passou": true,
+  "procedencia_completa": true,
+  "commit_worktree": "71dfc8e719260e9ccb2862740360b55a38b30d61",
+  "sha_executavel": "ceb10e4fe03d0e16c7bf9e5e33d72c7b3a821739e479ec4ecb9445da9ef7aa30"
+ }
+}
