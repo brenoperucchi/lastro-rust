@@ -11,20 +11,20 @@ Fontes: `plano-desempenho-copias-20261111.md` (v3, aprovada na rodada 165) e a d
 
 Fonte reproduzível, dois commits locais (sem push), cada binário construído do seu commit:
 
-- Commit base: gancho de coleta, instrumento v2 (contrato v1 preservado), pacote F2C (extratores, roteiro, testes, este critério). Não contém a O1 e compila sem ela. Hash: PREENCHER NO CONGELAMENTO.
-- Commit candidato: o commit base mais a O1. Hash: PREENCHER NO CONGELAMENTO.
+- Commit base: gancho de coleta, instrumento v2 (contrato v1 preservado), pacote F2C (extratores, roteiro, testes, este critério). Não contém a O1 e compila sem ela. Hash: 84877f02b237057ad5f9f7d3ca054437f410eddc.
+- Commit candidato: o commit base mais a O1. Hash: 71dfc8e719260e9ccb2862740360b55a38b30d61.
 - O diff entre os dois (`git diff <base> <candidato> --stat`) lista exatamente: `rust/moe-rt/src/cuda_dense.rs` (`attn_block_b`, os campos de `Dense` e as estáticas e ganchos dos injetores de falha), `rust/moe-rt/src/reforma.rs` (novo), `rust/moe-rt/src/lib.rs` (`mod reforma`), `rust/moe-rt/src/cuda_backend.rs` (`sync_before_drop` com visibilidade `pub(crate)` e os injetores `injeta_falha_no_lancamento_reformado` e `injeta_falha_na_reforma`) e `rust/moe-rt/tests/motor_reforma_gpu.rs` (novo). Os injetores somam 12 leituras atômicas relaxadas por posição e camada no candidato (4 nos lançamentos reformados e 8 nas reformas); entram na conta do par D_velho/D_novo como parte da O1.
 - Build de cada binário (worktree fora da árvore principal, alvo de compilação próprio, sem GPU):
-  `git worktree add <pasta-base> <hash-base>` e `git worktree add <pasta-cand> <hash-cand>`; em cada uma, `cd rust/moe-rt && CARGO_TARGET_DIR=<alvo-proprio> cargo build --release --bin primeira-palavra`. O binário vai para `.herdr/binarios/primeira-palavra-f2c-base` e `.herdr/binarios/primeira-palavra-f2c-cand`, sem permissão de escrita.
-- Onde entram os shas (todos PREENCHER NO CONGELAMENTO): `[binario-base]`, `[binario-cand]`, `[script-f2b-extrai-v2]`, `[script-f2c-extrai]` e `[criterio-f2c]` no FIXO de `roda-f2c-janela.sh`, e as linhas abaixo.
+  `git worktree add <pasta-base> <hash-base>` e `git worktree add <pasta-cand> <hash-cand>`; em cada uma, `cd rust/moe-rt && CARGO_TARGET_DIR=<alvo-proprio> cargo build --release --bin primeira-palavra`. O binário vai para `.herdr/binarios/primeira-palavra-f2c-base-a76a9e72` e `.herdr/binarios/primeira-palavra-f2c-cand-504eca75`, sem permissão de escrita.
+- Onde entram os shas (todos preenchidos no congelamento): `[binario-base]`, `[binario-cand]`, `[script-f2b-extrai-v2]`, `[script-f2c-extrai]` e `[criterio-f2c]` no FIXO de `roda-f2c-janela.sh`, e as linhas abaixo.
 
-Shas (preencher no congelamento, antes de qualquer janela; enquanto estiverem pendentes o roteiro recusa):
+Shas congelados (o roteiro recusa se qualquer um divergir):
 
-- hash do commit base: PREENCHER NO CONGELAMENTO
-- hash do commit candidato: PREENCHER NO CONGELAMENTO
-- binário base+gancho: PREENCHER NO CONGELAMENTO
-- binário candidato: PREENCHER NO CONGELAMENTO
-- f2b-extrai-v2.py e f2c-extrai.py: PREENCHER NO CONGELAMENTO (o f2b-extrai.py de 14:10 fica intocado, sha cd6aa211..., e continua verificável por roda-f2b-janela.sh)
+- hash do commit base: 84877f02b237057ad5f9f7d3ca054437f410eddc
+- hash do commit candidato: 71dfc8e719260e9ccb2862740360b55a38b30d61
+- binário base+gancho: a76a9e72b962d0f6ecec7a65a47c8506b1f7f65d0c68d0c2414e03148f6a2540
+- binário candidato: 504eca75b908716ee8e75dcdd0c4e859d76207af82071484ed716426d48216f8
+- f2b-extrai-v2.py 4d919ed9a5eedc5b2dd24761f7fb5b65c5af6d893ea61ea1a277b7aa7e57eb1f e f2c-extrai.py 607c4fd11c9960d323503e06c3ece0b1663ebd58d885258455e13c17a25ce43a (o f2b-extrai.py de 14:10 fica intocado, sha cd6aa211..., e continua verificável por roda-f2b-janela.sh)
 
 ## 2. Desenho
 

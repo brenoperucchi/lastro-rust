@@ -10,8 +10,8 @@ echo "pasta de teste: $D (apagada ao fim se tudo passar; --guarda mantém)"
 falhas=0
 confere() { if eval "$2"; then echo "ok: $1"; else echo "FALHOU: $1"; falhas=$((falhas+1)); fi; }
 "$J" --verifica-fixos > "$D/vf.txt" 2>&1; rc=$?
-confere "--verifica-fixos com shas pendentes sai 1" '[ $rc = 1 ]'
-confere "--verifica-fixos marca PENDENTE" 'grep -q PENDENTE "$D/vf.txt"'
+confere "--verifica-fixos com tudo congelado sai 0" '[ $rc = 0 ]'
+confere "--verifica-fixos sem PENDENTE, FALHA ou AUSENTE" '! grep -qE " (PENDENTE|FALHA|AUSENTE) " "$D/vf.txt"'
 "$J" > "$D/sa.txt" 2>&1; rc=$?
 confere "sem argumentos sai 2" '[ $rc = 2 ]'
 "$J" --modelos 1b --saida "$D/s" > "$D/pa.txt" 2>&1; rc=$?
