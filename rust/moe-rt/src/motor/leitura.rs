@@ -129,6 +129,7 @@ pub fn le_ids_com_pendente<B: Backend, P: PreparaPasso>(eng: &mut Engine<B>, pre
         if pf {
             eng.perfil_registra_bloco(crate::perfil_bloco::RecBloco { gen, m, pos_ini, t: [t0, t1, t2, t3, agora()], f0_pendente });
             eng.perfil_f2_entrega(gen, m, pos_ini, t2, t3);
+            eng.perfil_f2b_entrega(gen, m, pos_ini);
         }
         ini += m;
     }

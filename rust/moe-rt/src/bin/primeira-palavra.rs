@@ -988,6 +988,10 @@ fn gera_prova(args: &Args, exe: &Path) -> Result<i32, String> {
     let f2_pedido = moe_rt::perfil_bloco::f2_do_ambiente();
     let f2_ligado = moe_rt::perfil_bloco::f2_efetivo(perfil_ligado, f2_pedido);
     println!("{}", moe_rt::perfil_bloco::linha_estado_f2(perfil_ligado, f2_pedido));
+    // F2 nível B (pré-roteador por dentro): exige perfil-bloco e perfil-f2.
+    let f2b_pedido = moe_rt::perfil_bloco::f2b_do_ambiente();
+    let f2b_ligado = moe_rt::perfil_bloco::f2b_efetivo(perfil_ligado, f2_pedido, f2b_pedido);
+    println!("{}", moe_rt::perfil_bloco::linha_estado_f2b(perfil_ligado, f2_pedido, f2b_pedido));
     let mut perfil_pedidos: Vec<moe_rt::perfil_bloco::RecPedido> = vec![];
     moe_rt::affinity::set_compute_plan(moe_rt::affinity::Afin::A0.compute_plan(args.threads));
     let device = Device::new(0).map_err(|e| format!("{e:?}"))?;
@@ -1020,6 +1024,9 @@ fn gera_prova(args: &Args, exe: &Path) -> Result<i32, String> {
     if f2_ligado {
         grava_json(&args.saida.join("perfil-f2.json"), &moe_rt::perfil_bloco::perfil_f2_json(&perfil_pedidos))?;
     }
+    if f2b_ligado {
+        grava_json(&args.saida.join("perfil-f2b.json"), &moe_rt::perfil_bloco::perfil_f2b_json(&perfil_pedidos))?;
+    }
     integro = agora(integro);
     std::fs::write(args.saida.join("gera-final.txt"), format!("tipo=gera-final\nintegro={}\n", integro as u8)).map_err(|e| e.to_string())?;
     let (dec, _conj) = gr::decisao_conjunto(&linhas, &rotulos, integro);
@@ -1038,6 +1045,7 @@ fn gera_livre(args: &Args) -> Result<i32, String> {
     }
     eprintln!("{}", moe_rt::perfil_bloco::linha_estado(moe_rt::perfil_bloco::ligado_do_ambiente()));
     eprintln!("{}", moe_rt::perfil_bloco::linha_estado_f2(moe_rt::perfil_bloco::ligado_do_ambiente(), moe_rt::perfil_bloco::f2_do_ambiente()));
+    eprintln!("{}", moe_rt::perfil_bloco::linha_estado_f2b(moe_rt::perfil_bloco::ligado_do_ambiente(), moe_rt::perfil_bloco::f2_do_ambiente(), moe_rt::perfil_bloco::f2b_do_ambiente()));
     let tok_sha = sha256(&mdir.join("tokenizer.json"))?;
     if sha_esperado("tokenizer.json") != Some(tok_sha.as_str()) {
         return Err(format!("tokenizer.json com sha256 {tok_sha}, não o do Granite 3.1 congelado"));

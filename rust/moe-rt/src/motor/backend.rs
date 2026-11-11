@@ -198,6 +198,11 @@ pub trait Backend: Send + Sync + 'static {
     fn pre_layer(&self, _s: &Self::Stream, _layer: usize) -> Result<(), Self::Error> {
         Ok(())
     }
+    /// Variante de [`pre_layer`](Self::pre_layer) com o acumulador da F2 nível B (`LASTRO_PERFIL_F2B`). O motor só a chama com a F2B ligada. O
+    /// padrão é idêntico ao `pre_layer` (o backend falso e o desligado ficam iguais): deixa o acumulador vazio, e a IB3 invalida o pedido.
+    fn pre_layer_f2b(&self, s: &Self::Stream, layer: usize, _acc: &mut crate::perfil_bloco::AccB) -> Result<(), Self::Error> {
+        self.pre_layer(s, layer)
+    }
     /// Depois do `add_y` da última camada: a norma final e a cabeça de saída (A1.3). O padrão não faz nada.
     fn post_layers(&self, _s: &Self::Stream) -> Result<(), Self::Error> {
         Ok(())

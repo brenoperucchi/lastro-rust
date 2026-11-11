@@ -99,11 +99,13 @@ pub struct Engine<B: Backend> {
     closed: bool,
     /// Acumulador da F2 do host por operação: `None` com a variável desligada (nada é alocado nem cronometrado).
     f2_acc: Option<crate::perfil_bloco::AccHost>,
+    /// Acumulador da F2 nível B (`LASTRO_PERFIL_F2B`): `None` com a variável desligada (nada é alocado nem cronometrado).
+    f2b_acc: Option<crate::perfil_bloco::AccB>,
 }
 
 impl<B: Backend> Engine<B> {
     pub fn new<C: HostExperts>(b: Arc<B>, parts: Parts<B>, cfg: Config, cpu: C) -> R<Self, B> {
-        Self::new_pf2(b, parts, cfg, cpu, crate::perfil_bloco::ligado_do_ambiente(), crate::perfil_bloco::f2_do_ambiente())
+        Self::new_pf2b(b, parts, cfg, cpu, crate::perfil_bloco::ligado_do_ambiente(), crate::perfil_bloco::f2_do_ambiente(), crate::perfil_bloco::f2b_do_ambiente())
     }
 
     /// Como [`Engine::new`], com o instrumento de prefill (`perfil_bloco`) escolhido por quem chama em vez de lido do ambiente: `false` não
@@ -115,7 +117,14 @@ impl<B: Backend> Engine<B> {
     /// Como [`Engine::new_pf`], com a F2 do host por operação (`perfil_bloco`, plano da F2) escolhida por quem chama: só vale com `perfil`
     /// ligado; `false` não aloca acumulador nem lê relógio em `enqueue_step`.
     pub fn new_pf2<C: HostExperts>(b: Arc<B>, parts: Parts<B>, cfg: Config, cpu: C, perfil: bool, f2: bool) -> R<Self, B> {
+        Self::new_pf2b(b, parts, cfg, cpu, perfil, f2, false)
+    }
+
+    /// Como [`Engine::new_pf2`], com a F2 nível B (pré-roteador por dentro) escolhida por quem chama: só vale com `perfil` e `f2` ligados; `false`
+    /// não aloca acumulador nem lê relógio.
+    pub fn new_pf2b<C: HostExperts>(b: Arc<B>, parts: Parts<B>, cfg: Config, cpu: C, perfil: bool, f2: bool, f2b: bool) -> R<Self, B> {
         let f2 = crate::perfil_bloco::f2_efetivo(perfil, f2);
+        let f2b = crate::perfil_bloco::f2b_efetivo(perfil, f2, f2b);
         let keys = cfg.layers * cfg.experts;
         let ok = cfg.layers > 0
             && cfg.topk > 0
@@ -161,7 +170,7 @@ impl<B: Backend> Engine<B> {
             cur_t: AtomicU32::new(cfg.first_token),
             published: Chan::new(),
             returned: Chan::new(),
-            pf: perfil.then(|| Arc::new(crate::perfil_bloco::Compartilhado::novo_f2(f2, cfg.layers))),
+            pf: perfil.then(|| Arc::new(crate::perfil_bloco::Compartilhado::novo_f2b(f2, f2b, cfg.layers))),
         });
         let copy = Arc::new(parts.copy);
         let svc = Service::new(b.clone(), sh.clone(), copy.clone(), parts.weights, cfg.clone(), parts.sides);
@@ -181,8 +190,9 @@ impl<B: Backend> Engine<B> {
             })
             .expect("thread da linha de serviço");
         let f2_acc = f2.then(|| crate::perfil_bloco::AccHost::com_capacidade(cfg.layers));
+        let f2b_acc = f2b.then(|| crate::perfil_bloco::AccB::com_capacidade(cfg.layers, cfg.max_positions));
         Ok(Self { b, sh, compute: parts.compute, copy, table: parts.table, t: cfg.first_token, cfg, service: Some(service),
-                  done, service_result: None, current: None, closed: false, pos: 0, cur_m: 1, f2_acc })
+                  done, service_result: None, current: None, closed: false, pos: 0, cur_m: 1, f2_acc, f2b_acc })
     }
 
     /// Espera o `Published` do próximo token.
@@ -202,7 +212,8 @@ impl<B: Backend> Engine<B> {
     }
 
     /// Com `acc` ausente (o padrão) é idêntica à de antes: cada `marca` testa um `Option` vazio e não lê relógio.
-    fn enqueue_inner(&self, p: &Published, m: usize, mut acc: Option<&mut crate::perfil_bloco::AccHost>) -> Result<(), B::Error> {
+    fn enqueue_inner(&self, p: &Published, m: usize, mut acc: Option<&mut crate::perfil_bloco::AccHost>,
+                     mut accb: Option<&mut crate::perfil_bloco::AccB>) -> Result<(), B::Error> {
         use crate::perfil_bloco as pb;
         let (b, c, t) = (&*self.b, &self.compute, self.t);
         if let Some(a) = acc.as_deref_mut() {
@@ -228,7 +239,10 @@ impl<B: Backend> Engine<B> {
         for l in 0..self.cfg.layers {
             let io = &self.sh.io[l];
             let cam = l as u32;
-            b.pre_layer(c, l)?;
+            match accb.as_deref_mut() {
+                Some(ab) => b.pre_layer_f2b(c, l, ab)?,
+                None => b.pre_layer(c, l)?,
+            }
             marca(pb::H_PRE_LAYER, cam);
             b.route(c, l, io)?;
             marca(pb::H_ROUTE, cam);
@@ -255,6 +269,25 @@ impl<B: Backend> Engine<B> {
                 p.registra_f2_bloco(a.para_bloco(gen, m, pos_ini, t2, t3));
             }
         }
+    }
+
+    /// Entrega o acumulador da F2B do último `enqueue_step` ao registro compartilhado (depois de t4, fora de F2, como a do nível A).
+    pub(crate) fn perfil_f2b_entrega(&self, gen: u32, m: usize, pos_ini: u64) {
+        if let (Some(p), Some(a)) = (&self.sh.pf, &self.f2b_acc) {
+            if p.f2b() {
+                p.registra_f2b_bloco(a.para_bloco(gen, m, pos_ini));
+            }
+        }
+    }
+
+    /// Se a coleta da F2 nível B existe neste motor.
+    pub fn perfil_f2b_ligado(&self) -> bool {
+        self.f2b_acc.is_some()
+    }
+
+    /// A capacidade do acumulador da F2B (para conferir que o caminho quente não realoca).
+    pub fn perfil_f2b_capacidade(&self) -> Option<usize> {
+        self.f2b_acc.as_ref().map(|a| a.capacidade())
     }
 
     /// Se a coleta da F2 do host existe neste motor.
@@ -360,7 +393,14 @@ impl<B: Backend> Engine<B> {
         if let Some(a) = acc.as_mut() {
             a.reinicia(entrada_f2);
         }
-        let r = self.enqueue_inner(&p, m, acc.as_mut());
+        let mut accb = if self.f2b_acc.is_some() && self.perfil_ativo() { self.f2b_acc.take() } else { None };
+        if let Some(a) = accb.as_mut() {
+            a.reinicia();
+        }
+        let r = self.enqueue_inner(&p, m, acc.as_mut(), accb.as_mut());
+        if accb.is_some() {
+            self.f2b_acc = accb;
+        }
         self.cur_m = m;
         self.current = Some((p.side_idx, p.side));
         if let Err(e) = r {

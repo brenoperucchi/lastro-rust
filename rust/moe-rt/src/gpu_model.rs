@@ -38,8 +38,31 @@ pub unsafe fn attention(
     vc: &Tensor<f32>,
     lens: &Tensor<i32>,
     scale: f32,
-    (heads, kv_heads, d, ns): (usize, usize, usize, usize),
+    dims: (usize, usize, usize, usize),
 ) -> Result<(), Error> {
+    attention_b(s, out, part, q, kc, vc, lens, scale, dims, None)
+}
+
+/// [`attention`] com a F2 nível B: com `acc` presente carimba `B_ATTN_PREP` (asserts, `dim` e `gen_split`, até antes do primeiro lançamento) e
+/// `B_LANCA` em cada um dos dois lançamentos; com `None` (o caminho de [`attention`]) não lê relógio. Ordem, argumentos, stream e erros iguais.
+///
+/// # Safety
+/// As mesmas de [`attention`].
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn attention_b(
+    s: &Arc<Stream>,
+    out: &mut Tensor<f32>,
+    part: &mut Tensor<f32>,
+    q: &Tensor<f32>,
+    kc: &Tensor<f32>,
+    vc: &Tensor<f32>,
+    lens: &Tensor<i32>,
+    scale: f32,
+    (heads, kv_heads, d, ns): (usize, usize, usize, usize),
+    mut acc: Option<&mut crate::perfil_bloco::AccB>,
+) -> Result<(), Error> {
+    use crate::perfil_bloco as pb;
+    let t_prep = pb::b_ini(&acc);
     // Os kernels não conferem limites (`unchecked_accesses`) e a grade sai da forma de `part`: uma forma errada leria ou
     // escreveria fora dos tensores em silêncio.
     let dim = |t: &Tensor<f32>| t.shape().iter().map(|&v| v as usize).collect::<Vec<_>>();
@@ -51,11 +74,18 @@ pub unsafe fn attention(
     assert!(kv.len() == 2 && kv[1] == kv_heads * d && kv[0] % ATTN_BN == 0, "atenção: forma do cache de K {kv:?}");
     assert_eq!(dim(vc), kv, "atenção: forma do cache de V");
     let gen_split = vec![ATTN_BN.to_string(), d.to_string(), (heads / kv_heads).to_string()];
-    kernels::attn_split(part.partition([2, d]), q, kc, vc, lens, scale, ns as i32).generics(gen_split).async_on(s).map_err(sync_on_err(s))?;
-    kernels::attn_combine(out.partition([1, d]), &*part, lens, ns as i32)
+    pb::b_fim(&mut acc, pb::B_ATTN_PREP, t_prep);
+    let t0 = pb::b_ini(&acc);
+    let r1 = kernels::attn_split(part.partition([2, d]), q, kc, vc, lens, scale, ns as i32).generics(gen_split).async_on(s).map_err(sync_on_err(s));
+    pb::b_fim(&mut acc, pb::B_LANCA, t0);
+    r1?;
+    let t0 = pb::b_ini(&acc);
+    let r2 = kernels::attn_combine(out.partition([1, d]), &*part, lens, ns as i32)
         .generics(vec![ATTN_BN.to_string(), d.to_string()])
         .async_on(s)
-        .map_err(sync_on_err(s))?;
+        .map_err(sync_on_err(s));
+    pb::b_fim(&mut acc, pb::B_LANCA, t0);
+    r2?;
     Ok(())
 }
 

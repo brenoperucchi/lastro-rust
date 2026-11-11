@@ -746,6 +746,28 @@ impl Backend for CudaBackend {
         }
     }
 
+    /// Variante de `pre_layer` com a F2 nível B: mesmas chamadas, mesma ordem e mesma trava; só carimba `B_LOCK` e passa o acumulador às variantes
+    /// internas de `attn_block_at`. O caminho sem medida é o `pre_layer` acima, intocado.
+    fn pre_layer_f2b(&self, s: &CudaStream, layer: usize, acc: &mut crate::perfil_bloco::AccB) -> Result<(), CudaError> {
+        acc.contexto(layer as u16, crate::perfil_bloco::SEM_POS);
+        let t_lock = crate::perfil_bloco::agora_ns();
+        let mut guard = self.st.lock().unwrap_or_else(|e| e.into_inner());
+        acc.reg(crate::perfil_bloco::B_LOCK, t_lock);
+        let st = &mut *guard;
+        let State { bufs, dense, .. } = st;
+        match dense.as_mut() {
+            Some(m) => {
+                for p in 0..self.cur_m() {
+                    let b = &mut bufs[p];
+                    acc.contexto(layer as u16, p as u16);
+                    m.attn_block_at_b(&s.0, layer, p, &mut b.h, &mut b.xn, Some(&mut *acc))?;
+                }
+                Ok(())
+            }
+            None => Ok(()),
+        }
+    }
+
     fn post_layers(&self, s: &CudaStream) -> Result<(), CudaError> {
         let mut guard = self.st.lock().unwrap_or_else(|e| e.into_inner());
         let st = &mut *guard;

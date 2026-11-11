@@ -9,7 +9,8 @@
 #![allow(unsafe_code)]
 use crate::cuda_backend::{fail_k, kernel_err, CudaError};
 use crate::gpu::{gemv_generics, kernels, tile_k, AXPBY_B, GEMV_BM};
-use crate::gpu_model::{attention, ATTN_BN, ATTN_NS};
+use crate::gpu_model::{attention_b, ATTN_BN, ATTN_NS};
+use crate::perfil_bloco::{self as pb, AccB};
 use crate::model::{Config, HostModel};
 use cuda_core::{sys, Stream};
 use cutile::half::bf16;
@@ -204,20 +205,30 @@ impl Dense {
     /// e roda [`attn_block`](Self::attn_block). Com um passo de uma posição vinda de `begin_token` (sem `begin_step`), `p = 0` é o
     /// caminho de sempre.
     pub fn attn_block_at(&mut self, s: &Arc<Stream>, l: usize, p: usize, h: &mut Tensor<f32>, xn: &mut Tensor<f32>) -> Result<(), CudaError> {
+        self.attn_block_at_b(s, l, p, h, xn, None)
+    }
+
+    /// [`attn_block_at`](Self::attn_block_at) com a F2 nível B: com `acc` presente carimba `B_SETUP` (os swaps antes e a restauração depois de
+    /// `attn_block_b`); com `None` não lê relógio. Mesma ordem, mesmos swaps, mesma restauração e mesmos erros.
+    pub fn attn_block_at_b(&mut self, s: &Arc<Stream>, l: usize, p: usize, h: &mut Tensor<f32>, xn: &mut Tensor<f32>, mut acc: Option<&mut AccB>) -> Result<(), CudaError> {
         if self.step_cs.is_empty() {
-            return if p == 0 { self.attn_block(s, l, h, xn) } else { Err(CudaError::Config("posição do passo sem begin_step")) };
+            return if p == 0 { self.attn_block_b(s, l, h, xn, acc) } else { Err(CudaError::Config("posição do passo sem begin_step")) };
         }
         if p >= self.step_cs.len() {
             return Err(CudaError::Config("posição fora do passo"));
         }
+        let t_setup = pb::b_ini(&acc);
         let pl = if MUTANTE_LENS_DA_ULTIMA.load(std::sync::atomic::Ordering::SeqCst) { self.step_lens.len() - 1 } else { p };
         std::mem::swap(&mut self.cs, &mut self.step_cs[p]);
         std::mem::swap(&mut self.lens, &mut self.step_lens[pl]);
         let old_cur = std::mem::replace(&mut self.cur, self.step_base + p);
-        let r = self.attn_block(s, l, h, xn);
+        pb::b_fim(&mut acc, pb::B_SETUP, t_setup);
+        let r = self.attn_block_b(s, l, h, xn, acc.as_deref_mut());
+        let t_setup = pb::b_ini(&acc);
         std::mem::swap(&mut self.cs, &mut self.step_cs[p]);
         std::mem::swap(&mut self.lens, &mut self.step_lens[pl]);
         self.cur = old_cur;
+        pb::b_fim(&mut acc, pb::B_SETUP, t_setup);
         r
     }
 
@@ -232,7 +243,25 @@ impl Dense {
     }
 
     /// A atenção da camada `l` sobre `h` (residual) e a norma de entrada do bloco MoE em `xn`.
+    #[allow(dead_code)]
     pub fn attn_block(&mut self, s: &Arc<Stream>, l: usize, h: &mut Tensor<f32>, xn: &mut Tensor<f32>) -> Result<(), CudaError> {
+        self.attn_block_b(s, l, h, xn, None)
+    }
+
+    /// [`attn_block`](Self::attn_block) com a F2 nível B: com `acc` presente carimba `B_GENERICS` (o prelúdio), `B_LANCA` (cada expressão
+    /// `async_on`, as nove daqui; as duas de `attention_b` ficam lá) e `B_DTOD` (cada `dtod`); com `None` não lê relógio. Mesma ordem de
+    /// lançamentos, argumentos, stream e erros.
+    pub fn attn_block_b(&mut self, s: &Arc<Stream>, l: usize, h: &mut Tensor<f32>, xn: &mut Tensor<f32>, mut acc: Option<&mut AccB>) -> Result<(), CudaError> {
+        // Mede a expressão `$e` (um `Result`) e a devolve; sem acumulador não lê relógio.
+        macro_rules! med {
+            ($op:expr, $e:expr) => {{
+                let t0 = pb::b_ini(&acc);
+                let r = $e;
+                pb::b_fim(&mut acc, $op, t0);
+                r
+            }};
+        }
+        let t_gen = pb::b_ini(&acc);
         let raw = s.cu_stream();
         let c = self.cfg.clone();
         let (hd, d) = (c.hidden, c.head_dim);
@@ -242,33 +271,34 @@ impl Dense {
         let (gen_hh, gen_qd) = (gemv_generics(hd), gemv_generics(qd));
         let gen_rope = vec![half.to_string()];
         let lay = &self.layers[l];
+        pb::b_fim(&mut acc, pb::B_GENERICS, t_gen);
         // SAFETY (todos os `async_on` daqui): `unchecked_accesses`; as formas são as de `new`, múltiplas dos blocos; os tensores
         // são do estado e vivem além da sincronização da stream; só esta stream os toca, em ordem.
         unsafe {
-            kernels::rmsnorm((&mut *xn).partition([norm_c]), &*h, &lay.ln_attn, c.eps).generics(gen_norm.clone()).async_on(s).map_err(fail_k(raw))?;
-            kernels::gemv((&mut self.q).partition([GEMV_BM]), &lay.q, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw))?;
-            kernels::gemv((&mut self.k).partition([GEMV_BM]), &lay.k, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw))?;
-            kernels::gemv((&mut self.v).partition([GEMV_BM]), &lay.v, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw))?;
+            med!(pb::B_LANCA, kernels::rmsnorm((&mut *xn).partition([norm_c]), &*h, &lay.ln_attn, c.eps).generics(gen_norm.clone()).async_on(s).map_err(fail_k(raw)))?;
+            med!(pb::B_LANCA, kernels::gemv((&mut self.q).partition([GEMV_BM]), &lay.q, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw)))?;
+            med!(pb::B_LANCA, kernels::gemv((&mut self.k).partition([GEMV_BM]), &lay.k, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw)))?;
+            med!(pb::B_LANCA, kernels::gemv((&mut self.v).partition([GEMV_BM]), &lay.v, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw)))?;
         }
-        dtod(&self.q2, 0, &self.q, qd, s, raw)?;
-        dtod(&self.k2, 0, &self.k, kvd, s, raw)?;
+        med!(pb::B_DTOD, dtod(&self.q2, 0, &self.q, qd, s, raw))?;
+        med!(pb::B_DTOD, dtod(&self.k2, 0, &self.k, kvd, s, raw))?;
         // SAFETY: como acima.
         unsafe {
-            kernels::rope((&mut self.qr).partition([2, half]), &self.q2, &self.cs).generics(gen_rope.clone()).async_on(s).map_err(fail_k(raw))?;
-            kernels::rope((&mut self.kr).partition([2, half]), &self.k2, &self.cs).generics(gen_rope.clone()).async_on(s).map_err(fail_k(raw))?;
+            med!(pb::B_LANCA, kernels::rope((&mut self.qr).partition([2, half]), &self.q2, &self.cs).generics(gen_rope.clone()).async_on(s).map_err(fail_k(raw)))?;
+            med!(pb::B_LANCA, kernels::rope((&mut self.kr).partition([2, half]), &self.k2, &self.cs).generics(gen_rope.clone()).async_on(s).map_err(fail_k(raw)))?;
         }
-        dtod(&lay.k_cache, self.cur * kvd, &self.kr, kvd, s, raw)?;
-        dtod(&lay.v_cache, self.cur * kvd, &self.v, kvd, s, raw)?;
-        dtod(&self.qh, 0, &self.qr, qd, s, raw)?;
+        med!(pb::B_DTOD, dtod(&lay.k_cache, self.cur * kvd, &self.kr, kvd, s, raw))?;
+        med!(pb::B_DTOD, dtod(&lay.v_cache, self.cur * kvd, &self.v, kvd, s, raw))?;
+        med!(pb::B_DTOD, dtod(&self.qh, 0, &self.qr, qd, s, raw))?;
         // SAFETY: `lens` está entre 1 e `max_len` (`begin_token`); as formas são as de `new`.
-        unsafe { attention(s, &mut self.att2, &mut self.part, &self.qh, &lay.k_cache, &lay.v_cache, &self.lens, c.attention_multiplier, (c.heads, c.kv_heads, d, ATTN_NS)) }
+        unsafe { attention_b(s, &mut self.att2, &mut self.part, &self.qh, &lay.k_cache, &lay.v_cache, &self.lens, c.attention_multiplier, (c.heads, c.kv_heads, d, ATTN_NS), acc.as_deref_mut()) }
             .map_err(fail_k(raw))?;
-        dtod(&self.att, 0, &self.att2, qd, s, raw)?;
+        med!(pb::B_DTOD, dtod(&self.att, 0, &self.att2, qd, s, raw))?;
         // SAFETY: como acima.
         unsafe {
-            kernels::gemv((&mut self.o).partition([GEMV_BM]), &lay.o, &self.att).generics(gen_qd).async_on(s).map_err(fail_k(raw))?;
-            kernels::axpby((&mut *h).partition([AXPBY_B]), &self.o, c.residual_multiplier, 1.0f32).generics(vec![AXPBY_B.to_string()]).async_on(s).map_err(fail_k(raw))?;
-            kernels::rmsnorm((&mut *xn).partition([norm_c]), &*h, &lay.ln_moe, c.eps).generics(gen_norm).async_on(s).map_err(fail_k(raw))?;
+            med!(pb::B_LANCA, kernels::gemv((&mut self.o).partition([GEMV_BM]), &lay.o, &self.att).generics(gen_qd).async_on(s).map_err(fail_k(raw)))?;
+            med!(pb::B_LANCA, kernels::axpby((&mut *h).partition([AXPBY_B]), &self.o, c.residual_multiplier, 1.0f32).generics(vec![AXPBY_B.to_string()]).async_on(s).map_err(fail_k(raw)))?;
+            med!(pb::B_LANCA, kernels::rmsnorm((&mut *xn).partition([norm_c]), &*h, &lay.ln_moe, c.eps).generics(gen_norm).async_on(s).map_err(fail_k(raw)))?;
         }
         Ok(())
     }

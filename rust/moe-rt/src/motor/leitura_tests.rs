@@ -620,3 +620,92 @@ fn f2_nao_coleta_no_decode() {
     assert_eq!((f.hosts.len(), f.host_extra, f.tb_extra), (1, 0, 0), "o decode não registra host nem serviço");
     fecha(&gpu, eng);
 }
+
+// ---- F2 nível B (pré-roteador por dentro): só a escolha da variante, o padrão do trait e o desligado, com o backend falso ---------------------
+
+fn motor_f2b(layers: usize, slots: usize, total: usize, perfil: bool, f2: bool, f2b: bool) -> (Arc<FakeGpu>, Engine<FakeGpu>) {
+    let routing: Vec<Vec<Vec<u32>>> = (0..total.max(1)).map(|p| (0..layers).map(|l| rota(p, l)).collect()).collect();
+    let gpu = FakeGpu::new_sched(
+        FakeCfg { layers, experts: 4, topk: 2, width: 3, routing, fail_main_at: None, copy_immediate: false, max_positions: 8 },
+        SchedCfg { seed: 0xA0A, weights: [1, 1, 1, 1], budget: 3_000_000 },
+    );
+    let cfg = Config { layers, experts: 4, topk: 2, width: 3, slots, backlog: 0, admit: AdmitMode::TokenBarrier, first_token: 1,
+                       prefill: (0..slots as u32).collect(), max_positions: 8, mutant: None };
+    let parts = gpu.parts(&cfg);
+    let eng = Engine::new_pf2b(gpu.clone(), parts, cfg, FakeCpu { weighted: true, ..FakeCpu::default() }, perfil, f2, f2b).expect("motor");
+    (gpu, eng)
+}
+
+type SaidaF2b = (Option<crate::perfil_bloco::RecPedido>, Option<usize>, Option<usize>, Vec<(u64, Vec<usize>)>, Vec<(u64, usize)>, bool);
+
+fn roda_f2b(layers: usize, n: usize, perfil: bool, f2: bool, f2b: bool) -> SaidaF2b {
+    let (gpu, mut eng) = motor_f2b(layers, 1, n, perfil, f2, f2b);
+    let (cap0, ligado) = (eng.perfil_f2b_capacidade(), eng.perfil_f2b_ligado());
+    let prep = Prep::com_gpu(n + 8, &gpu);
+    let mut pf = eng.perfil_armar(plano_blocos(n, 8).len());
+    le_ids(&mut eng, &prep, &ids(n)).unwrap();
+    pf.logits_ini();
+    pf.desarma();
+    let d = DadosPedido { modelo: String::new(), indice: 0, aquecimento: false, n, plano: plano_blocos(n, 8), prefill_ms: 0.0, decode_passo_ms_mediana: 1.0 };
+    let e = pf.fecha_com(d, &mut || {
+        let _ = super::backend::Backend::relax(&*gpu);
+    });
+    let r = (e, cap0, eng.perfil_f2b_capacidade(), prep.blocos(), gpu.begin_steps(), ligado);
+    fecha(&gpu, eng);
+    r
+}
+
+#[test]
+fn f2b_so_existe_com_as_tres_variaveis_e_o_desligado_nao_guarda_nada() {
+    // Sem F2: F2B pedida não liga; sem bloco, idem; desligada, nenhum acumulador e o pedido não traz `f2b`.
+    for (perfil, f2, f2b) in [(true, true, false), (true, false, true), (false, true, true), (false, false, false)] {
+        let (e, cap0, cap1, _, _, ligado) = roda_f2b(3, 17, perfil, f2, f2b);
+        assert!(!ligado && cap0.is_none() && cap1.is_none(), "{perfil} {f2} {f2b}");
+        assert!(e.is_none_or(|e| e.f2b.is_none()), "{perfil} {f2} {f2b}");
+    }
+    let (e, cap0, cap1, _, _, ligado) = roda_f2b(3, 17, true, true, true);
+    assert!(ligado);
+    assert_eq!(cap0, Some(crate::perfil_bloco::capacidade_f2b(3, 8)), "capacidade fixa reservada na criação");
+    assert_eq!(cap0, cap1, "o caminho quente não realoca");
+    assert!(e.expect("pedido").f2b.is_some());
+}
+
+#[test]
+fn f2b_com_o_fake_mantem_ids_e_ordem_das_chamadas_e_sai_invalida_pela_ib3() {
+    // O padrão do trait (`pre_layer_f2b` chama `pre_layer`) deixa o motor igual: mesmos blocos preparados e mesmos begin_step, ligada ou não.
+    let (e_off, _, _, blocos_off, begins_off, _) = roda_f2b(3, 17, true, true, false);
+    let (e_on, _, _, blocos_on, begins_on, _) = roda_f2b(3, 17, true, true, true);
+    assert_eq!(blocos_on, blocos_off);
+    assert_eq!(begins_on, begins_off);
+    assert!(e_off.expect("pedido").f2b.is_none());
+    let e = e_on.expect("pedido");
+    let d = e.f2b.as_ref().expect("F2B coletada");
+    assert_eq!(d.layers, 3);
+    assert_eq!(d.blocos.len(), e.blocos.len());
+    for b in d.blocos.iter().flatten() {
+        assert!(b.regs.is_empty() && b.perdidos == 0, "o Fake não produz registros: contagem zero");
+        assert!(!b.ib3(3));
+    }
+    let p = d.problemas(&e.blocos, e.f2.as_ref());
+    assert!(!p.is_empty() && p.iter().any(|m| m.contains("IB3")), "contagem zero com a F2B ligada invalida o pedido: {p:?}");
+}
+
+#[test]
+fn f2b_nao_coleta_no_decode() {
+    let (gpu, mut eng) = motor_f2b(2, 0, 20, true, true, true);
+    let prep = Prep::com_gpu(30, &gpu);
+    let mut pf = eng.perfil_armar(1);
+    le_ids(&mut eng, &prep, &ids(8)).unwrap();
+    pf.logits_ini();
+    pf.desarma();
+    for k in 0..3 {
+        le_ids(&mut eng, &prep, &[(k * 5 + 1) % VOCAB]).unwrap();
+    }
+    let d = DadosPedido { modelo: String::new(), indice: 0, aquecimento: false, n: 8, plano: vec![8], prefill_ms: 0.0, decode_passo_ms_mediana: 1.0 };
+    let e = pf.fecha_com(d, &mut || {
+        let _ = super::backend::Backend::relax(&*gpu);
+    }).unwrap();
+    let f = e.f2b.as_ref().unwrap();
+    assert_eq!((f.blocos.len(), f.extra), (1, 0), "o decode não registra bloco de F2B");
+    fecha(&gpu, eng);
+}

@@ -297,6 +297,9 @@ pub struct Compartilhado {
     layers: usize,
     f2_blocos: Mutex<Vec<BlocoF2>>,
     f2_tb: Mutex<Vec<RecTb>>,
+    /// `LASTRO_PERFIL_F2B` ligada (só existe com bloco e F2).
+    f2b: bool,
+    f2b_blocos: Mutex<Vec<BlocoB>>,
 }
 
 impl Compartilhado {
@@ -305,9 +308,20 @@ impl Compartilhado {
     }
     /// Como [`novo`](Self::novo), com a coleta da F2 do host (`LASTRO_PERFIL_F2`) escolhida por quem chama.
     pub fn novo_f2(f2: bool, layers: usize) -> Self {
+        Self::novo_f2b(f2, false, layers)
+    }
+    /// Como [`novo_f2`](Self::novo_f2), com a F2 nível B (`LASTRO_PERFIL_F2B`); `f2b` só vale com `f2`.
+    pub fn novo_f2b(f2: bool, f2b: bool, layers: usize) -> Self {
         let _ = agora_ns(); // fixa a origem antes de qualquer carimbo
         Self { armado: AtomicBool::new(false), t_armado: AtomicU64::new(0), blocos: Mutex::new(vec![]), servico: Mutex::new(vec![]),
-               f2, layers, f2_blocos: Mutex::new(vec![]), f2_tb: Mutex::new(vec![]) }
+               f2, layers, f2_blocos: Mutex::new(vec![]), f2_tb: Mutex::new(vec![]), f2b: f2 && f2b, f2b_blocos: Mutex::new(vec![]) }
+    }
+    /// A coleta da F2 nível B está ligada neste motor.
+    pub fn f2b(&self) -> bool {
+        self.f2b
+    }
+    pub fn registra_f2b_bloco(&self, r: BlocoB) {
+        trava(&self.f2b_blocos).push(r);
     }
     /// A coleta da F2 do host está ligada neste motor.
     pub fn f2(&self) -> bool {
@@ -394,6 +408,11 @@ impl Armado {
             t.clear();
             t.reserve(blocos_previstos);
         }
+        if p.f2b {
+            let mut b = trava(&p.f2b_blocos);
+            b.clear();
+            b.reserve(blocos_previstos);
+        }
         let t = agora_ns();
         p.t_armado.store(t, Ordering::Release);
         p.armado.store(true, Ordering::Release);
@@ -454,6 +473,11 @@ impl Armado {
             let tbs: Vec<Option<RecTb>> = blocos.iter().map(|b| tb.iter().position(|h| h.gen == b.gen).map(|i| tb.swap_remove(i))).collect();
             DadosF2 { layers: pf.layers, hosts, tbs, host_extra: hb.len(), tb_extra: tb.len() }
         });
+        let f2b = pf.f2b.then(|| {
+            let mut bb = std::mem::take(&mut *trava(&pf.f2b_blocos));
+            let blocos_b: Vec<Option<BlocoB>> = blocos.iter().map(|b| bb.iter().position(|h| h.gen == b.gen).map(|i| bb.swap_remove(i))).collect();
+            DadosF2B { layers: pf.layers, blocos: blocos_b, extra: bb.len() }
+        });
         Some(RecPedido {
             modelo: d.modelo,
             indice: d.indice,
@@ -468,6 +492,7 @@ impl Armado {
             t_desarmado: self.t_desarmado,
             prefill_ms: d.prefill_ms,
             f2,
+            f2b,
             decode_passo_ms_mediana: d.decode_passo_ms_mediana,
         })
     }
@@ -482,6 +507,9 @@ impl Drop for Armado {
             if p.f2 {
                 trava(&p.f2_blocos).clear();
                 trava(&p.f2_tb).clear();
+            }
+            if p.f2b {
+                trava(&p.f2b_blocos).clear();
             }
         }
     }
@@ -510,6 +538,8 @@ pub struct RecPedido {
     pub decode_passo_ms_mediana: f64,
     /// F2 do host por operação (`LASTRO_PERFIL_F2`): `None` com a variável desligada. Não entra em `perfil-bloco.json` (esquema v2 intacto).
     pub f2: Option<DadosF2>,
+    /// F2 nível B (`LASTRO_PERFIL_F2B`): `None` com a variável desligada. Não entra em `perfil-bloco.json` nem em `perfil-f2.json`.
+    pub f2b: Option<DadosF2B>,
 }
 
 impl RecPedido {
@@ -1835,6 +1865,584 @@ pub fn classifica_controle_f2(procs: &[ProcessoControleF2], orcamento_ok: bool, 
     ResultadoControleF2 { classe: classe_por_desvio(principal.desvio), classe_apoio: Some(classe_por_desvio(apoio.desvio)), principal: Some(principal), apoio: Some(apoio) }
 }
 
+// ---- F2 nível B: o pré-roteador por dentro (plano `plano-f2-nivel-b-pre-roteador-20261111.md`, versão 2, aprovada na rodada 158) -----------
+//
+// Descritivo. Ligado por `LASTRO_PERFIL_F2B=1` (só o valor exato `1`) e só junto com `LASTRO_PERFIL_BLOCO=1` e `LASTRO_PERFIL_F2=1`. Desligado não
+// há acumulador, relógio nem gravação: `Engine::f2b_acc` é `None`, o motor chama `pre_layer` e as variantes internas de `attn_block_at`,
+// `attn_block` e `attention` recebem um `Option` vazio (a promessa é só essa: um `Option` vazio por ponto de medida). Saída em `perfil-f2b.json`
+// (esquema próprio, versão 1); `perfil-bloco.json` v2 e `perfil-f2.json` não mudam.
+//
+// Itens decididos pelo Breno em 11/11 12:03 (HB3 0,60/0,40; braços D/A/B2; rótulo "tempo da chamada de envio de trabalho"), mantidos parametrizados: limiares de HB3 ([`LimiaresHb3`]), braços do
+// controle ([`ControleB`]) e o rótulo de `B_LANCA` no relatório ([`RotuloLanca`]).
+
+/// Nome da variável que liga a F2 nível B.
+pub const VARIAVEL_F2B: &str = "LASTRO_PERFIL_F2B";
+
+/// Só o valor exato `1` liga (mesmo contrato de [`interpreta`]).
+pub fn interpreta_f2b(v: Option<&str>) -> bool {
+    interpreta(v)
+}
+
+/// Lê `LASTRO_PERFIL_F2B` do ambiente (não UTF-8 conta como ausente).
+pub fn f2b_do_ambiente() -> bool {
+    interpreta_f2b(std::env::var(VARIAVEL_F2B).ok().as_deref())
+}
+
+/// A F2B só vale com o instrumento de bloco e a F2 ligados.
+pub fn f2b_efetivo(bloco: bool, f2: bool, f2b: bool) -> bool {
+    bloco && f2 && f2b
+}
+
+/// A linha de estado: `perfil-f2b: ligado`, `perfil-f2b: desligado` ou, pedida sem as duas outras, `perfil-f2b: desligado (exige perfil-bloco e perfil-f2)`.
+pub fn linha_estado_f2b(bloco: bool, f2: bool, f2b: bool) -> &'static str {
+    if f2b_efetivo(bloco, f2, f2b) {
+        "perfil-f2b: ligado"
+    } else if f2b {
+        "perfil-f2b: desligado (exige perfil-bloco e perfil-f2)"
+    } else {
+        "perfil-f2b: desligado"
+    }
+}
+
+/// Operações do pré-roteador (códigos estáveis do JSON).
+pub const B_LOCK: u8 = 0;
+pub const B_SETUP: u8 = 1;
+pub const B_GENERICS: u8 = 2;
+pub const B_ATTN_PREP: u8 = 3;
+pub const B_LANCA: u8 = 4;
+pub const B_DTOD: u8 = 5;
+pub const NOMES_B: [&str; 6] = ["B_LOCK", "B_SETUP", "B_GENERICS", "B_ATTN_PREP", "B_LANCA", "B_DTOD"];
+/// Marca de "sem posição" (só `B_LOCK`, que é por camada).
+pub const SEM_POS: u16 = u16::MAX;
+
+/// Registros esperados por camada para a operação `op` num bloco de `m` posições (IB3): 1, 2m, m, m, 11m, 6m.
+pub fn contagem_esperada_b(op: u8, m: usize) -> usize {
+    match op {
+        B_LOCK => 1,
+        B_SETUP => 2 * m,
+        B_GENERICS | B_ATTN_PREP => m,
+        B_LANCA => 11 * m,
+        B_DTOD => 6 * m,
+        _ => 0,
+    }
+}
+
+/// A ordem de emissão dos 21 registros de uma posição em `attn_block_at_b`: SETUP, GENERICS, 4 LANCA, 2 DTOD, 2 LANCA, 3 DTOD, ATTN_PREP, 2 LANCA,
+/// 1 DTOD, 3 LANCA, SETUP (2/1/1/11/6).
+pub const ORDEM_POS_B: [u8; 21] = [
+    B_SETUP, B_GENERICS, B_LANCA, B_LANCA, B_LANCA, B_LANCA, B_DTOD, B_DTOD, B_LANCA, B_LANCA, B_DTOD, B_DTOD, B_DTOD, B_ATTN_PREP, B_LANCA, B_LANCA, B_DTOD,
+    B_LANCA, B_LANCA, B_LANCA, B_SETUP,
+];
+
+/// Capacidade fixa do acumulador: `layers x (21 x max_m + 1)`, reservada na criação do motor (24 bytes por registro).
+pub fn capacidade_f2b(layers: usize, max_m: usize) -> usize {
+    layers * (21 * max_m + 1)
+}
+
+/// Um registro bruto: operação, camada, posição (ou [`SEM_POS`]) e o intervalo [`ini`, `fim`] em ns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RegB {
+    pub ini: u64,
+    pub fim: u64,
+    pub camada: u16,
+    pub pos: u16,
+    pub op: u8,
+}
+
+impl RegB {
+    pub fn dur(&self) -> u64 {
+        self.fim.saturating_sub(self.ini)
+    }
+}
+
+/// Acumulador do nível B (escritor único: a thread do motor). Capacidade fixa; ao encher, o registro é contado em `perdidos` (nunca realoca) e a
+/// IB3 invalida o pedido.
+#[derive(Debug)]
+pub struct AccB {
+    pub regs: Vec<RegB>,
+    /// Camada e posição do contexto em andamento (fixadas por quem chama antes de cada trecho medido).
+    pub camada: u16,
+    pub pos: u16,
+    pub perdidos: usize,
+}
+
+impl AccB {
+    pub fn com_capacidade(layers: usize, max_m: usize) -> Self {
+        Self { regs: Vec::with_capacity(capacidade_f2b(layers, max_m)), camada: 0, pos: SEM_POS, perdidos: 0 }
+    }
+    pub fn capacidade(&self) -> usize {
+        self.regs.capacity()
+    }
+    /// Zera para o bloco seguinte (mantém a capacidade).
+    pub fn reinicia(&mut self) {
+        self.regs.clear();
+        self.perdidos = 0;
+        self.camada = 0;
+        self.pos = SEM_POS;
+    }
+    pub fn contexto(&mut self, camada: u16, pos: u16) {
+        self.camada = camada;
+        self.pos = pos;
+    }
+    /// Fecha um registro no instante atual, com o início `ini` tomado antes.
+    #[inline]
+    pub fn reg(&mut self, op: u8, ini: u64) {
+        let fim = agora_ns();
+        if self.regs.len() < self.regs.capacity() {
+            self.regs.push(RegB { ini, fim, camada: self.camada, pos: self.pos, op });
+        } else {
+            self.perdidos += 1;
+        }
+    }
+    /// O registro do bloco (copia os registros: aloca, fora de F2).
+    pub fn para_bloco(&self, gen: u32, m: usize, pos_ini: u64) -> BlocoB {
+        BlocoB { gen, m, pos_ini, regs: self.regs.clone(), perdidos: self.perdidos }
+    }
+}
+
+/// Início de um trecho medido: lê o relógio só com o acumulador presente (desligado: `Option` vazio, devolve 0 sem relógio).
+#[inline]
+pub fn b_ini(a: &Option<&mut AccB>) -> u64 {
+    if a.is_some() {
+        agora_ns()
+    } else {
+        0
+    }
+}
+
+/// Fim de um trecho medido: grava só com o acumulador presente.
+#[inline]
+pub fn b_fim(a: &mut Option<&mut AccB>, op: u8, ini: u64) {
+    if let Some(x) = a.as_deref_mut() {
+        x.reg(op, ini);
+    }
+}
+
+/// Os registros brutos de um bloco.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlocoB {
+    pub gen: u32,
+    pub m: usize,
+    pub pos_ini: u64,
+    pub regs: Vec<RegB>,
+    pub perdidos: usize,
+}
+
+impl BlocoB {
+    pub fn n_op_camada(&self, l: usize, op: u8) -> usize {
+        self.regs.iter().filter(|r| r.camada as usize == l && r.op == op).count()
+    }
+    pub fn soma_op_camada_ns(&self, l: usize, op: u8) -> u64 {
+        self.regs.iter().filter(|r| r.camada as usize == l && r.op == op).map(RegB::dur).sum()
+    }
+    pub fn soma_camada_ns(&self, l: usize) -> u64 {
+        self.regs.iter().filter(|r| r.camada as usize == l).map(RegB::dur).sum()
+    }
+    /// `B_RESIDUO` da camada `l`: `H_PRE_LAYER` menos a soma dos intervalos medidos, com sinal. Nunca ajustado.
+    pub fn residuo_camada_ns(&self, l: usize, host: &BlocoF2) -> Option<i64> {
+        let h = host.ops.iter().find(|o| o.op == H_PRE_LAYER && o.camada as usize == l)?;
+        Some(h.dur() as i64 - self.soma_camada_ns(l) as i64)
+    }
+    /// IB1: registros em ordem e sem sobreposição; primeiro início e último fim de cada camada dentro do `H_PRE_LAYER` da mesma camada (1 µs).
+    pub fn ib1(&self, host: &BlocoF2) -> bool {
+        if self.regs.is_empty() {
+            return false;
+        }
+        let mut prev = 0u64;
+        for r in &self.regs {
+            if r.fim < r.ini || r.ini < prev {
+                return false;
+            }
+            prev = r.fim;
+        }
+        let mut camadas: Vec<u16> = self.regs.iter().map(|r| r.camada).collect();
+        camadas.dedup();
+        camadas.into_iter().all(|l| {
+            let Some(h) = host.ops.iter().find(|o| o.op == H_PRE_LAYER && o.camada == l as u32) else { return false };
+            let da_camada = || self.regs.iter().filter(move |r| r.camada == l);
+            let (Some(p), Some(u)) = (da_camada().next(), da_camada().last()) else { return false };
+            p.ini + TOL_RELOGIO_NS >= h.ini && u.fim <= h.fim + TOL_RELOGIO_NS
+        })
+    }
+    /// IB2: soma dos intervalos + `B_RESIDUO` = `H_PRE_LAYER` (identidade por construção; vale como cobertura e excesso): resíduo < -1 µs invalida.
+    pub fn ib2(&self, host: &BlocoF2, layers: usize) -> bool {
+        (0..layers).all(|l| self.residuo_camada_ns(l, host).is_some_and(|r| r >= -(TOL_RELOGIO_NS as i64)))
+    }
+    /// IB3: a sequência esperada, na ordem de emissão: por camada (0..layers-1, em ordem) um `B_LOCK` com `SEM_POS` e, para cada posição `0..m-1`
+    /// em ordem, os 21 registros de [`ORDEM_POS_B`] (SETUP 2, GENERICS 1, ATTN_PREP 1, LANCA 11, DTOD 6) com a camada e a posição certas. Nenhum
+    /// registro perdido, nenhum a mais ou a menos. Troca de rótulos que preserve só as contagens não passa.
+    pub fn ib3(&self, layers: usize) -> bool {
+        if self.perdidos > 0 || self.m == 0 || self.regs.len() != layers * (21 * self.m + 1) {
+            return false;
+        }
+        let mut it = self.regs.iter();
+        for l in 0..layers {
+            let ok = |r: Option<&RegB>, op: u8, pos: u16| r.is_some_and(|r| r.op == op && r.camada as usize == l && r.pos == pos);
+            if !ok(it.next(), B_LOCK, SEM_POS) {
+                return false;
+            }
+            for p in 0..self.m {
+                for op in ORDEM_POS_B {
+                    if !ok(it.next(), op, p as u16) {
+                        return false;
+                    }
+                }
+            }
+        }
+        it.next().is_none()
+    }
+    /// IB5: soma, com sinal, dos resíduos por camada (inclui os negativos de até 1 µs que a IB2 aceita) sobre a soma de `H_PRE_LAYER`; 0 sem `H_PRE_LAYER`.
+    pub fn razao_residuo(&self, host: &BlocoF2, layers: usize) -> f64 {
+        let (mut res, mut tot) = (0i64, 0u64);
+        for l in 0..layers {
+            if let Some(r) = self.residuo_camada_ns(l, host) {
+                res += r;
+            }
+            tot += host.ops.iter().filter(|o| o.op == H_PRE_LAYER && o.camada as usize == l).map(OpH::dur).sum::<u64>();
+        }
+        if tot == 0 {
+            0.0
+        } else {
+            res as f64 / tot as f64
+        }
+    }
+}
+
+/// O que o merge entrega de um pedido com a F2B ligada: um bloco bruto por bloco do pedido (na ordem de `RecPedido::blocos`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DadosF2B {
+    pub layers: usize,
+    pub blocos: Vec<Option<BlocoB>>,
+    /// Registros sem bloco correspondente (esperado 0).
+    pub extra: usize,
+}
+
+impl DadosF2B {
+    /// Problemas que invalidam o pedido (IB1 a IB4; a IB3 invalida o pedido inteiro). A IB5 é só ressalva. Exige a F2 do mesmo pedido.
+    pub fn problemas(&self, blocos: &[RecBloco], f2: Option<&DadosF2>) -> Vec<String> {
+        let mut p = vec![];
+        let Some(f2) = f2 else {
+            p.push("F2B sem a F2 do host no mesmo pedido".into());
+            return p;
+        };
+        if self.blocos.len() != blocos.len() {
+            p.push(format!("{} blocos do pedido contra {} registros de F2B", blocos.len(), self.blocos.len()));
+            return p;
+        }
+        if self.extra > 0 {
+            p.push(format!("{} registros de F2B sem bloco correspondente", self.extra));
+        }
+        for (i, (b, bb)) in blocos.iter().zip(&self.blocos).enumerate() {
+            let Some(bb) = bb else {
+                p.push(format!("bloco {i}: sem registro de F2B"));
+                continue;
+            };
+            let Some(h) = f2.hosts.get(i).and_then(|h| h.as_ref()) else {
+                p.push(format!("bloco {i}: sem registro de F2 do host para conferir a F2B"));
+                continue;
+            };
+            if !bb.ib3(self.layers) {
+                p.push(format!("bloco {i}: IB3 (contagens: {} registros, {} perdidos, esperados {})", bb.regs.len(), bb.perdidos, self.layers * (21 * bb.m + 1)));
+                continue;
+            }
+            if !bb.ib1(h) {
+                p.push(format!("bloco {i}: IB1 (ordem, sobreposição ou contenção em H_PRE_LAYER)"));
+            }
+            if !bb.ib2(h, self.layers) {
+                p.push(format!("bloco {i}: IB2 (soma dos intervalos maior que H_PRE_LAYER)"));
+            }
+            if bb.gen != h.gen || bb.m != h.m || bb.pos_ini != h.pos_ini || bb.gen != b.gen || bb.m != b.m || bb.pos_ini != b.pos_ini {
+                p.push(format!("bloco {i}: IB4 (gen/m/pos_ini da F2B diferem da F2 ou do perfil-bloco)"));
+            }
+            if !h.i2() {
+                p.push(format!("bloco {i}: IB4 (soma de H_PRE_LAYER e das demais operações mais R_borda contra t3 - t2)"));
+            }
+        }
+        p
+    }
+    /// Ressalva (IB5): algum bloco com `B_RESIDUO` / `H_PRE_LAYER` acima de 3%.
+    pub fn ressalva_residuo(&self, f2: Option<&DadosF2>) -> bool {
+        let Some(f2) = f2 else { return false };
+        self.blocos.iter().zip(&f2.hosts).any(|(b, h)| match (b, h) {
+            (Some(b), Some(h)) => b.razao_residuo(h, self.layers) > LIM_COBERTURA_HOST,
+            _ => false,
+        })
+    }
+}
+
+/// Como o relatório descreve `B_LANCA`. Decisão do Breno (12:03): "tempo da chamada de envio de trabalho", sem isolar `cuLaunchKernel`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RotuloLanca {
+    /// Valor do plano.
+    SoAsyncOn,
+    /// Alternativa: cita `cuLaunchKernel` como parte da expressão, sem isolá-lo.
+    ComCuLaunchKernel,
+}
+
+impl RotuloLanca {
+    pub fn texto(self) -> &'static str {
+        match self {
+            RotuloLanca::SoAsyncOn => "tempo da chamada de envio de trabalho (a expressão async_on)",
+            RotuloLanca::ComCuLaunchKernel => "tempo da expressão async_on (a chamada a cuLaunchKernel da dependência externa está dentro dela e não é isolada)",
+        }
+    }
+}
+
+/// O JSON de um pedido com a F2B ligada.
+pub fn pedido_f2b_json(p: &RecPedido, rotulo: RotuloLanca) -> Option<Value> {
+    let d = p.f2b.as_ref()?;
+    let f2 = p.f2.as_ref();
+    let blocos: Vec<Value> = p
+        .blocos
+        .iter()
+        .enumerate()
+        .map(|(i, b)| {
+            let bb = d.blocos.get(i).and_then(|x| x.as_ref());
+            let Some(bb) = bb else { return json!({"indice": i, "gen": b.gen, "sem_registro": true}) };
+            let host = f2.and_then(|f| f.hosts.get(i)).and_then(|h| h.as_ref());
+            json!({
+                "indice": i, "gen": bb.gen, "m": bb.m, "pos_ini": bb.pos_ini, "perdidos": bb.perdidos,
+                "regs": bb.regs.iter().map(|r| json!([r.op, r.camada, if r.pos == SEM_POS { Value::Null } else { json!(r.pos) }, r.ini, r.fim])).collect::<Vec<_>>(),
+                "residuo_camada_ns": host.map(|h| (0..d.layers).map(|l| bb.residuo_camada_ns(l, h)).collect::<Vec<_>>()),
+                "ib1": host.map(|h| bb.ib1(h)), "ib2": host.map(|h| bb.ib2(h, d.layers)), "ib3": bb.ib3(d.layers),
+                "residuo_sobre_h_pre_layer": host.map(|h| bb.razao_residuo(h, d.layers)),
+            })
+        })
+        .collect();
+    let problemas = d.problemas(&p.blocos, f2);
+    Some(json!({
+        "modelo": p.modelo, "indice": p.indice, "aquecimento": p.aquecimento, "n": p.n, "plano_m": p.plano, "layers": d.layers,
+        "blocos": blocos, "extra": d.extra, "valido": problemas.is_empty(), "problemas": problemas,
+        "ib5_ressalva_residuo": d.ressalva_residuo(f2),
+        "b_lanca_rotulo": rotulo.texto(),
+    }))
+}
+
+/// O arquivo `perfil-f2b.json` com o rótulo de `B_LANCA` escolhido (item c pendente).
+pub fn perfil_f2b_json_com(pedidos: &[RecPedido], rotulo: RotuloLanca) -> Value {
+    json!({
+        "tipo": "perfil-f2b",
+        "versao": 1,
+        "variavel": VARIAVEL_F2B,
+        "exige": [VARIAVEL, VARIAVEL_F2],
+        "bloco": BLOCO,
+        "unidades": "carimbos e duracoes em ns desde a origem do processo",
+        "nomes_op": NOMES_B,
+        "campos_reg": ["op", "camada", "pos", "ini_ns", "fim_ns"],
+        "contagem_por_camada": "B_LOCK 1, B_SETUP 2m, B_GENERICS m, B_ATTN_PREP m, B_LANCA 11m, B_DTOD 6m",
+        "b_lanca_rotulo": rotulo.texto(),
+        "tolerancias": {"relogio_ns": TOL_RELOGIO_NS, "cobertura_residuo": LIM_COBERTURA_HOST},
+        "pedidos": pedidos.iter().filter_map(|p| pedido_f2b_json(p, rotulo)).collect::<Vec<_>>(),
+    })
+}
+
+/// O arquivo `perfil-f2b.json` com o rótulo do plano.
+pub fn perfil_f2b_json(pedidos: &[RecPedido]) -> Value {
+    perfil_f2b_json_com(pedidos, RotuloLanca::SoAsyncOn)
+}
+
+// ---- Classificadores das hipóteses do nível B -----------------------------------------------------------------------------------------------
+
+/// Limiares de HB3 (decididos pelo Breno em 12:03: 0,60 e 0,40). Dentro se parcela >= `dentro`; fora se < `fora`; no meio, sem leitura.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LimiaresHb3 {
+    pub dentro: f64,
+    pub fora: f64,
+}
+
+/// Rascunho do plano (seção 7): 0,60 e 0,40. Só o padrão do código, até o Breno responder.
+pub const LIMIARES_HB3_PLANO: LimiaresHb3 = LimiaresHb3 { dentro: 0.60, fora: 0.40 };
+
+pub fn classifica_hb3(x: Option<f64>, lim: &LimiaresHb3) -> ClasseH {
+    simples_ge(x, lim.dentro, lim.fora)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HipB {
+    Hb1,
+    Hb2,
+    Hb3,
+    Hb4,
+    Hb5,
+    Hb6,
+}
+
+/// Medidas descritivas do nível B (parcelas e uniformidade), por pedido ou por célula.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MedidasF2B {
+    pub hb1: Option<f64>,
+    pub hb2: Option<f64>,
+    pub hb3: Option<f64>,
+    pub hb4: Option<f64>,
+    /// Mediana, entre as camadas, de (p90 / mediana) de `H_PRE_LAYER` por camada.
+    pub hb5_p90_sobre_mediana: Option<f64>,
+    /// Maior sobre menor mediana por camada de `H_PRE_LAYER`.
+    pub hb5_dispersao_camadas: Option<f64>,
+    /// Mediana de `H_PRE_LAYER` por camada (ns), para HB5, HB6 e para o relatório ao lado do B de 11:00.
+    pub h_pre_layer_mediana_camada_ns: Vec<f64>,
+}
+
+/// Parcelas por pedido: soma, entre as camadas, da mediana por camada (entre os blocos) da soma do grupo, sobre a soma, entre as camadas, da mediana
+/// de `H_PRE_LAYER`. `cheios` são os blocos cheios elegíveis de UM pedido (bloco de F2B, bloco de F2 do host). Sem blocos, tudo `None`.
+pub fn medidas_f2b_pedido(cheios: &[(&BlocoB, &BlocoF2)], layers: usize) -> MedidasF2B {
+    if cheios.is_empty() || layers == 0 {
+        return MedidasF2B::default();
+    }
+    let soma_med = |f: &dyn Fn(&BlocoB, &BlocoF2, usize) -> f64| -> f64 {
+        (0..layers).map(|l| mediana(&cheios.iter().map(|(b, h)| f(b, h, l)).collect::<Vec<_>>())).sum()
+    };
+    let pre = |_: &BlocoB, h: &BlocoF2, l: usize| h.ops.iter().filter(|o| o.op == H_PRE_LAYER && o.camada as usize == l).map(OpH::dur).sum::<u64>() as f64;
+    let den = soma_med(&pre);
+    let grupo = |ops: &'static [u8]| soma_med(&|b: &BlocoB, _: &BlocoF2, l: usize| ops.iter().map(|&o| b.soma_op_camada_ns(l, o)).sum::<u64>() as f64);
+    let parc = |ops: &'static [u8]| razao(Some(grupo(ops)), Some(den));
+    let por_camada: Vec<Vec<f64>> = (0..layers).map(|l| cheios.iter().map(|(b, h)| pre(b, h, l)).collect()).collect();
+    let med_camada: Vec<f64> = por_camada.iter().map(|v| mediana(v)).collect();
+    let p90_sobre_med: Vec<f64> = por_camada.iter().zip(&med_camada).filter(|(_, m)| **m > 0.0).filter_map(|(v, m)| percentil_posto(v, 0.9).map(|p| p / m)).collect();
+    let (mx, mn) = (med_camada.iter().copied().fold(f64::NEG_INFINITY, f64::max), med_camada.iter().copied().fold(f64::INFINITY, f64::min));
+    MedidasF2B {
+        hb1: parc(&[B_LOCK]),
+        hb2: parc(&[B_SETUP, B_GENERICS, B_ATTN_PREP]),
+        hb3: parc(&[B_LANCA]),
+        hb4: parc(&[B_DTOD]),
+        hb5_p90_sobre_mediana: med(p90_sobre_med),
+        hb5_dispersao_camadas: if mn > 0.0 { Some(mx / mn) } else { None },
+        h_pre_layer_mediana_camada_ns: med_camada,
+    }
+}
+
+/// A célula: cada medida por pedido e depois a mediana entre os pedidos (nunca blocos de pedidos diferentes numa mediana só).
+pub fn medidas_f2b_celula(pedidos: &[Vec<(&BlocoB, &BlocoF2)>], layers: usize) -> MedidasF2B {
+    let por: Vec<MedidasF2B> = pedidos.iter().filter(|p| !p.is_empty()).map(|p| medidas_f2b_pedido(p, layers)).collect();
+    let agrega = |f: &dyn Fn(&MedidasF2B) -> Option<f64>| med(por.iter().filter_map(f).collect());
+    let camadas: Vec<f64> = (0..layers)
+        .filter_map(|l| {
+            let v: Vec<f64> = por.iter().filter_map(|m| m.h_pre_layer_mediana_camada_ns.get(l).copied()).collect();
+            (!v.is_empty()).then(|| mediana(&v))
+        })
+        .collect();
+    MedidasF2B {
+        hb1: agrega(&|m| m.hb1),
+        hb2: agrega(&|m| m.hb2),
+        hb3: agrega(&|m| m.hb3),
+        hb4: agrega(&|m| m.hb4),
+        hb5_p90_sobre_mediana: agrega(&|m| m.hb5_p90_sobre_mediana),
+        hb5_dispersao_camadas: agrega(&|m| m.hb5_dispersao_camadas),
+        h_pre_layer_mediana_camada_ns: camadas,
+    }
+}
+
+/// Classifica `h` dado o controle do modelo. Controle que não permite = `SemProva`, antes de olhar qualquer número. HB1, HB2, HB4, HB5 e HB6 são
+/// descritivas (sem dado se a medida faltar); HB3 usa os limiares recebidos (item a pendente).
+pub fn classifica_f2b(h: HipB, m: &MedidasF2B, controle: &ClasseControle, lim: &LimiaresHb3) -> ClasseH {
+    if !controle_permite(controle) {
+        return ClasseH::SemProva;
+    }
+    let desc = |x: Option<f64>| if fin(x).is_some() { ClasseH::Descritivo } else { ClasseH::SemDado };
+    match h {
+        HipB::Hb1 => desc(m.hb1),
+        HipB::Hb2 => desc(m.hb2),
+        HipB::Hb3 => classifica_hb3(m.hb3, lim),
+        HipB::Hb4 => desc(m.hb4),
+        HipB::Hb5 => if fin(m.hb5_p90_sobre_mediana).is_some() && fin(m.hb5_dispersao_camadas).is_some() { ClasseH::Descritivo } else { ClasseH::SemDado },
+        HipB::Hb6 => if m.h_pre_layer_mediana_camada_ns.is_empty() { ClasseH::SemDado } else { ClasseH::Descritivo },
+    }
+}
+
+// ---- Controle do custo do instrumento do nível B (item b pendente: braços parametrizados) -------------------------------------------------
+
+/// D: nenhuma variável; A: só bloco; B1: bloco e F2 (F2B desligada); B2: as três.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BracoB {
+    D,
+    A,
+    B1,
+    B2,
+}
+
+/// Um processo do controle, na ordem em que rodou.
+#[derive(Clone, Debug)]
+pub struct ProcessoControleB {
+    pub braco: BracoB,
+    pub prefill_ms_mediana: f64,
+    pub passo_ms_mediana: f64,
+    pub imprimiu_bloco_ligado: bool,
+    pub imprimiu_f2_ligado: bool,
+    pub imprimiu_f2b_ligado: bool,
+    pub produziu_bloco: bool,
+    pub produziu_f2: bool,
+    pub produziu_f2b: bool,
+    /// Terminou sem aborto e com os ids iguais aos da referência (I7).
+    pub valido: bool,
+}
+
+/// A configuração do controle (decidido: D/A/B2, `CONTROLE_B_PLANO`; as outras duas ficam sem uso). `ordem` é a sequência de processos; `apoio` é o braço da medida de apoio (B2 contra ele).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ControleB {
+    pub nome: &'static str,
+    pub ordem: &'static [BracoB],
+    pub apoio: Option<BracoB>,
+}
+
+use BracoB::{A as BA, B1, B2, D as BD};
+/// Plano: D, A e B2, quadrado latino de 9 (D A B2, B2 D A, A B2 D). Padrão do código.
+pub const CONTROLE_B_PLANO: ControleB = ControleB { nome: "D/A/B2", ordem: &[BD, BA, B2, B2, BD, BA, BA, B2, BD], apoio: Some(BD) };
+/// Alternativa 1: só A e B2 (6 processos, 3 por braço; a ordem é derivação do critério, também pendente).
+pub const CONTROLE_B_A_B2: ControleB = ControleB { nome: "A/B2", ordem: &[BA, B2, B2, BA, BA, B2], apoio: None };
+/// Alternativa 2: F2=1/F2B=0 (B1) no lugar do D, na mesma ordem do plano.
+pub const CONTROLE_B_B1_A_B2: ControleB = ControleB { nome: "B1/A/B2", ordem: &[B1, BA, B2, B2, B1, BA, BA, B2, B1], apoio: Some(B1) };
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResultadoControleB {
+    /// Classe pela magnitude de |B2 contra A| (a medida principal); manda em tudo.
+    pub classe: ClasseControle,
+    pub principal: Option<DesvioF2>,
+    /// B2 contra o braço de apoio (D ou B1): classe só descritiva.
+    pub apoio: Option<DesvioF2>,
+    pub classe_apoio: Option<ClasseControle>,
+}
+
+/// Classifica o controle de um modelo. Pura. Mesmas regras do nível A (<= 3% comprovada, <= 10% com ressalva, > 10% SEM PROVA), com o B2 no lugar do B.
+pub fn classifica_controle_f2b(cfg: &ControleB, procs: &[ProcessoControleB], orcamento_ok: bool, blocos_por_pedido: usize) -> ResultadoControleB {
+    let inc = |m: &str| ResultadoControleB { classe: ClasseControle::Incompleto(m.into()), principal: None, apoio: None, classe_apoio: None };
+    if !orcamento_ok {
+        return inc("orçamento insuficiente");
+    }
+    if procs.len() != cfg.ordem.len() {
+        return inc("número de processos diferente do da ordem do controle: mínimo de 3 válidos por braço");
+    }
+    if procs.iter().map(|p| p.braco).ne(cfg.ordem.iter().copied()) {
+        return inc("ordem diferente da do controle");
+    }
+    if procs.iter().any(|p| !p.valido || !p.prefill_ms_mediana.is_finite() || p.prefill_ms_mediana <= 0.0 || !p.passo_ms_mediana.is_finite() || p.passo_ms_mediana <= 0.0) {
+        return inc("processo de controle abortado ou inválido");
+    }
+    for p in procs {
+        let (e, i) = match p.braco {
+            BracoB::D => ((false, false, false), (false, false, false)),
+            BracoB::A => ((true, false, false), (true, false, false)),
+            BracoB::B1 => ((true, true, false), (true, true, false)),
+            BracoB::B2 => ((true, true, true), (true, true, true)),
+        };
+        if (p.imprimiu_bloco_ligado, p.imprimiu_f2_ligado, p.imprimiu_f2b_ligado) != e || (p.produziu_bloco, p.produziu_f2, p.produziu_f2b) != i {
+            return inc(&format!("braço {:?} com linhas de estado ou arquivos de perfil que não são os do braço", p.braco));
+        }
+    }
+    let de = |b: BracoB, f: &dyn Fn(&ProcessoControleB) -> f64| -> Vec<f64> { procs.iter().filter(|p| p.braco == b).map(f).collect() };
+    let pre = |p: &ProcessoControleB| p.prefill_ms_mediana;
+    let passo = |p: &ProcessoControleB| p.passo_ms_mediana;
+    let desvio = |alvo: BracoB, ref_: BracoB| -> DesvioF2 {
+        let (a, r) = (de(alvo, &pre), de(ref_, &pre));
+        let (ma, mr) = (mediana(&a), mediana(&r));
+        let min_r = r.iter().copied().fold(f64::INFINITY, f64::min);
+        let max_a = a.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let (pa, pr) = (mediana(&de(alvo, &passo)), mediana(&de(ref_, &passo)));
+        DesvioF2 { desvio: (ma - mr) / mr, pior_caso: (max_a - min_r) / min_r, ms_por_bloco: (ma - mr) / blocos_por_pedido.max(1) as f64, desvio_passo: (pa - pr) / pr }
+    };
+    let principal = desvio(B2, BA);
+    let apoio = cfg.apoio.map(|r| desvio(B2, r));
+    ResultadoControleB { classe: classe_por_desvio(principal.desvio), classe_apoio: apoio.as_ref().map(|d| classe_por_desvio(d.desvio)), principal: Some(principal), apoio }
+}
+
 // ---- Testes sem GPU -----------------------------------------------------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -1902,7 +2510,7 @@ mod tests {
         let p = RecPedido {
             modelo: String::new(),
             indice: 0, aquecimento: false, n: 9, plano: vec![8, 1], blocos: vec![b0, b1], servico: vec![None, None], servico_extra: 0,
-            t_armado: 0, t_logits_ini: t_logits, t_desarmado: t_logits + 2 * MS, prefill_ms: 0.0, f2: None, decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: t_logits, t_desarmado: t_logits + 2 * MS, prefill_ms: 0.0, f2: None, f2b: None, decode_passo_ms_mediana: 1.0,
         };
         let mut p = p;
         p.prefill_ms = ms(p.total_perfil_ns()) + 0.05; // diferença de relógio dentro da tolerância
@@ -1928,7 +2536,7 @@ mod tests {
         let p = RecPedido {
             modelo: String::new(),
             indice: 0, aquecimento: false, n: 8, plano: vec![8], blocos: vec![b0], servico: vec![None], servico_extra: 0,
-            t_armado: 0, t_logits_ini: t_logits, t_desarmado: t_logits + MS, prefill_ms: ms(t_logits + MS), f2: None, decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: t_logits, t_desarmado: t_logits + MS, prefill_ms: ms(t_logits + MS), f2: None, f2b: None, decode_passo_ms_mediana: 1.0,
         };
         assert!(p.cobertura_host() < LIM_COBERTURA_HOST);
     }
@@ -1975,7 +2583,7 @@ mod tests {
         let p = RecPedido {
             modelo: String::new(),
             indice: 0, aquecimento: false, n: 8, plano: vec![8], blocos: vec![b0.clone()], servico: vec![Some(serv(1, 10 * MS, 5 * MS, [0; 7]))], servico_extra: 0,
-            t_armado: 0, t_logits_ini: b0.t[4], t_desarmado: b0.t[4], prefill_ms: ms(b0.t[4]), f2: None, decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: b0.t[4], t_desarmado: b0.t[4], prefill_ms: ms(b0.t[4]), f2: None, f2b: None, decode_passo_ms_mediana: 1.0,
         };
         assert!(p.problemas().iter().any(|x| x.contains("serviço gen 1")));
     }
@@ -2009,7 +2617,7 @@ mod tests {
         let p = RecPedido {
             modelo: String::new(),
             indice: 0, aquecimento: false, n: 8, plano: vec![8], blocos: vec![b.clone()], servico: vec![Some(s)], servico_extra: 0,
-            t_armado: 0, t_logits_ini: b.t[4], t_desarmado: b.t[4], prefill_ms: ms(b.t[4]), f2: None, decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: b.t[4], t_desarmado: b.t[4], prefill_ms: ms(b.t[4]), f2: None, f2b: None, decode_passo_ms_mediana: 1.0,
         };
         assert!(mediana(&p.s_fora_fracoes()) > LIM_COBERTURA_SERVICO, "ressalva de cobertura do serviço");
         let j = p.para_json();
@@ -2142,7 +2750,7 @@ mod tests {
         let b = bloco(1, 8, 0, [0.1, 0.1, 0.1, 0.1]);
         let mk = |modelo: &str, indice: usize| RecPedido {
             modelo: modelo.into(), indice, aquecimento: indice == 0, n: 8, plano: vec![8], blocos: vec![b.clone()], servico: vec![None], servico_extra: 0,
-            t_armado: 0, t_logits_ini: b.t[4], t_desarmado: b.t[4], prefill_ms: ms(b.t[4]), f2: None, decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: b.t[4], t_desarmado: b.t[4], prefill_ms: ms(b.t[4]), f2: None, f2b: None, decode_passo_ms_mediana: 1.0,
         };
         // cada motor reinicia `indice` em 0: o par (modelo, indice) é a chave
         let v = perfil_json(&[mk("1b", 0), mk("1b", 1), mk("3b", 0), mk("3b", 1)]);
@@ -2383,7 +2991,7 @@ mod tests {
         let p = RecPedido {
             modelo: String::new(),
             indice: 0, aquecimento: false, n: 17, plano: vec![8, 8, 1], blocos: vec![b0, b1, b2], servico: vec![None; 3], servico_extra: 0,
-            t_armado: 0, t_logits_ini: 0, t_desarmado: 0, prefill_ms: 0.0, f2: None, decode_passo_ms_mediana: 1.0,
+            t_armado: 0, t_logits_ini: 0, t_desarmado: 0, prefill_ms: 0.0, f2: None, f2b: None, decode_passo_ms_mediana: 1.0,
         };
         assert!((p.r6().unwrap() - 0.6).abs() < 1e-9);
     }
@@ -2780,6 +3388,7 @@ mod tests_f2 {
             modelo: "m".into(), indice: 0, aquecimento: false, n: 8, plano: vec![8], blocos: vec![b], servico: vec![None], servico_extra: 0,
             t_armado: 0, t_logits_ini: 0, t_desarmado: 0, prefill_ms: 0.0, decode_passo_ms_mediana: 1.0,
             f2: Some(DadosF2 { layers: 2, hosts: vec![Some(h)], tbs: vec![None], host_extra: 0, tb_extra: 0 }),
+            f2b: None,
         };
         let v2 = perfil_json(std::slice::from_ref(&p));
         assert_eq!(v2["versao"], 2);
@@ -3069,3 +3678,561 @@ mod tests_f2_rodada148 {
     }
 }
 
+
+// ---- Testes sem GPU da F2 nível B -----------------------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests_f2b {
+    use super::*;
+
+    const T2: u64 = 1_000_000;
+    const REG: u64 = 20;
+    const GAP: u64 = 5;
+
+    /// A ordem das operações de uma posição, na sequência real de `attn_block_at_b`: SETUP, GENERICS, 4 LANCA, 2 DTOD, 2 LANCA, 3 DTOD, ATTN_PREP,
+    /// 2 LANCA, 1 DTOD, 3 LANCA, SETUP (11 LANCA, 6 DTOD).
+    fn ordem_pos() -> Vec<u8> {
+        let mut v = vec![B_SETUP, B_GENERICS];
+        v.extend([B_LANCA; 4]);
+        v.extend([B_DTOD; 2]);
+        v.extend([B_LANCA; 2]);
+        v.extend([B_DTOD; 3]);
+        v.push(B_ATTN_PREP);
+        v.extend([B_LANCA; 2]);
+        v.push(B_DTOD);
+        v.extend([B_LANCA; 3]);
+        v.push(B_SETUP);
+        v
+    }
+
+    /// Duração mínima de H_PRE_LAYER para caber os registros de uma camada com `m` posições.
+    fn pre_min(m: usize) -> u64 {
+        GAP + REG + GAP + m as u64 * 21 * (REG + GAP) + GAP
+    }
+
+    /// Host sintético (encadeado, como o do nível A): `pre(l)` dá a duração de H_PRE_LAYER da camada `l`; as demais operações duram 100 ns.
+    fn host(layers: usize, m: usize, pre: &dyn Fn(usize) -> u64) -> BlocoF2 {
+        let entrada = T2 + 50;
+        let mut t = entrada;
+        let mut ops = vec![];
+        let mut push = |op: u8, camada: u32, d: u64, ops: &mut Vec<OpH>, t: &mut u64| {
+            ops.push(OpH { op, camada, ini: *t, fim: *t + d });
+            *t += d;
+        };
+        for (op, d) in [(H_ENTRADA, 100)] {
+            push(op, SEM_CAMADA, d, &mut ops, &mut t);
+        }
+        for op in [H_BEGIN_STEP, H_UPLOAD_TABELA, H_WAIT_EVENT] {
+            push(op, SEM_CAMADA, 100, &mut ops, &mut t);
+        }
+        for l in 0..layers {
+            for op in OPS_CAMADA {
+                let d = if op == H_PRE_LAYER { pre(l) } else { 100 };
+                push(op, l as u32, d, &mut ops, &mut t);
+            }
+        }
+        for op in [H_POST_LAYERS, H_SEQ_FIM, H_SAIDA] {
+            push(op, SEM_CAMADA, 100, &mut ops, &mut t);
+        }
+        BlocoF2 { gen: 7, m, pos_ini: 16, n_ready: 0, ops, entrada, saida: t, t2: T2, t3: t + 50 }
+    }
+
+    /// Registros brutos dentro de cada H_PRE_LAYER do host, na ordem do código.
+    fn regs(h: &BlocoF2, layers: usize, m: usize) -> BlocoB {
+        let mut v = vec![];
+        for l in 0..layers {
+            let pre = h.ops.iter().find(|o| o.op == H_PRE_LAYER && o.camada == l as u32).unwrap();
+            let mut t = pre.ini + GAP;
+            v.push(RegB { ini: t, fim: t + REG, camada: l as u16, pos: SEM_POS, op: B_LOCK });
+            t += REG + GAP;
+            for p in 0..m {
+                for op in ordem_pos() {
+                    v.push(RegB { ini: t, fim: t + REG, camada: l as u16, pos: p as u16, op });
+                    t += REG + GAP;
+                }
+            }
+        }
+        BlocoB { gen: h.gen, m, pos_ini: h.pos_ini, regs: v, perdidos: 0 }
+    }
+
+    fn rec_bloco(h: &BlocoF2) -> RecBloco {
+        RecBloco { gen: h.gen, m: h.m, pos_ini: h.pos_ini, t: [h.t2 - 2000, h.t2 - 1000, h.t2, h.t3, h.t3 + 500], f0_pendente: false }
+    }
+
+    fn dados_f2(h: &BlocoF2, layers: usize) -> DadosF2 {
+        DadosF2 { layers, hosts: vec![Some(h.clone())], tbs: vec![None], host_extra: 0, tb_extra: 0 }
+    }
+
+    fn valida(layers: usize, _m: usize, h: &BlocoF2, b: &BlocoB) -> Vec<String> {
+        DadosF2B { layers, blocos: vec![Some(b.clone())], extra: 0 }.problemas(&[rec_bloco(h)], Some(&dados_f2(h, layers)))
+    }
+
+    #[test]
+    fn variavel_f2b_so_liga_com_o_valor_um_e_exige_bloco_e_f2() {
+        assert_eq!(VARIAVEL_F2B, "LASTRO_PERFIL_F2B");
+        assert!(interpreta_f2b(Some("1")));
+        for v in [None, Some(""), Some("0"), Some("true"), Some(" 1"), Some("1 "), Some("11"), Some("on")] {
+            assert!(!interpreta_f2b(v), "{v:?}");
+        }
+        for (b, f, x) in [(false, true, true), (true, false, true), (true, true, false), (false, false, false)] {
+            assert!(!f2b_efetivo(b, f, x));
+        }
+        assert!(f2b_efetivo(true, true, true));
+        assert_eq!(linha_estado_f2b(true, true, true), "perfil-f2b: ligado");
+        assert_eq!(linha_estado_f2b(true, false, true), "perfil-f2b: desligado (exige perfil-bloco e perfil-f2)");
+        assert_eq!(linha_estado_f2b(false, true, true), "perfil-f2b: desligado (exige perfil-bloco e perfil-f2)");
+        assert_eq!(linha_estado_f2b(true, true, false), "perfil-f2b: desligado");
+        assert_eq!(linha_estado_f2b(false, false, false), "perfil-f2b: desligado");
+        // O acumulador do compartilhado só existe com as duas outras.
+        assert!(!Compartilhado::novo_f2b(false, true, 4).f2b());
+        assert!(Compartilhado::novo_f2b(true, true, 4).f2b());
+        assert!(!Compartilhado::novo_f2b(true, false, 4).f2b());
+    }
+
+    #[test]
+    fn acumulador_tem_capacidade_fixa_registro_de_24_bytes_e_nunca_realoca() {
+        assert_eq!(std::mem::size_of::<RegB>(), 24);
+        assert_eq!(capacidade_f2b(24, 8), 24 * 169);
+        let mut a = AccB::com_capacidade(2, 8);
+        let cap = a.capacidade();
+        assert!(cap >= capacidade_f2b(2, 8));
+        for bloco in 0..3 {
+            a.reinicia();
+            for l in 0..2u16 {
+                a.contexto(l, SEM_POS);
+                a.reg(B_LOCK, agora_ns());
+                for p in 0..8u16 {
+                    a.contexto(l, p);
+                    for op in ordem_pos() {
+                        a.reg(op, agora_ns());
+                    }
+                }
+            }
+            assert_eq!(a.regs.len(), capacidade_f2b(2, 8), "bloco {bloco}");
+            assert_eq!(a.perdidos, 0);
+            assert_eq!(a.capacidade(), cap, "capacidade igual depois do bloco {bloco}");
+        }
+        // Capacidade máxima: o excesso é contado e não realoca; a IB3 invalida.
+        a.reg(B_LOCK, agora_ns());
+        assert_eq!((a.regs.len(), a.perdidos, a.capacidade()), (capacidade_f2b(2, 8), 1, cap));
+        assert!(!a.para_bloco(1, 8, 0).ib3(2));
+    }
+
+    #[test]
+    fn option_vazio_nao_le_relogio_nem_grava() {
+        // Prova só o que o plano promete: com `Option` vazio a sonda devolve 0 (sem relógio) e `b_fim` não faz nada.
+        let mut vazio: Option<&mut AccB> = None;
+        assert_eq!(b_ini(&vazio), 0);
+        b_fim(&mut vazio, B_LANCA, 0);
+        assert!(vazio.is_none());
+        let mut a = AccB::com_capacidade(1, 8);
+        let mut some = Some(&mut a);
+        let t = b_ini(&some);
+        assert!(t > 0 || agora_ns() >= t);
+        b_fim(&mut some, B_LANCA, t);
+        assert_eq!(a.regs.len(), 1);
+        assert_eq!(a.regs[0].op, B_LANCA);
+    }
+
+    #[test]
+    fn bloco_integro_passa_ib1_a_ib5_e_a_contagem_e_a_do_plano() {
+        for (layers, m) in [(2usize, 8usize), (3, 2), (2, 1)] {
+            let h = host(layers, m, &|_| pre_min(m) + 40);
+            let b = regs(&h, layers, m);
+            assert_eq!(ordem_pos().len(), 21);
+            assert_eq!(b.regs.len(), layers * (21 * m + 1));
+            assert!(b.ib1(&h) && b.ib2(&h, layers) && b.ib3(layers));
+            assert!(valida(layers, m, &h, &b).is_empty(), "{:?}", valida(layers, m, &h, &b));
+            for l in 0..layers {
+                for op in 0..6u8 {
+                    assert_eq!(b.n_op_camada(l, op), contagem_esperada_b(op, m));
+                }
+                assert!(b.residuo_camada_ns(l, &h).unwrap() >= 0);
+            }
+            assert!(b.razao_residuo(&h, layers) < 0.5);
+        }
+    }
+
+    #[test]
+    fn ib3_recusa_contagem_igual_com_camada_repetida_faltando_ou_fora_de_ordem() {
+        let (layers, m) = (3usize, 2usize);
+        let h = host(layers, m, &|_| pre_min(m) + 40);
+        let b = regs(&h, layers, m);
+        // Falta e sobra um registro de outra operação: soma igual, contagens diferentes.
+        let mut troca = b.clone();
+        let i = troca.regs.iter().position(|r| r.op == B_DTOD).unwrap();
+        troca.regs[i].op = B_LANCA;
+        assert_eq!(troca.regs.len(), b.regs.len());
+        assert!(!troca.ib3(layers));
+        // Camada repetida no lugar de outra (mesmo total).
+        let mut rep = b.clone();
+        let n = rep.regs.len();
+        for r in rep.regs.iter_mut().skip(n - (21 * m + 1)) {
+            r.camada = 1;
+        }
+        assert!(!rep.ib3(layers));
+        // Um registro a menos, um a mais, um perdido.
+        let mut menos = b.clone();
+        menos.regs.pop();
+        assert!(!menos.ib3(layers));
+        let mut mais = b.clone();
+        mais.regs.push(*mais.regs.last().unwrap());
+        assert!(!mais.ib3(layers));
+        let mut perdido = b.clone();
+        perdido.perdidos = 1;
+        assert!(!perdido.ib3(layers));
+        // Camadas fora de ordem.
+        let mut ordem = b.clone();
+        let k = 21 * m + 1;
+        let (a, c) = (ordem.regs[..k].to_vec(), ordem.regs[k..2 * k].to_vec());
+        ordem.regs[..k].clone_from_slice(&c);
+        ordem.regs[k..2 * k].clone_from_slice(&a);
+        assert!(!ordem.ib3(layers));
+        // Posição fora de `m` e `B_LOCK` com posição.
+        let mut pos = b.clone();
+        pos.regs[3].pos = m as u16;
+        assert!(!pos.ib3(layers));
+        let mut lock = b.clone();
+        lock.regs[0].pos = 0;
+        assert!(!lock.ib3(layers));
+        // Mais camadas no bloco do que no motor.
+        assert!(!b.ib3(layers - 1) && !b.ib3(layers + 1));
+    }
+
+    #[test]
+    fn ib3_valida_a_sequencia_por_posicao_e_recusa_posicoes_trocadas_com_contagem_igual() {
+        // Íntegro: m = 1, restos (2, 7) e m = 8.
+        for (layers, m) in [(2usize, 1usize), (2, 2), (2, 7), (2, 8)] {
+            let h = host(layers, m, &|_| pre_min(m) + 40);
+            let b = regs(&h, layers, m);
+            assert_eq!(ORDEM_POS_B.to_vec(), ordem_pos());
+            assert!(b.ib3(layers), "m = {m}");
+            assert!(valida(layers, m, &h, &b).is_empty());
+        }
+        let (layers, m) = (2usize, 8usize);
+        let h = host(layers, m, &|_| pre_min(m) + 40);
+        let b = regs(&h, layers, m);
+        // Mutante: todas as posições não sentinela viram zero (totais, carimbos e identidade do bloco intactos).
+        let mut zero = b.clone();
+        for r in zero.regs.iter_mut().filter(|r| r.op != B_LOCK) {
+            r.pos = 0;
+        }
+        assert_eq!(zero.regs.len(), b.regs.len());
+        assert_eq!((0..layers).map(|l| zero.soma_camada_ns(l)).collect::<Vec<_>>(), (0..layers).map(|l| b.soma_camada_ns(l)).collect::<Vec<_>>());
+        assert!(!zero.ib3(layers));
+        assert!(valida(layers, m, &h, &zero).iter().any(|s| s.contains("IB3")));
+        let rec = RecBloco { gen: h.gen, m, pos_ini: h.pos_ini, t: [h.t2 - 2000, h.t2 - 1000, h.t2, h.t3, h.t3 + 500], f0_pendente: false };
+        let p = RecPedido {
+            modelo: "x".into(), indice: 0, aquecimento: false, n: m, plano: vec![m], blocos: vec![rec], servico: vec![None], servico_extra: 0,
+            t_armado: 0, t_logits_ini: 0, t_desarmado: 0, prefill_ms: 0.0, f2: Some(dados_f2(&h, layers)),
+            f2b: Some(DadosF2B { layers, blocos: vec![Some(zero)], extra: 0 }), decode_passo_ms_mediana: 1.0,
+        };
+        assert_eq!(perfil_f2b_json(&[p])["pedidos"][0]["valido"], false);
+        // Duas posições repetidas no lugar de outras (posição 3 vira 2, posição 5 vira 4, em todas as camadas).
+        let mut rep = b.clone();
+        for r in rep.regs.iter_mut().filter(|r| r.op != B_LOCK) {
+            if r.pos == 3 {
+                r.pos = 2;
+            } else if r.pos == 5 {
+                r.pos = 4;
+            }
+        }
+        assert!(!rep.ib3(layers));
+        // Fora de ordem: posições 1 e 2 trocam de rótulo.
+        let mut ord = b.clone();
+        for r in ord.regs.iter_mut().filter(|r| r.op != B_LOCK) {
+            if r.pos == 1 {
+                r.pos = 2;
+            } else if r.pos == 2 {
+                r.pos = 1;
+            }
+        }
+        assert!(!ord.ib3(layers));
+        // Um registro da posição 0 rotulado como da posição 1 (contagem por operação igual).
+        let mut um = b.clone();
+        um.regs[3].pos = 1;
+        assert!(!um.ib3(layers));
+        // O `m` do bloco maior que o do registro: a estrutura não casa.
+        let mut mm = b.clone();
+        mm.m = 7;
+        assert!(!mm.ib3(layers));
+    }
+
+    #[test]
+    fn ib1_recusa_ordem_sobreposicao_e_contencao_diferentes_com_soma_e_contagem_iguais() {
+        let (layers, m) = (2usize, 2usize);
+        let h = host(layers, m, &|_| pre_min(m) + 40);
+        let b = regs(&h, layers, m);
+        assert!(b.ib1(&h));
+        // Ordem: troca dois registros vizinhos de lugar (mesma soma, mesma contagem).
+        let mut o = b.clone();
+        o.regs.swap(5, 6);
+        assert_eq!(o.soma_camada_ns(0), b.soma_camada_ns(0));
+        assert!(o.ib3(layers), "a contagem continua a do plano: só a ordem mudou");
+        assert!(!o.ib1(&h));
+        // Sobreposição: o início de um registro antes do fim do anterior.
+        let mut s = b.clone();
+        s.regs[7].ini = s.regs[6].fim - 1;
+        assert!(!s.ib1(&h));
+        // Fim antes do início.
+        let mut inv = b.clone();
+        inv.regs[4].fim = inv.regs[4].ini - 1;
+        assert!(!inv.ib1(&h));
+        // Contenção: desloca tudo da camada 0 para fora do `H_PRE_LAYER` (soma e contagem iguais).
+        let mut fora = b.clone();
+        let pre0 = h.ops.iter().find(|o| o.op == H_PRE_LAYER && o.camada == 0).unwrap();
+        let k = 21 * m + 1;
+        let desloc = pre0.dur() + 500;
+        for r in fora.regs[..k].iter_mut() {
+            r.ini += desloc;
+            r.fim += desloc;
+        }
+        // O deslocamento passa por cima da camada 1: a ordem global também quebra, e a contenção da camada 0 falha por si.
+        assert!(!fora.ib1(&h));
+        let mut alem = b.clone();
+        alem.regs[k - 1].fim = pre0.fim + 2 * TOL_RELOGIO_NS;
+        assert!(!alem.ib1(&h));
+        // Tolerância de 1 µs na borda vale.
+        let mut tol = b.clone();
+        tol.regs[0].ini = pre0.ini.saturating_sub(TOL_RELOGIO_NS);
+        assert!(tol.ib1(&h));
+        // Registros sem o `H_PRE_LAYER` da camada, ou nenhum registro.
+        let mut sem = h.clone();
+        sem.ops.retain(|o| !(o.op == H_PRE_LAYER && o.camada == 1));
+        assert!(!b.ib1(&sem));
+        assert!(!BlocoB { regs: vec![], ..b.clone() }.ib1(&h));
+    }
+
+    #[test]
+    fn ib2_aceita_residuo_pequeno_e_recusa_excesso_acima_de_1_us() {
+        let (layers, m) = (2usize, 1usize);
+        let h = host(layers, m, &|_| pre_min(m) + 3000);
+        let b = regs(&h, layers, m);
+        assert!(b.residuo_camada_ns(0, &h).unwrap() >= 3000 - GAP as i64 - 10);
+        assert!(b.ib2(&h, layers));
+        // Soma maior que H_PRE_LAYER por mais de 1 µs: resíduo negativo invalida; nunca é zerado.
+        let mut e = regs(&h, layers, m);
+        e.regs[2].fim += 5 * TOL_RELOGIO_NS;
+        assert!(e.residuo_camada_ns(0, &h).unwrap() < 3000);
+        let mut gigante = b.clone();
+        let l0 = gigante.regs.iter().position(|r| r.camada == 0 && r.op == B_SETUP).unwrap();
+        gigante.regs[l0].fim += 10_000;
+        assert!(gigante.residuo_camada_ns(0, &h).unwrap() < -(TOL_RELOGIO_NS as i64) + 1);
+        assert!(!gigante.ib2(&h, layers));
+        // IB5: ressalva acima de 3%, nunca invalida.
+        let largo = host(layers, m, &|_| 100_000);
+        let bl = regs(&largo, layers, m);
+        assert!(bl.razao_residuo(&largo, layers) > LIM_COBERTURA_HOST);
+        let d = DadosF2B { layers, blocos: vec![Some(bl.clone())], extra: 0 };
+        assert!(d.ressalva_residuo(Some(&dados_f2(&largo, layers))));
+        assert!(valida(layers, m, &largo, &bl).is_empty());
+        // Registros contíguos e H_PRE_LAYER justo: resíduo pequeno, sem ressalva.
+        let (l2, m2) = (2usize, 8usize);
+        let h2 = host(l2, m2, &|_| pre_min(m2) + 40);
+        let mut b2 = regs(&h2, l2, m2);
+        for i in 0..b2.regs.len() - 1 {
+            if b2.regs[i].camada == b2.regs[i + 1].camada {
+                b2.regs[i].fim = b2.regs[i + 1].ini;
+            }
+        }
+        assert!(b2.razao_residuo(&h2, l2) <= LIM_COBERTURA_HOST, "{}", b2.razao_residuo(&h2, l2));
+        assert!(b2.ib1(&h2) && b2.ib2(&h2, l2) && b2.ib3(l2));
+        assert!(!DadosF2B { layers: l2, blocos: vec![Some(b2)], extra: 0 }.ressalva_residuo(Some(&dados_f2(&h2, l2))));
+    }
+
+    #[test]
+    fn juncao_com_outra_geracao_camada_ou_soma_diferente_invalida_pelo_ib4() {
+        let (layers, m) = (2usize, 2usize);
+        let h = host(layers, m, &|_| pre_min(m) + 40);
+        let b = regs(&h, layers, m);
+        assert!(valida(layers, m, &h, &b).is_empty());
+        let mut g = b.clone();
+        g.gen += 1;
+        assert!(valida(layers, m, &h, &g).iter().any(|s| s.contains("IB4")));
+        let mut p = b.clone();
+        p.pos_ini += 8;
+        assert!(valida(layers, m, &h, &p).iter().any(|s| s.contains("IB4")));
+        // Registros de uma camada na posição de outra: a contenção do `H_PRE_LAYER` da camada acusa (IB1).
+        let mut c = b.clone();
+        let k = 21 * m + 1;
+        for r in c.regs[..k].iter_mut() {
+            r.camada = 1;
+        }
+        for r in c.regs[k..].iter_mut() {
+            r.camada = 0;
+        }
+        assert!(!valida(layers, m, &h, &c).is_empty());
+        // F2 do host com soma que não fecha t3 - t2 (I2 do nível A): IB4.
+        let mut ruim = h.clone();
+        ruim.ops.iter_mut().find(|o| o.op == H_ROUTE).unwrap().fim += 10 * TOL_RELOGIO_NS;
+        assert!(valida(layers, m, &ruim, &b).iter().any(|s| s.contains("IB4")));
+        // Sem F2 no pedido, sem registro do bloco, blocos a menos.
+        assert!(DadosF2B { layers, blocos: vec![Some(b.clone())], extra: 0 }.problemas(&[rec_bloco(&h)], None).iter().any(|s| s.contains("sem a F2")));
+        assert!(!DadosF2B { layers, blocos: vec![None], extra: 0 }.problemas(&[rec_bloco(&h)], Some(&dados_f2(&h, layers))).is_empty());
+        assert!(!DadosF2B { layers, blocos: vec![], extra: 0 }.problemas(&[rec_bloco(&h)], Some(&dados_f2(&h, layers))).is_empty());
+        assert!(!DadosF2B { layers, blocos: vec![Some(b.clone())], extra: 1 }.problemas(&[rec_bloco(&h)], Some(&dados_f2(&h, layers))).is_empty());
+    }
+
+    #[test]
+    fn json_do_pedido_traz_os_registros_brutos_e_o_rotulo_do_lanca() {
+        let (layers, m) = (2usize, 1usize);
+        let h = host(layers, m, &|_| pre_min(m) + 40);
+        let b = regs(&h, layers, m);
+        let p = RecPedido {
+            modelo: "x".into(), indice: 0, aquecimento: false, n: 1, plano: vec![1], blocos: vec![rec_bloco(&h)], servico: vec![None], servico_extra: 0,
+            t_armado: 0, t_logits_ini: 0, t_desarmado: 0, prefill_ms: 0.0, f2: Some(dados_f2(&h, layers)),
+            f2b: Some(DadosF2B { layers, blocos: vec![Some(b.clone())], extra: 0 }), decode_passo_ms_mediana: 1.0,
+        };
+        let j = perfil_f2b_json(&[p.clone()]);
+        assert_eq!(j["tipo"], "perfil-f2b");
+        assert_eq!(j["versao"], 1);
+        assert_eq!(j["b_lanca_rotulo"], "tempo da chamada de envio de trabalho (a expressão async_on)");
+        let ped = &j["pedidos"][0];
+        assert_eq!(ped["valido"], true);
+        let regs_json = ped["blocos"][0]["regs"].as_array().unwrap();
+        assert_eq!(regs_json.len(), b.regs.len());
+        assert_eq!(regs_json[0][2], Value::Null, "B_LOCK sem posição");
+        assert_eq!(regs_json[0][0], B_LOCK);
+        assert!(!j.to_string().contains("cuLaunchKernel"), "o relatório do plano não fala em cuLaunchKernel");
+        let alt = perfil_f2b_json_com(&[p.clone()], RotuloLanca::ComCuLaunchKernel);
+        assert!(alt.to_string().contains("cuLaunchKernel"));
+        // Sem F2B no pedido, nada entra.
+        let mut sem = p;
+        sem.f2b = None;
+        assert!(perfil_f2b_json(&[sem])["pedidos"].as_array().unwrap().is_empty());
+        // O arquivo do nível A não ganha campos do nível B.
+        assert!(!perfil_f2_json(&[]).to_string().contains("B_LOCK"));
+    }
+
+    fn bloco_com_pre(layers: usize, m: usize, pre: u64, gen: u32) -> (BlocoB, BlocoF2) {
+        let mut h = host(layers, m, &|_| pre);
+        h.gen = gen;
+        let mut b = regs(&h, layers, m);
+        b.gen = gen;
+        (b, h)
+    }
+
+    #[test]
+    fn parcelas_hb1_a_hb4_somam_no_maximo_um_e_usam_mediana_por_camada() {
+        let (layers, m) = (2usize, 2usize);
+        let pre = pre_min(m) + 100;
+        let blocos: Vec<_> = (0..5).map(|g| bloco_com_pre(layers, m, pre + g * 10, g as u32)).collect();
+        let cheios: Vec<(&BlocoB, &BlocoF2)> = blocos.iter().map(|(b, h)| (b, h)).collect();
+        let r = medidas_f2b_pedido(&cheios, layers);
+        let (p1, p2, p3, p4) = (r.hb1.unwrap(), r.hb2.unwrap(), r.hb3.unwrap(), r.hb4.unwrap());
+        assert!(p1 > 0.0 && p2 > 0.0 && p3 > 0.0 && p4 > 0.0);
+        assert!(p1 + p2 + p3 + p4 <= 1.0 + 1e-9, "as parcelas somadas não passam de 1 (o resíduo é o resto)");
+        // 11 de 21 registros por posição são B_LANCA e todos têm a mesma duração.
+        assert!((p3 / p4 - 11.0 / 6.0).abs() < 1e-9);
+        assert_eq!(r.h_pre_layer_mediana_camada_ns.len(), layers);
+        assert!(r.h_pre_layer_mediana_camada_ns.iter().all(|&x| x == (pre + 20) as f64));
+        assert!(r.hb5_p90_sobre_mediana.unwrap() >= 1.0);
+        assert_eq!(r.hb5_dispersao_camadas, Some(1.0));
+        assert_eq!(medidas_f2b_pedido(&[], layers), MedidasF2B::default());
+        // Célula: mediana entre os pedidos (um pedido muito diferente não arrasta).
+        let outro: Vec<_> = (0..3).map(|g| bloco_com_pre(layers, m, 50_000, g as u32)).collect();
+        let c2: Vec<(&BlocoB, &BlocoF2)> = outro.iter().map(|(b, h)| (b, h)).collect();
+        let cel = medidas_f2b_celula(&[cheios.clone(), cheios.clone(), c2], layers);
+        assert_eq!(cel.hb3, r.hb3);
+    }
+
+    #[test]
+    fn hb3_usa_os_limiares_do_plano_por_padrao_e_aceita_outros() {
+        assert_eq!(LIMIARES_HB3_PLANO, LimiaresHb3 { dentro: 0.60, fora: 0.40 });
+        let c = |x: f64| classifica_hb3(Some(x), &LIMIARES_HB3_PLANO);
+        assert_eq!((c(0.60), c(0.80)), (ClasseH::Dentro, ClasseH::Dentro));
+        assert_eq!((c(0.39), c(0.0)), (ClasseH::Fora, ClasseH::Fora));
+        assert_eq!((c(0.40), c(0.59)), (ClasseH::SemLeitura, ClasseH::SemLeitura));
+        assert_eq!(classifica_hb3(None, &LIMIARES_HB3_PLANO), ClasseH::SemDado);
+        assert_eq!(classifica_hb3(Some(f64::NAN), &LIMIARES_HB3_PLANO), ClasseH::SemDado);
+        let outros = LimiaresHb3 { dentro: 0.5, fora: 0.2 };
+        assert_eq!(classifica_hb3(Some(0.5), &outros), ClasseH::Dentro);
+        assert_eq!(classifica_hb3(Some(0.3), &outros), ClasseH::SemLeitura);
+        assert_eq!(classifica_hb3(Some(0.1), &outros), ClasseH::Fora);
+    }
+
+    #[test]
+    fn classes_descritivas_e_sem_prova_com_controle_acima_de_10_por_cento() {
+        let m = MedidasF2B { hb1: Some(0.01), hb2: Some(0.2), hb3: Some(0.7), hb4: Some(0.1), hb5_p90_sobre_mediana: Some(1.2), hb5_dispersao_camadas: Some(1.1),
+                             h_pre_layer_mediana_camada_ns: vec![1.0] };
+        let ok = ClasseControle::Comprovada;
+        for h in [HipB::Hb1, HipB::Hb2, HipB::Hb4, HipB::Hb5, HipB::Hb6] {
+            assert_eq!(classifica_f2b(h, &m, &ok, &LIMIARES_HB3_PLANO), ClasseH::Descritivo, "{h:?}");
+            assert_eq!(classifica_f2b(h, &MedidasF2B::default(), &ok, &LIMIARES_HB3_PLANO), ClasseH::SemDado, "{h:?}");
+            assert_eq!(classifica_f2b(h, &m, &ClasseControle::SemProva, &LIMIARES_HB3_PLANO), ClasseH::SemProva);
+            assert_eq!(classifica_f2b(h, &m, &ClasseControle::Incompleto("x".into()), &LIMIARES_HB3_PLANO), ClasseH::SemProva);
+        }
+        assert_eq!(classifica_f2b(HipB::Hb3, &m, &ok, &LIMIARES_HB3_PLANO), ClasseH::Dentro);
+        assert_eq!(classifica_f2b(HipB::Hb3, &m, &ClasseControle::ComRessalva, &LIMIARES_HB3_PLANO), ClasseH::Dentro);
+        assert_eq!(classifica_f2b(HipB::Hb3, &m, &ClasseControle::SemProva, &LIMIARES_HB3_PLANO), ClasseH::SemProva);
+    }
+
+    fn proc(b: BracoB, pre: f64) -> ProcessoControleB {
+        let (bl, f2, f2b) = match b {
+            BracoB::D => (false, false, false),
+            BracoB::A => (true, false, false),
+            BracoB::B1 => (true, true, false),
+            BracoB::B2 => (true, true, true),
+        };
+        ProcessoControleB { braco: b, prefill_ms_mediana: pre, passo_ms_mediana: 10.0, imprimiu_bloco_ligado: bl, imprimiu_f2_ligado: f2, imprimiu_f2b_ligado: f2b,
+                            produziu_bloco: bl, produziu_f2: f2, produziu_f2b: f2b, valido: true }
+    }
+
+    fn serie(cfg: &ControleB, b2: f64) -> Vec<ProcessoControleB> {
+        cfg.ordem.iter().map(|&b| proc(b, if b == BracoB::B2 { b2 } else { 100.0 })).collect()
+    }
+
+    #[test]
+    fn controle_do_plano_d_a_b2_tem_9_processos_e_classes_por_desvio() {
+        let cfg = &CONTROLE_B_PLANO;
+        assert_eq!(cfg.ordem.len(), 9);
+        for b in [BracoB::D, BracoB::A, BracoB::B2] {
+            assert_eq!(cfg.ordem.iter().filter(|&&x| x == b).count(), 3);
+        }
+        let r = |b2: f64| classifica_controle_f2b(cfg, &serie(cfg, b2), true, 22);
+        assert_eq!(r(102.0).classe, ClasseControle::Comprovada);
+        assert_eq!(r(108.0).classe, ClasseControle::ComRessalva);
+        assert_eq!(r(111.0).classe, ClasseControle::SemProva);
+        assert_eq!(r(90.0).classe, ClasseControle::ComRessalva, "o sinal não conta, a magnitude sim");
+        let x = r(108.0);
+        assert!((x.principal.unwrap().desvio - 0.08).abs() < 1e-9);
+        assert!(x.apoio.is_some() && x.classe_apoio.is_some());
+        assert!(matches!(classifica_controle_f2b(cfg, &serie(cfg, 100.0), false, 22).classe, ClasseControle::Incompleto(_)));
+        // Incompleto: processos a menos, ordem trocada, processo inválido, braço com arquivos do outro.
+        let mut s = serie(cfg, 100.0);
+        s.pop();
+        assert!(matches!(classifica_controle_f2b(cfg, &s, true, 22).classe, ClasseControle::Incompleto(_)));
+        let mut s = serie(cfg, 100.0);
+        s.swap(0, 1);
+        assert!(matches!(classifica_controle_f2b(cfg, &s, true, 22).classe, ClasseControle::Incompleto(_)));
+        let mut s = serie(cfg, 100.0);
+        s[3].valido = false;
+        assert!(matches!(classifica_controle_f2b(cfg, &s, true, 22).classe, ClasseControle::Incompleto(_)));
+        let mut s = serie(cfg, 100.0);
+        s[1].produziu_f2b = true;
+        assert!(matches!(classifica_controle_f2b(cfg, &s, true, 22).classe, ClasseControle::Incompleto(_)));
+        let mut s = serie(cfg, 100.0);
+        s[2].imprimiu_f2b_ligado = false;
+        assert!(matches!(classifica_controle_f2b(cfg, &s, true, 22).classe, ClasseControle::Incompleto(_)));
+    }
+
+    #[test]
+    fn controle_parametrizavel_so_a_b2_e_b1_no_lugar_do_d() {
+        let a_b2 = &CONTROLE_B_A_B2;
+        assert_eq!(a_b2.ordem.len(), 6);
+        let r = classifica_controle_f2b(a_b2, &serie(a_b2, 105.0), true, 22);
+        assert_eq!(r.classe, ClasseControle::ComRessalva);
+        assert!(r.apoio.is_none() && r.classe_apoio.is_none());
+        let b1 = &CONTROLE_B_B1_A_B2;
+        assert_eq!(b1.ordem.len(), 9);
+        let mut s = serie(b1, 101.0);
+        for p in s.iter_mut().filter(|p| p.braco == BracoB::B1) {
+            p.prefill_ms_mediana = 100.5;
+        }
+        let r = classifica_controle_f2b(b1, &s, true, 22);
+        assert_eq!(r.classe, ClasseControle::Comprovada);
+        assert!((r.apoio.unwrap().desvio - (101.0 - 100.5) / 100.5).abs() < 1e-9, "apoio é B2 contra B1");
+        // D não vale na configuração com B1 (ordem diferente).
+        assert!(matches!(classifica_controle_f2b(b1, &serie(&CONTROLE_B_PLANO, 100.0), true, 22).classe, ClasseControle::Incompleto(_)));
+    }
+}
