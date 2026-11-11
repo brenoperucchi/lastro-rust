@@ -95,11 +95,13 @@ pub struct MotorGeracao<B: Backend, P: PreparaPasso> {
     pub perfil: Vec<RecPedido>,
     /// O próximo pedido é o de aquecimento descartado (marcado por `gera_serie`).
     pub aquecimento: bool,
+    /// Gancho de coleta da prova bit a bit da O1 (`gancho_coleta`): `Some` só com `LASTRO_GANCHO_LOGITS=1`; uma entrada por pedido concluído.
+    pub gancho: Option<Vec<crate::gancho_coleta::PedidoGancho>>,
 }
 
 impl<B: Backend, P: PreparaPasso> Default for MotorGeracao<B, P> {
     fn default() -> Self {
-        Self { seq: None, pendente: None, base: Contadores::default(), criacoes: 0, perfil: vec![], aquecimento: false }
+        Self { seq: None, pendente: None, base: Contadores::default(), criacoes: 0, perfil: vec![], aquecimento: false, gancho: crate::gancho_coleta::do_ambiente().then(Vec::new) }
     }
 }
 
@@ -185,7 +187,7 @@ where
 {
     let renderizado = renderiza_chat(&[Mensagem { papel: Papel::Usuario, conteudo: texto.to_string() }], true, data).map_err(|e| e.to_string())?;
     let ids: Vec<usize> = tok.codifica(&renderizado).into_iter().map(|x| x as usize).collect();
-    let MotorGeracao { seq, pendente, base, criacoes, perfil, aquecimento } = r;
+    let MotorGeracao { seq, pendente, base, criacoes, perfil, aquecimento, gancho } = r;
     // Sequência: motor novo (primeiro pedido ou depois de falha) ou `nova_sequencia`.
     let t_seq = Instant::now();
     if seq.as_ref().is_some_and(|x| !x.eng.is_closed()) && pendente.is_some() {
@@ -212,6 +214,12 @@ where
     let mut logits = (s.le_logits)()?;
     pf.desarma();
     let prefill_ms = ms(t_pre.elapsed());
+    // Gancho de coleta (desligado por padrão): hash dos logits do último token do prefill e do KV por camada no fim do prefill.
+    let mut gp = gancho.as_ref().map(|g| crate::gancho_coleta::PedidoGancho { indice: g.len(), aquecimento: *aquecimento, ids: ids.clone(), ..Default::default() });
+    if let Some(g) = gp.as_mut() {
+        g.logits.push(crate::gancho_coleta::hash_bits_f32(&logits));
+        g.kv = crate::gancho_coleta::le_kv(ids.len()).ok_or("gancho ligado sem leitor do KV registrado")??;
+    }
     let n = ids.len() as u64;
     if s.eng.position() != n || s.prep.posicao() != n {
         return Err(format!("posição do motor {} e do backend {} depois de ler {n} ids", s.eng.position(), s.prep.posicao()));
@@ -234,7 +242,14 @@ where
             t_passo = Instant::now();
             le_ids_com_pendente(&mut s.eng, &s.prep, &[token], &mut None).map_err(|e| format!("le_ids (passo {i}): {e:?}"))?;
             logits = (s.le_logits)()?;
+            if let Some(g) = gp.as_mut() {
+                g.logits.push(crate::gancho_coleta::hash_bits_f32(&logits));
+            }
         }
+    }
+    if let (Some(mut g), Some(lista)) = (gp, gancho.as_mut()) {
+        g.gerados = gerados.clone();
+        lista.push(g);
     }
     let total_ms = ms(t_entrada.elapsed());
     // Fora dos cronômetros: o merge entre host e serviço do instrumento (espera pelo registro do último bloco do serviço, se preciso).
@@ -1232,5 +1247,58 @@ mod tests {
             assert!((e.prefill_ms - v_on[i].geracao.as_ref().unwrap().prefill_ms).abs() < 1e-9);
             assert!(e.decode_passo_ms_mediana.is_finite());
         }
+    }
+    /// Gancho de coleta (A2, plano de cópias): desligado por padrão não guarda nada; ligado guarda o hash dos logits do último token do prefill e
+    /// de cada passo do decode e o do KV por camada no fim do prefill; duas execuções iguais passam no comparador e uma com um logit de 1 ULP
+    /// diferente (ids iguais) falha.
+    #[test]
+    fn gancho_de_coleta_guarda_hashes_so_ligado_e_o_comparador_pega_um_ulp() {
+        use crate::gancho_coleta as g;
+        let roda_um = |ligado: bool, ulp: bool| -> Option<Vec<g::PedidoGancho>> {
+            let t = tok();
+            let cont = Arc::new(Mutex::new(0usize));
+            let mut r: MotorGeracao<FakeGpu, Prep> = MotorGeracao::novo();
+            r.gancho = ligado.then(Vec::new);
+            g::registra_le_kv(Some(Box::new(|len| Ok((0..2).map(|l| [g::hash_bits_f32(&[len as f32, l as f32]), g::hash_bits_f32(&[l as f32])]).collect()))));
+            let c2 = cont.clone();
+            // o mutante muda 1 ULP de um logit que não vence, no último passo
+            let seq = move || -> Result<Sequencia<FakeGpu, Prep>, String> {
+                let (gpu, eng) = motor_falso_pf(false);
+                let le: Box<dyn FnMut() -> Result<Vec<f32>, String>> = Box::new(move || {
+                    let mut c = c2.lock().unwrap();
+                    let passo = *c;
+                    *c += 1;
+                    let mut v = logits_do_passo(passo, None, 1.0);
+                    if ulp && passo == 7 {
+                        let pico = 100 + (passo * 37) % 5000;
+                        let alvo = (pico + 17) % VOCAB;
+                        v[alvo] = f32::from_bits(v[alvo].to_bits() + 1);
+                    }
+                    Ok(v)
+                });
+                Ok(Sequencia { eng, prep: Prep::novo(&gpu), le_logits: le })
+            };
+            let mut saida: Vec<u8> = vec![];
+            let ger = gera(Instant::now(), TEXTOS[1], &data_fixa_texto(), &t, &mut r, seq, CfgGera::prova(), &mut saida).unwrap();
+            let out = r.gancho.take();
+            r.encerra().unwrap();
+            g::registra_le_kv(None);
+            if let Some(v) = &out {
+                assert_eq!(v.len(), 1);
+                assert_eq!(v[0].gerados, ger.gerados);
+                assert_eq!(v[0].ids, ger.ids);
+                assert_eq!(v[0].logits.len(), N_NOVOS, "1 do prefill + {} do decode", N_NOVOS - 1);
+                assert_eq!(v[0].kv.len(), 2);
+            }
+            out
+        };
+        assert!(roda_um(false, false).is_none(), "desligado: nada guardado");
+        let a = roda_um(true, false).unwrap();
+        let b = roda_um(true, false).unwrap();
+        assert!(g::compara(&a, &b).is_empty(), "original contra original passa: {:?}", g::compara(&a, &b));
+        let m = roda_um(true, true).unwrap();
+        assert_eq!(a[0].gerados, m[0].gerados, "o mutante de 1 ULP mantém os ids");
+        let d = g::compara(&a, &m);
+        assert!(d.iter().any(|x| x.contains("passo 7 do decode")), "{d:?}");
     }
 }

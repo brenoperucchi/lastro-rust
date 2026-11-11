@@ -620,6 +620,18 @@ fn sequencia_real(c: &Cenario) -> Result<Sequencia<CudaBackend, LeitorCuda>, Str
     let eng = Engine::new(b.clone(), parts, mcfg, cpu).d()?;
     // A stream do adaptador é a MESMA do motor.
     let prep = LeitorCuda::novo(b.clone(), compute.clone()).d()?;
+    // Gancho de coleta (desligado por padrão): o leitor do KV por camada desta sequência, com o hash dos bits; só registrado com a variável ligada.
+    if moe_rt::gancho_coleta::do_ambiente() {
+        let (bk, ck, layers) = (b.clone(), compute.clone(), m.layers);
+        moe_rt::gancho_coleta::registra_le_kv(Some(Box::new(move |len| {
+            (0..layers)
+                .map(|l| {
+                    let (k, v) = bk.read_kv(&ck, l, len).map_err(|e| format!("{e:?}"))?;
+                    Ok([moe_rt::gancho_coleta::hash_bits_f32(&k), moe_rt::gancho_coleta::hash_bits_f32(&v)])
+                })
+                .collect()
+        })));
+    }
     let le_logits: Box<dyn FnMut() -> Result<Vec<f32>, String>> = Box::new(move || b.read_logits(&compute).d());
     Ok(Sequencia { eng, prep, le_logits })
 }
@@ -947,6 +959,9 @@ fn gera_modelo(nome: &str, mdir: &Path, args: &Args, device: &Arc<Device>, perfi
             medidas.extend(serie);
         }
         rec.criacoes = guardado.criacoes;
+        if let Some(g) = guardado.gancho.take() {
+            grava_json(&args.saida.join(format!("gancho-logits-{nome}.json")), &moe_rt::gancho_coleta::para_json(nome, &g))?;
+        }
         perfil.extend(std::mem::take(&mut guardado.perfil).into_iter().map(|mut e| {
             e.modelo = nome.to_string();
             e
