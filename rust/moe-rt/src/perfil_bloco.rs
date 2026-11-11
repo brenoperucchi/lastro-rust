@@ -1713,13 +1713,17 @@ pub enum PlanoCelula {
     NaoRodou,
 }
 
-/// Antes de iniciar uma célula: `restantes_s` são os tetos de processo de TODAS as células ainda não iniciadas, incluindo a que vai começar. Projeção
-/// `decorrido + soma + folga` contra o teto global; se passar com N = 5, tenta N = 3 em todas as restantes; se nem assim couber, NÃO RODOU.
-pub fn planeja_celula(decorrido_s: u64, restantes_s: &[u64], folga_s: u64, teto_global_s: u64) -> PlanoCelula {
+/// Antes de iniciar uma célula: `restantes_s` são os tetos de processo de TODAS as células ainda não iniciadas, incluindo a que vai começar (a primeira).
+/// Projeção `decorrido + soma + folga` contra o teto global. O corte é ÚNICO e PERMANENTE (`ja_cortado`: depois de um corte as células seguintes não
+/// voltam a 5). Sem corte prévio e cabendo todas com N = 5: `Cinco`. Senão, cabendo todas com N = 3: `Tres`. Senão, o NÃO RODOU é decidido SÓ pela célula
+/// atual com N = 3 (`decorrido + estimativa(atual, 3) + folga`): cabendo, `Tres`; não cabendo, `NaoRodou` (a célula não roda, nada é repetido).
+pub fn planeja_celula(decorrido_s: u64, restantes_s: &[u64], folga_s: u64, teto_global_s: u64, ja_cortado: bool) -> PlanoCelula {
     let soma = |n: u32| -> u64 { restantes_s.iter().map(|&t| estimativa_celula_s(t, n)).sum() };
-    if decorrido_s + soma(5) + folga_s <= teto_global_s {
+    if !ja_cortado && decorrido_s + soma(5) + folga_s <= teto_global_s {
         PlanoCelula::Cinco
     } else if decorrido_s + soma(3) + folga_s <= teto_global_s {
+        PlanoCelula::Tres
+    } else if restantes_s.first().is_some_and(|&t| decorrido_s + estimativa_celula_s(t, 3) + folga_s <= teto_global_s) {
         PlanoCelula::Tres
     } else {
         PlanoCelula::NaoRodou
@@ -3036,15 +3040,19 @@ mod tests_f2_rodada148 {
         let r = [teto_processo_s(true, CelulaF2::Curto), teto_processo_s(true, CelulaF2::Longo)];
         assert_eq!(r, [90, 120]);
         assert_eq!(200 + r.iter().sum::<u64>() + FOLGA_S, 590);
-        assert_eq!(planeja_celula(200, &r, FOLGA_S, TETO_JANELA_S), PlanoCelula::Cinco);
+        assert_eq!(planeja_celula(200, &r, FOLGA_S, TETO_JANELA_S, false), PlanoCelula::Cinco);
         // saldo insuficiente para cinco: 5 s a mais que o limite com N=5 (decorrido 871: 871 + 210 + 180 = 1261 > 1200); com N=3 (140 + ...) = 871 + 140 + 180 = 1191 cabe
-        assert_eq!(planeja_celula(871, &r, FOLGA_S, TETO_JANELA_S), PlanoCelula::Tres);
+        assert_eq!(planeja_celula(871, &r, FOLGA_S, TETO_JANELA_S, false), PlanoCelula::Tres);
         assert_eq!(estimativa_celula_s(90, 3) + estimativa_celula_s(120, 3), 60 + 80);
-        // nem com três cabe
-        assert_eq!(planeja_celula(900, &r, FOLGA_S, TETO_JANELA_S), PlanoCelula::NaoRodou);
+        // NÃO RODOU só pela célula atual com 3: 900 + 60 + 180 = 1140 cabe (Tres); 961 + 60 + 180 = 1201 não (NaoRodou)
+        assert_eq!(planeja_celula(900, &r, FOLGA_S, TETO_JANELA_S, false), PlanoCelula::Tres);
+        assert_eq!(planeja_celula(961, &r, FOLGA_S, TETO_JANELA_S, false), PlanoCelula::NaoRodou);
+        // corte único e permanente: com folga sobrando, ja_cortado nunca volta a Cinco
+        assert_eq!(planeja_celula(200, &r, FOLGA_S, TETO_JANELA_S, true), PlanoCelula::Tres);
+        assert_eq!(planeja_celula(200, &r, FOLGA_S, TETO_JANELA_S, false), PlanoCelula::Cinco);
         // limite exato: soma == teto global cabe
-        assert_eq!(planeja_celula(1200 - 210 - 180, &r, FOLGA_S, TETO_JANELA_S), PlanoCelula::Cinco);
-        assert_eq!(planeja_celula(1200 - 210 - 180 + 1, &r, FOLGA_S, TETO_JANELA_S), PlanoCelula::Tres);
+        assert_eq!(planeja_celula(1200 - 210 - 180, &r, FOLGA_S, TETO_JANELA_S, false), PlanoCelula::Cinco);
+        assert_eq!(planeja_celula(1200 - 210 - 180 + 1, &r, FOLGA_S, TETO_JANELA_S, false), PlanoCelula::Tres);
         // a estimativa por N nunca passa do teto do processo
         for t in [60u64, 75, 90, 120] {
             assert!(estimativa_celula_s(t, 3) <= t && estimativa_celula_s(t, 5) == t);

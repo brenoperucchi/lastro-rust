@@ -1,0 +1,2988 @@
+{
+ "tipo": "f2-host-resultado",
+ "criterio": "criterio-f2-host-20261111.md",
+ "descritivo": true,
+ "modelo_da_janela": "3b",
+ "layers": 32,
+ "aviso": "Descritivo: sem veredito geral e sem PASSA. HA a HH são previsões pré-registradas, só conferidas ('dentro', 'fora', 'sem leitura', 'sem dado', 'SEM PROVA', 'descritivo'); HF, HG e HI não têm classe de dentro/fora; nada prova causa nem identifica o mecanismo de espera; o tempo com instrumento não é o tempo de produção.",
+ "integridade_problemas": [],
+ "referencia_problemas": [],
+ "smoke": {
+  "ok": true,
+  "motivo": ""
+ },
+ "bloqueios": [],
+ "controle": {
+  "classe": "comprovada",
+  "motivo": "",
+  "principal": {
+   "desvio": 0.004125012040549502,
+   "pior_caso": 0.0043904660578882775,
+   "ms_por_bloco": 0.130387909090907,
+   "desvio_passo": 0.0030766095413735256,
+   "mediana_alvo_ms": 698.268686,
+   "mediana_ref_ms": 695.400152
+  },
+  "apoio": {
+   "desvio": 0.0032821585479460265,
+   "pior_caso": 0.0036977945377762653,
+   "ms_por_bloco": 0.10383322727272509,
+   "desvio_passo": 0.0031797081765047065,
+   "mediana_alvo_ms": 698.268686,
+   "mediana_ref_ms": 695.984355
+  },
+  "classe_apoio": "comprovada",
+  "ordem_efetiva": "confere com ordem.txt (D A B, B D A, A B D, rc 0)",
+  "processos": [
+   {
+    "nn": 1,
+    "braco": "D",
+    "pasta": "ctrl-3b-L100-medio-01-D",
+    "status_temporal": "OK",
+    "estado_bloco": "desligado",
+    "estado_f2": "desligado",
+    "tem_perfil_bloco": false,
+    "tem_perfil_f2": false,
+    "valido": true,
+    "prefill_ms_mediana": 695.984355,
+    "passo_ms_mediana": 4.579797,
+    "motivos": []
+   },
+   {
+    "nn": 2,
+    "braco": "A",
+    "pasta": "ctrl-3b-L100-medio-02-A",
+    "status_temporal": "OK",
+    "estado_bloco": "ligado",
+    "estado_f2": "desligado",
+    "tem_perfil_bloco": true,
+    "tem_perfil_f2": false,
+    "valido": true,
+    "prefill_ms_mediana": 698.120593,
+    "passo_ms_mediana": 4.5962570000000005,
+    "motivos": []
+   },
+   {
+    "nn": 3,
+    "braco": "B",
+    "pasta": "ctrl-3b-L100-medio-03-B",
+    "status_temporal": "OK",
+    "estado_bloco": "ligado",
+    "estado_f2": "ligado",
+    "tem_perfil_bloco": true,
+    "tem_perfil_f2": true,
+    "valido": true,
+    "prefill_ms_mediana": 698.040753,
+    "passo_ms_mediana": 4.597067,
+    "motivos": []
+   },
+   {
+    "nn": 4,
+    "braco": "B",
+    "pasta": "ctrl-3b-L100-medio-04-B",
+    "status_temporal": "OK",
+    "estado_bloco": "ligado",
+    "estado_f2": "ligado",
+    "tem_perfil_bloco": true,
+    "tem_perfil_f2": true,
+    "valido": true,
+    "prefill_ms_mediana": 698.316077,
+    "passo_ms_mediana": 4.608417,
+    "motivos": []
+   },
+   {
+    "nn": 5,
+    "braco": "D",
+    "pasta": "ctrl-3b-L100-medio-05-D",
+    "status_temporal": "OK",
+    "estado_bloco": "desligado",
+    "estado_f2": "desligado",
+    "tem_perfil_bloco": false,
+    "tem_perfil_f2": false,
+    "valido": true,
+    "prefill_ms_mediana": 695.743361,
+    "passo_ms_mediana": 4.582496,
+    "motivos": []
+   },
+   {
+    "nn": 6,
+    "braco": "A",
+    "pasta": "ctrl-3b-L100-medio-06-A",
+    "status_temporal": "OK",
+    "estado_bloco": "ligado",
+    "estado_f2": "desligado",
+    "tem_perfil_bloco": true,
+    "tem_perfil_f2": false,
+    "valido": true,
+    "prefill_ms_mediana": 695.400152,
+    "passo_ms_mediana": 4.582967,
+    "motivos": []
+   },
+   {
+    "nn": 7,
+    "braco": "A",
+    "pasta": "ctrl-3b-L100-medio-07-A",
+    "status_temporal": "OK",
+    "estado_bloco": "ligado",
+    "estado_f2": "desligado",
+    "tem_perfil_bloco": true,
+    "tem_perfil_f2": false,
+    "valido": true,
+    "prefill_ms_mediana": 695.2635459999999,
+    "passo_ms_mediana": 4.582366,
+    "motivos": []
+   },
+   {
+    "nn": 8,
+    "braco": "B",
+    "pasta": "ctrl-3b-L100-medio-08-B",
+    "status_temporal": "OK",
+    "estado_bloco": "ligado",
+    "estado_f2": "ligado",
+    "tem_perfil_bloco": true,
+    "tem_perfil_f2": true,
+    "valido": true,
+    "prefill_ms_mediana": 698.268686,
+    "passo_ms_mediana": 4.589957,
+    "motivos": []
+   },
+   {
+    "nn": 9,
+    "braco": "D",
+    "pasta": "ctrl-3b-L100-medio-09-D",
+    "status_temporal": "OK",
+    "estado_bloco": "desligado",
+    "estado_f2": "desligado",
+    "tem_perfil_bloco": false,
+    "tem_perfil_f2": false,
+    "valido": true,
+    "prefill_ms_mediana": 697.399705,
+    "passo_ms_mediana": 4.595816,
+    "motivos": []
+   }
+  ]
+ },
+ "ids_B_igual_D": true,
+ "divergencias_5c": [],
+ "textos": {
+  "curto": {
+   "status": "OK",
+   "motivos": [],
+   "celulas": [
+    "lastro-3b-L100-curto-quente"
+   ],
+   "pedidos_validos": 5,
+   "minimo_pedidos": 3,
+   "amostras_elegiveis": 50,
+   "medidas": {
+    "ha": 0.9944056563415242,
+    "hb_frac": 0.812840083303168,
+    "hb_maior": true,
+    "hc": 0.005033448196429998,
+    "hd": 2.4731835626100565,
+    "he": 0.0,
+    "hf_razao": 0.09096130881229808,
+    "hh": 0.9993528449728197,
+    "n_pedidos_com_blocos": 5,
+    "por_pedido": [
+     {
+      "ha": 0.9944056563415242,
+      "hb_frac": 0.812840083303168,
+      "hc": 0.005033448196429998,
+      "hd": 2.4731835626100565,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9943533985225017,
+      "hb_frac": 0.8114640984968824,
+      "hc": 0.005145117419259281,
+      "hd": 2.4598992459271054,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9948396589291,
+      "hb_frac": 0.8133468555868114,
+      "hc": 0.004947722170191842,
+      "hd": 2.4816572528788488,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9949266326900582,
+      "hb_frac": 0.8139211711826129,
+      "hc": 0.004708708627345393,
+      "hd": 2.518478167378652,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9929537928555092,
+      "hb_frac": 0.8053521554874887,
+      "hc": 0.0053751711376243015,
+      "hd": 2.383129086266844,
+      "he": 1.6509549783977043e-06
+     }
+    ],
+    "faixa_hf": [
+     0.09375,
+     0.15625
+    ]
+   },
+   "hi": {
+    "tipo": "hi",
+    "descritivo": true,
+    "unidade": "ns, com sinal",
+    "amostras": 50,
+    "distribuicao": {
+     "defasagem_obs": {
+      "n": 1600,
+      "min": 8471,
+      "mediana": 5322467.0,
+      "p90": 5341413,
+      "max": 5361452
+     },
+     "defasagem": {
+      "n": 1600,
+      "min": 13481,
+      "mediana": 5327342.0,
+      "p90": 5346623,
+      "max": 5368152
+     },
+     "intervalo_obs": {
+      "n": 1550,
+      "min": 1003108,
+      "mediana": 1008473.0,
+      "p90": 1011848,
+      "max": 1025068
+     },
+     "intervalo": {
+      "n": 1550,
+      "min": 986828,
+      "mediana": 1008478.0,
+      "p90": 1012218,
+      "max": 1030628
+     }
+    },
+    "mediana_por_camada": {
+     "defasagem_obs": [
+      {
+       "camada": 0,
+       "n": 50,
+       "mediana": 170136.0
+      },
+      {
+       "camada": 1,
+       "n": 50,
+       "mediana": 751791.0
+      },
+      {
+       "camada": 2,
+       "n": 50,
+       "mediana": 1342190.5
+      },
+      {
+       "camada": 3,
+       "n": 50,
+       "mediana": 1931425.5
+      },
+      {
+       "camada": 4,
+       "n": 50,
+       "mediana": 2520350.0
+      },
+      {
+       "camada": 5,
+       "n": 50,
+       "mediana": 3104090.0
+      },
+      {
+       "camada": 6,
+       "n": 50,
+       "mediana": 3696704.5
+      },
+      {
+       "camada": 7,
+       "n": 50,
+       "mediana": 4283039.0
+      },
+      {
+       "camada": 8,
+       "n": 50,
+       "mediana": 4873503.0
+      },
+      {
+       "camada": 9,
+       "n": 50,
+       "mediana": 5326637.5
+      },
+      {
+       "camada": 10,
+       "n": 50,
+       "mediana": 5328227.0
+      },
+      {
+       "camada": 11,
+       "n": 50,
+       "mediana": 5328407.0
+      },
+      {
+       "camada": 12,
+       "n": 50,
+       "mediana": 5327297.0
+      },
+      {
+       "camada": 13,
+       "n": 50,
+       "mediana": 5327487.0
+      },
+      {
+       "camada": 14,
+       "n": 50,
+       "mediana": 5326747.0
+      },
+      {
+       "camada": 15,
+       "n": 50,
+       "mediana": 5326632.0
+      },
+      {
+       "camada": 16,
+       "n": 50,
+       "mediana": 5326212.5
+      },
+      {
+       "camada": 17,
+       "n": 50,
+       "mediana": 5326232.5
+      },
+      {
+       "camada": 18,
+       "n": 50,
+       "mediana": 5326007.0
+      },
+      {
+       "camada": 19,
+       "n": 50,
+       "mediana": 5326282.0
+      },
+      {
+       "camada": 20,
+       "n": 50,
+       "mediana": 5325952.0
+      },
+      {
+       "camada": 21,
+       "n": 50,
+       "mediana": 5327242.0
+      },
+      {
+       "camada": 22,
+       "n": 50,
+       "mediana": 5326977.0
+      },
+      {
+       "camada": 23,
+       "n": 50,
+       "mediana": 5325102.0
+      },
+      {
+       "camada": 24,
+       "n": 50,
+       "mediana": 5323892.0
+      },
+      {
+       "camada": 25,
+       "n": 50,
+       "mediana": 5325097.0
+      },
+      {
+       "camada": 26,
+       "n": 50,
+       "mediana": 5324547.0
+      },
+      {
+       "camada": 27,
+       "n": 50,
+       "mediana": 5324262.0
+      },
+      {
+       "camada": 28,
+       "n": 50,
+       "mediana": 5323102.0
+      },
+      {
+       "camada": 29,
+       "n": 50,
+       "mediana": 5323702.0
+      },
+      {
+       "camada": 30,
+       "n": 50,
+       "mediana": 5323277.0
+      },
+      {
+       "camada": 31,
+       "n": 50,
+       "mediana": 5323717.0
+      }
+     ],
+     "defasagem": [
+      {
+       "camada": 0,
+       "n": 50,
+       "mediana": 175381.0
+      },
+      {
+       "camada": 1,
+       "n": 50,
+       "mediana": 756576.0
+      },
+      {
+       "camada": 2,
+       "n": 50,
+       "mediana": 1346710.5
+      },
+      {
+       "camada": 3,
+       "n": 50,
+       "mediana": 1935776.0
+      },
+      {
+       "camada": 4,
+       "n": 50,
+       "mediana": 2527595.0
+      },
+      {
+       "camada": 5,
+       "n": 50,
+       "mediana": 3109925.0
+      },
+      {
+       "camada": 6,
+       "n": 50,
+       "mediana": 3701549.5
+      },
+      {
+       "camada": 7,
+       "n": 50,
+       "mediana": 4287644.0
+      },
+      {
+       "camada": 8,
+       "n": 50,
+       "mediana": 4880498.0
+      },
+      {
+       "camada": 9,
+       "n": 50,
+       "mediana": 5331188.0
+      },
+      {
+       "camada": 10,
+       "n": 50,
+       "mediana": 5333167.0
+      },
+      {
+       "camada": 11,
+       "n": 50,
+       "mediana": 5333107.5
+      },
+      {
+       "camada": 12,
+       "n": 50,
+       "mediana": 5332617.0
+      },
+      {
+       "camada": 13,
+       "n": 50,
+       "mediana": 5332992.5
+      },
+      {
+       "camada": 14,
+       "n": 50,
+       "mediana": 5332107.0
+      },
+      {
+       "camada": 15,
+       "n": 50,
+       "mediana": 5331432.5
+      },
+      {
+       "camada": 16,
+       "n": 50,
+       "mediana": 5330742.0
+      },
+      {
+       "camada": 17,
+       "n": 50,
+       "mediana": 5331257.0
+      },
+      {
+       "camada": 18,
+       "n": 50,
+       "mediana": 5330932.0
+      },
+      {
+       "camada": 19,
+       "n": 50,
+       "mediana": 5332232.5
+      },
+      {
+       "camada": 20,
+       "n": 50,
+       "mediana": 5330832.0
+      },
+      {
+       "camada": 21,
+       "n": 50,
+       "mediana": 5332242.0
+      },
+      {
+       "camada": 22,
+       "n": 50,
+       "mediana": 5333277.5
+      },
+      {
+       "camada": 23,
+       "n": 50,
+       "mediana": 5329917.0
+      },
+      {
+       "camada": 24,
+       "n": 50,
+       "mediana": 5329122.0
+      },
+      {
+       "camada": 25,
+       "n": 50,
+       "mediana": 5329627.0
+      },
+      {
+       "camada": 26,
+       "n": 50,
+       "mediana": 5329662.0
+      },
+      {
+       "camada": 27,
+       "n": 50,
+       "mediana": 5329722.0
+      },
+      {
+       "camada": 28,
+       "n": 50,
+       "mediana": 5328632.0
+      },
+      {
+       "camada": 29,
+       "n": 50,
+       "mediana": 5328412.0
+      },
+      {
+       "camada": 30,
+       "n": 50,
+       "mediana": 5329232.0
+      },
+      {
+       "camada": 31,
+       "n": 50,
+       "mediana": 5329282.0
+      }
+     ],
+     "intervalo_obs": [
+      {
+       "camada": 0,
+       "n": 0,
+       "mediana": null
+      },
+      {
+       "camada": 1,
+       "n": 50,
+       "mediana": 1008923.5
+      },
+      {
+       "camada": 2,
+       "n": 50,
+       "mediana": 1008573.0
+      },
+      {
+       "camada": 3,
+       "n": 50,
+       "mediana": 1008523.0
+      },
+      {
+       "camada": 4,
+       "n": 50,
+       "mediana": 1008683.0
+      },
+      {
+       "camada": 5,
+       "n": 50,
+       "mediana": 1008368.0
+      },
+      {
+       "camada": 6,
+       "n": 50,
+       "mediana": 1009298.0
+      },
+      {
+       "camada": 7,
+       "n": 50,
+       "mediana": 1009023.0
+      },
+      {
+       "camada": 8,
+       "n": 50,
+       "mediana": 1008463.0
+      },
+      {
+       "camada": 9,
+       "n": 50,
+       "mediana": 1008898.0
+      },
+      {
+       "camada": 10,
+       "n": 50,
+       "mediana": 1008688.0
+      },
+      {
+       "camada": 11,
+       "n": 50,
+       "mediana": 1008648.0
+      },
+      {
+       "camada": 12,
+       "n": 50,
+       "mediana": 1009158.0
+      },
+      {
+       "camada": 13,
+       "n": 50,
+       "mediana": 1009218.0
+      },
+      {
+       "camada": 14,
+       "n": 50,
+       "mediana": 1007788.0
+      },
+      {
+       "camada": 15,
+       "n": 50,
+       "mediana": 1008723.0
+      },
+      {
+       "camada": 16,
+       "n": 50,
+       "mediana": 1008638.0
+      },
+      {
+       "camada": 17,
+       "n": 50,
+       "mediana": 1008197.5
+      },
+      {
+       "camada": 18,
+       "n": 50,
+       "mediana": 1008408.0
+      },
+      {
+       "camada": 19,
+       "n": 50,
+       "mediana": 1008293.0
+      },
+      {
+       "camada": 20,
+       "n": 50,
+       "mediana": 1007788.0
+      },
+      {
+       "camada": 21,
+       "n": 50,
+       "mediana": 1008893.0
+      },
+      {
+       "camada": 22,
+       "n": 50,
+       "mediana": 1008023.0
+      },
+      {
+       "camada": 23,
+       "n": 50,
+       "mediana": 1008562.5
+      },
+      {
+       "camada": 24,
+       "n": 50,
+       "mediana": 1007498.0
+      },
+      {
+       "camada": 25,
+       "n": 50,
+       "mediana": 1008683.0
+      },
+      {
+       "camada": 26,
+       "n": 50,
+       "mediana": 1007103.0
+      },
+      {
+       "camada": 27,
+       "n": 50,
+       "mediana": 1007953.0
+      },
+      {
+       "camada": 28,
+       "n": 50,
+       "mediana": 1007648.0
+      },
+      {
+       "camada": 29,
+       "n": 50,
+       "mediana": 1008863.0
+      },
+      {
+       "camada": 30,
+       "n": 50,
+       "mediana": 1007933.0
+      },
+      {
+       "camada": 31,
+       "n": 50,
+       "mediana": 1008168.0
+      }
+     ],
+     "intervalo": [
+      {
+       "camada": 0,
+       "n": 0,
+       "mediana": null
+      },
+      {
+       "camada": 1,
+       "n": 50,
+       "mediana": 1008878.0
+      },
+      {
+       "camada": 2,
+       "n": 50,
+       "mediana": 1008188.0
+      },
+      {
+       "camada": 3,
+       "n": 50,
+       "mediana": 1008547.5
+      },
+      {
+       "camada": 4,
+       "n": 50,
+       "mediana": 1008998.0
+      },
+      {
+       "camada": 5,
+       "n": 50,
+       "mediana": 1008218.0
+      },
+      {
+       "camada": 6,
+       "n": 50,
+       "mediana": 1008973.0
+      },
+      {
+       "camada": 7,
+       "n": 50,
+       "mediana": 1009003.0
+      },
+      {
+       "camada": 8,
+       "n": 50,
+       "mediana": 1008833.0
+      },
+      {
+       "camada": 9,
+       "n": 50,
+       "mediana": 1008553.0
+      },
+      {
+       "camada": 10,
+       "n": 50,
+       "mediana": 1008608.0
+      },
+      {
+       "camada": 11,
+       "n": 50,
+       "mediana": 1008803.0
+      },
+      {
+       "camada": 12,
+       "n": 50,
+       "mediana": 1008923.0
+      },
+      {
+       "camada": 13,
+       "n": 50,
+       "mediana": 1009543.0
+      },
+      {
+       "camada": 14,
+       "n": 50,
+       "mediana": 1007438.0
+      },
+      {
+       "camada": 15,
+       "n": 50,
+       "mediana": 1008523.0
+      },
+      {
+       "camada": 16,
+       "n": 50,
+       "mediana": 1008733.0
+      },
+      {
+       "camada": 17,
+       "n": 50,
+       "mediana": 1008447.5
+      },
+      {
+       "camada": 18,
+       "n": 50,
+       "mediana": 1008578.0
+      },
+      {
+       "camada": 19,
+       "n": 50,
+       "mediana": 1008258.0
+      },
+      {
+       "camada": 20,
+       "n": 50,
+       "mediana": 1008128.0
+      },
+      {
+       "camada": 21,
+       "n": 50,
+       "mediana": 1009108.0
+      },
+      {
+       "camada": 22,
+       "n": 50,
+       "mediana": 1008783.0
+      },
+      {
+       "camada": 23,
+       "n": 50,
+       "mediana": 1008598.0
+      },
+      {
+       "camada": 24,
+       "n": 50,
+       "mediana": 1007913.0
+      },
+      {
+       "camada": 25,
+       "n": 50,
+       "mediana": 1008368.0
+      },
+      {
+       "camada": 26,
+       "n": 50,
+       "mediana": 1007503.0
+      },
+      {
+       "camada": 27,
+       "n": 50,
+       "mediana": 1007813.0
+      },
+      {
+       "camada": 28,
+       "n": 50,
+       "mediana": 1007628.0
+      },
+      {
+       "camada": 29,
+       "n": 50,
+       "mediana": 1008738.0
+      },
+      {
+       "camada": 30,
+       "n": 50,
+       "mediana": 1008058.0
+      },
+      {
+       "camada": 31,
+       "n": 50,
+       "mediana": 1008153.0
+      }
+     ],
+     "host_seis_operacoes": [
+      {
+       "camada": 0,
+       "n": 50,
+       "mediana_ns": 448643.5
+      },
+      {
+       "camada": 1,
+       "n": 50,
+       "mediana_ns": 418953.0
+      },
+      {
+       "camada": 2,
+       "n": 50,
+       "mediana_ns": 418483.0
+      },
+      {
+       "camada": 3,
+       "n": 50,
+       "mediana_ns": 417698.5
+      },
+      {
+       "camada": 4,
+       "n": 50,
+       "mediana_ns": 411888.5
+      },
+      {
+       "camada": 5,
+       "n": 50,
+       "mediana_ns": 420763.5
+      },
+      {
+       "camada": 6,
+       "n": 50,
+       "mediana_ns": 412428.5
+      },
+      {
+       "camada": 7,
+       "n": 50,
+       "mediana_ns": 415863.0
+      },
+      {
+       "camada": 8,
+       "n": 50,
+       "mediana_ns": 411213.5
+      },
+      {
+       "camada": 9,
+       "n": 50,
+       "mediana_ns": 591869.0
+      },
+      {
+       "camada": 10,
+       "n": 50,
+       "mediana_ns": 1008092.5
+      },
+      {
+       "camada": 11,
+       "n": 50,
+       "mediana_ns": 1008858.0
+      },
+      {
+       "camada": 12,
+       "n": 50,
+       "mediana_ns": 1008528.0
+      },
+      {
+       "camada": 13,
+       "n": 50,
+       "mediana_ns": 1008633.0
+      },
+      {
+       "camada": 14,
+       "n": 50,
+       "mediana_ns": 1008513.5
+      },
+      {
+       "camada": 15,
+       "n": 50,
+       "mediana_ns": 1009113.0
+      },
+      {
+       "camada": 16,
+       "n": 50,
+       "mediana_ns": 1008178.0
+      },
+      {
+       "camada": 17,
+       "n": 50,
+       "mediana_ns": 1008923.0
+      },
+      {
+       "camada": 18,
+       "n": 50,
+       "mediana_ns": 1009383.0
+      },
+      {
+       "camada": 19,
+       "n": 50,
+       "mediana_ns": 1007948.0
+      },
+      {
+       "camada": 20,
+       "n": 50,
+       "mediana_ns": 1008278.0
+      },
+      {
+       "camada": 21,
+       "n": 50,
+       "mediana_ns": 1009013.0
+      },
+      {
+       "camada": 22,
+       "n": 50,
+       "mediana_ns": 1008173.0
+      },
+      {
+       "camada": 23,
+       "n": 50,
+       "mediana_ns": 1009183.0
+      },
+      {
+       "camada": 24,
+       "n": 50,
+       "mediana_ns": 1008493.0
+      },
+      {
+       "camada": 25,
+       "n": 50,
+       "mediana_ns": 1007553.0
+      },
+      {
+       "camada": 26,
+       "n": 50,
+       "mediana_ns": 1009228.0
+      },
+      {
+       "camada": 27,
+       "n": 50,
+       "mediana_ns": 1008108.0
+      },
+      {
+       "camada": 28,
+       "n": 50,
+       "mediana_ns": 1008788.0
+      },
+      {
+       "camada": 29,
+       "n": 50,
+       "mediana_ns": 1007928.0
+      },
+      {
+       "camada": 30,
+       "n": 50,
+       "mediana_ns": 1008658.0
+      },
+      {
+       "camada": 31,
+       "n": 50,
+       "mediana_ns": 1007483.0
+      }
+     ]
+    },
+    "limites": "defasagem negativa e conservada com sinal; tb_obs e tb nao medem a GPU nem identificam o mecanismo de espera; tb inclui leitura, copia e escalonamento do servico"
+   },
+   "hipoteses": {
+    "HA": "dentro",
+    "HB": "dentro",
+    "HC": "dentro",
+    "HD": "descritivo",
+    "HE": "descritivo",
+    "HF": "descritivo",
+    "HG": "sem dado",
+    "HH": "descritivo",
+    "HI": "descritivo"
+   },
+   "ressalvas": [],
+   "resto": 1
+  },
+  "medio": {
+   "status": "OK",
+   "motivos": [],
+   "celulas": [
+    "ctrl-3b-L100-medio-03-B",
+    "ctrl-3b-L100-medio-04-B",
+    "ctrl-3b-L100-medio-08-B"
+   ],
+   "pedidos_validos": 9,
+   "minimo_pedidos": 9,
+   "amostras_elegiveis": 180,
+   "medidas": {
+    "ha": 0.9943620511910902,
+    "hb_frac": 0.8103707561461583,
+    "hb_maior": true,
+    "hc": 0.0051256585747968915,
+    "hd": 2.458110607680429,
+    "he": 0.0,
+    "hf_razao": 0.15461917874276168,
+    "hh": 0.99627774546771,
+    "n_pedidos_com_blocos": 9,
+    "por_pedido": [
+     {
+      "ha": 0.9945562839492298,
+      "hb_frac": 0.8118039613585825,
+      "hc": 0.0048775623993625415,
+      "hd": 2.4868708247899995,
+      "he": 0.0
+     },
+     {
+      "ha": 0.994759381443789,
+      "hb_frac": 0.8125056948294513,
+      "hc": 0.004777434415728791,
+      "hd": 2.4951284485585536,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9945609607339834,
+      "hb_frac": 0.8114123642677004,
+      "hc": 0.004919327680783075,
+      "hd": 2.458110607680429,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9938069956887554,
+      "hb_frac": 0.8071608265275004,
+      "hc": 0.00542193592335355,
+      "hd": 2.4108501054520124,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9940977925248081,
+      "hb_frac": 0.8103707561461583,
+      "hc": 0.005381185744471419,
+      "hd": 2.459900519959684,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9940187275671443,
+      "hb_frac": 0.8042561816584518,
+      "hc": 0.0054523426879331885,
+      "hd": 2.4240546980955475,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9941215750025232,
+      "hb_frac": 0.809654817864031,
+      "hc": 0.0051256585747968915,
+      "hd": 2.4393969629358927,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9950133741975753,
+      "hb_frac": 0.8129466244207905,
+      "hc": 0.004592324886740229,
+      "hd": 2.5009382250901857,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9943620511910902,
+      "hb_frac": 0.8103077051462089,
+      "hc": 0.005249049943299765,
+      "hd": 2.4361781439120636,
+      "he": 0.0
+     }
+    ],
+    "faixa_hf": [
+     0.1875,
+     0.3125
+    ]
+   },
+   "hi": {
+    "tipo": "hi",
+    "descritivo": true,
+    "unidade": "ns, com sinal",
+    "amostras": 180,
+    "distribuicao": {
+     "defasagem_obs": {
+      "n": 5760,
+      "min": 2450,
+      "mediana": 5337878.0,
+      "p90": 5370713,
+      "max": 5389453
+     },
+     "defasagem": {
+      "n": 5760,
+      "min": 7750,
+      "mediana": 5342823.0,
+      "p90": 5375773,
+      "max": 5400773
+     },
+     "intervalo_obs": {
+      "n": 5580,
+      "min": 991288,
+      "mediana": 1012998.0,
+      "p90": 1017219,
+      "max": 1044598
+     },
+     "intervalo": {
+      "n": 5580,
+      "min": 972448,
+      "mediana": 1012858.0,
+      "p90": 1017418,
+      "max": 1050439
+     }
+    },
+    "mediana_por_camada": {
+     "defasagem_obs": [
+      {
+       "camada": 0,
+       "n": 180,
+       "mediana": 173856.0
+      },
+      {
+       "camada": 1,
+       "n": 180,
+       "mediana": 754981.0
+      },
+      {
+       "camada": 2,
+       "n": 180,
+       "mediana": 1347241.0
+      },
+      {
+       "camada": 3,
+       "n": 180,
+       "mediana": 1934941.0
+      },
+      {
+       "camada": 4,
+       "n": 180,
+       "mediana": 2529525.5
+      },
+      {
+       "camada": 5,
+       "n": 180,
+       "mediana": 3118565.5
+      },
+      {
+       "camada": 6,
+       "n": 180,
+       "mediana": 3710645.0
+      },
+      {
+       "camada": 7,
+       "n": 180,
+       "mediana": 4309319.5
+      },
+      {
+       "camada": 8,
+       "n": 180,
+       "mediana": 4901019.0
+      },
+      {
+       "camada": 9,
+       "n": 180,
+       "mediana": 5341943.0
+      },
+      {
+       "camada": 10,
+       "n": 180,
+       "mediana": 5355168.0
+      },
+      {
+       "camada": 11,
+       "n": 180,
+       "mediana": 5354113.0
+      },
+      {
+       "camada": 12,
+       "n": 180,
+       "mediana": 5353138.0
+      },
+      {
+       "camada": 13,
+       "n": 180,
+       "mediana": 5355058.0
+      },
+      {
+       "camada": 14,
+       "n": 180,
+       "mediana": 5354543.0
+      },
+      {
+       "camada": 15,
+       "n": 180,
+       "mediana": 5354603.0
+      },
+      {
+       "camada": 16,
+       "n": 180,
+       "mediana": 5353858.0
+      },
+      {
+       "camada": 17,
+       "n": 180,
+       "mediana": 5354022.5
+      },
+      {
+       "camada": 18,
+       "n": 180,
+       "mediana": 5352903.0
+      },
+      {
+       "camada": 19,
+       "n": 180,
+       "mediana": 5353392.5
+      },
+      {
+       "camada": 20,
+       "n": 180,
+       "mediana": 5352282.5
+      },
+      {
+       "camada": 21,
+       "n": 180,
+       "mediana": 5352387.5
+      },
+      {
+       "camada": 22,
+       "n": 180,
+       "mediana": 5351377.5
+      },
+      {
+       "camada": 23,
+       "n": 180,
+       "mediana": 5352152.5
+      },
+      {
+       "camada": 24,
+       "n": 180,
+       "mediana": 5351668.0
+      },
+      {
+       "camada": 25,
+       "n": 180,
+       "mediana": 5353062.5
+      },
+      {
+       "camada": 26,
+       "n": 180,
+       "mediana": 5351083.0
+      },
+      {
+       "camada": 27,
+       "n": 180,
+       "mediana": 5350537.5
+      },
+      {
+       "camada": 28,
+       "n": 180,
+       "mediana": 5350063.0
+      },
+      {
+       "camada": 29,
+       "n": 180,
+       "mediana": 5350113.0
+      },
+      {
+       "camada": 30,
+       "n": 180,
+       "mediana": 5351362.5
+      },
+      {
+       "camada": 31,
+       "n": 180,
+       "mediana": 5351943.0
+      }
+     ],
+     "defasagem": [
+      {
+       "camada": 0,
+       "n": 180,
+       "mediana": 178552.0
+      },
+      {
+       "camada": 1,
+       "n": 180,
+       "mediana": 760121.0
+      },
+      {
+       "camada": 2,
+       "n": 180,
+       "mediana": 1351826.0
+      },
+      {
+       "camada": 3,
+       "n": 180,
+       "mediana": 1939730.5
+      },
+      {
+       "camada": 4,
+       "n": 180,
+       "mediana": 2534125.5
+      },
+      {
+       "camada": 5,
+       "n": 180,
+       "mediana": 3123745.5
+      },
+      {
+       "camada": 6,
+       "n": 180,
+       "mediana": 3715734.5
+      },
+      {
+       "camada": 7,
+       "n": 180,
+       "mediana": 4313804.5
+      },
+      {
+       "camada": 8,
+       "n": 180,
+       "mediana": 4905554.5
+      },
+      {
+       "camada": 9,
+       "n": 180,
+       "mediana": 5347273.5
+      },
+      {
+       "camada": 10,
+       "n": 180,
+       "mediana": 5360058.0
+      },
+      {
+       "camada": 11,
+       "n": 180,
+       "mediana": 5359237.5
+      },
+      {
+       "camada": 12,
+       "n": 180,
+       "mediana": 5358193.0
+      },
+      {
+       "camada": 13,
+       "n": 180,
+       "mediana": 5359983.0
+      },
+      {
+       "camada": 14,
+       "n": 180,
+       "mediana": 5359447.5
+      },
+      {
+       "camada": 15,
+       "n": 180,
+       "mediana": 5359248.5
+      },
+      {
+       "camada": 16,
+       "n": 180,
+       "mediana": 5359153.0
+      },
+      {
+       "camada": 17,
+       "n": 180,
+       "mediana": 5359332.5
+      },
+      {
+       "camada": 18,
+       "n": 180,
+       "mediana": 5357592.5
+      },
+      {
+       "camada": 19,
+       "n": 180,
+       "mediana": 5358478.0
+      },
+      {
+       "camada": 20,
+       "n": 180,
+       "mediana": 5356732.5
+      },
+      {
+       "camada": 21,
+       "n": 180,
+       "mediana": 5357222.5
+      },
+      {
+       "camada": 22,
+       "n": 180,
+       "mediana": 5356872.5
+      },
+      {
+       "camada": 23,
+       "n": 180,
+       "mediana": 5356533.0
+      },
+      {
+       "camada": 24,
+       "n": 180,
+       "mediana": 5357148.0
+      },
+      {
+       "camada": 25,
+       "n": 180,
+       "mediana": 5358023.5
+      },
+      {
+       "camada": 26,
+       "n": 180,
+       "mediana": 5356122.5
+      },
+      {
+       "camada": 27,
+       "n": 180,
+       "mediana": 5355418.0
+      },
+      {
+       "camada": 28,
+       "n": 180,
+       "mediana": 5354868.0
+      },
+      {
+       "camada": 29,
+       "n": 180,
+       "mediana": 5354963.0
+      },
+      {
+       "camada": 30,
+       "n": 180,
+       "mediana": 5356403.0
+      },
+      {
+       "camada": 31,
+       "n": 180,
+       "mediana": 5356868.5
+      }
+     ],
+     "intervalo_obs": [
+      {
+       "camada": 0,
+       "n": 0,
+       "mediana": null
+      },
+      {
+       "camada": 1,
+       "n": 180,
+       "mediana": 1013373.0
+      },
+      {
+       "camada": 2,
+       "n": 180,
+       "mediana": 1012733.5
+      },
+      {
+       "camada": 3,
+       "n": 180,
+       "mediana": 1012998.5
+      },
+      {
+       "camada": 4,
+       "n": 180,
+       "mediana": 1013373.0
+      },
+      {
+       "camada": 5,
+       "n": 180,
+       "mediana": 1013293.5
+      },
+      {
+       "camada": 6,
+       "n": 180,
+       "mediana": 1013148.5
+      },
+      {
+       "camada": 7,
+       "n": 180,
+       "mediana": 1013118.0
+      },
+      {
+       "camada": 8,
+       "n": 180,
+       "mediana": 1013804.0
+      },
+      {
+       "camada": 9,
+       "n": 180,
+       "mediana": 1013608.5
+      },
+      {
+       "camada": 10,
+       "n": 180,
+       "mediana": 1013638.0
+      },
+      {
+       "camada": 11,
+       "n": 180,
+       "mediana": 1013378.0
+      },
+      {
+       "camada": 12,
+       "n": 180,
+       "mediana": 1013438.0
+      },
+      {
+       "camada": 13,
+       "n": 180,
+       "mediana": 1013693.0
+      },
+      {
+       "camada": 14,
+       "n": 180,
+       "mediana": 1013363.0
+      },
+      {
+       "camada": 15,
+       "n": 180,
+       "mediana": 1013363.5
+      },
+      {
+       "camada": 16,
+       "n": 180,
+       "mediana": 1013113.0
+      },
+      {
+       "camada": 17,
+       "n": 180,
+       "mediana": 1012578.0
+      },
+      {
+       "camada": 18,
+       "n": 180,
+       "mediana": 1013178.5
+      },
+      {
+       "camada": 19,
+       "n": 180,
+       "mediana": 1013238.0
+      },
+      {
+       "camada": 20,
+       "n": 180,
+       "mediana": 1012103.0
+      },
+      {
+       "camada": 21,
+       "n": 180,
+       "mediana": 1013083.0
+      },
+      {
+       "camada": 22,
+       "n": 180,
+       "mediana": 1012328.5
+      },
+      {
+       "camada": 23,
+       "n": 180,
+       "mediana": 1013173.5
+      },
+      {
+       "camada": 24,
+       "n": 180,
+       "mediana": 1012703.0
+      },
+      {
+       "camada": 25,
+       "n": 180,
+       "mediana": 1012883.0
+      },
+      {
+       "camada": 26,
+       "n": 180,
+       "mediana": 1011883.0
+      },
+      {
+       "camada": 27,
+       "n": 180,
+       "mediana": 1012478.0
+      },
+      {
+       "camada": 28,
+       "n": 180,
+       "mediana": 1011848.0
+      },
+      {
+       "camada": 29,
+       "n": 180,
+       "mediana": 1013703.0
+      },
+      {
+       "camada": 30,
+       "n": 180,
+       "mediana": 1012688.0
+      },
+      {
+       "camada": 31,
+       "n": 180,
+       "mediana": 1012293.0
+      }
+     ],
+     "intervalo": [
+      {
+       "camada": 0,
+       "n": 0,
+       "mediana": null
+      },
+      {
+       "camada": 1,
+       "n": 180,
+       "mediana": 1012858.0
+      },
+      {
+       "camada": 2,
+       "n": 180,
+       "mediana": 1012583.0
+      },
+      {
+       "camada": 3,
+       "n": 180,
+       "mediana": 1012828.0
+      },
+      {
+       "camada": 4,
+       "n": 180,
+       "mediana": 1013113.0
+      },
+      {
+       "camada": 5,
+       "n": 180,
+       "mediana": 1013138.0
+      },
+      {
+       "camada": 6,
+       "n": 180,
+       "mediana": 1012738.0
+      },
+      {
+       "camada": 7,
+       "n": 180,
+       "mediana": 1013138.0
+      },
+      {
+       "camada": 8,
+       "n": 180,
+       "mediana": 1013558.0
+      },
+      {
+       "camada": 9,
+       "n": 180,
+       "mediana": 1013298.0
+      },
+      {
+       "camada": 10,
+       "n": 180,
+       "mediana": 1013483.0
+      },
+      {
+       "camada": 11,
+       "n": 180,
+       "mediana": 1013373.5
+      },
+      {
+       "camada": 12,
+       "n": 180,
+       "mediana": 1013153.0
+      },
+      {
+       "camada": 13,
+       "n": 180,
+       "mediana": 1013263.5
+      },
+      {
+       "camada": 14,
+       "n": 180,
+       "mediana": 1013233.0
+      },
+      {
+       "camada": 15,
+       "n": 180,
+       "mediana": 1013303.5
+      },
+      {
+       "camada": 16,
+       "n": 180,
+       "mediana": 1013118.5
+      },
+      {
+       "camada": 17,
+       "n": 180,
+       "mediana": 1012888.0
+      },
+      {
+       "camada": 18,
+       "n": 180,
+       "mediana": 1012903.0
+      },
+      {
+       "camada": 19,
+       "n": 180,
+       "mediana": 1013018.0
+      },
+      {
+       "camada": 20,
+       "n": 180,
+       "mediana": 1011848.0
+      },
+      {
+       "camada": 21,
+       "n": 180,
+       "mediana": 1012883.0
+      },
+      {
+       "camada": 22,
+       "n": 180,
+       "mediana": 1012618.0
+      },
+      {
+       "camada": 23,
+       "n": 180,
+       "mediana": 1013193.0
+      },
+      {
+       "camada": 24,
+       "n": 180,
+       "mediana": 1012628.0
+      },
+      {
+       "camada": 25,
+       "n": 180,
+       "mediana": 1012803.0
+      },
+      {
+       "camada": 26,
+       "n": 180,
+       "mediana": 1011723.5
+      },
+      {
+       "camada": 27,
+       "n": 180,
+       "mediana": 1012198.0
+      },
+      {
+       "camada": 28,
+       "n": 180,
+       "mediana": 1011623.0
+      },
+      {
+       "camada": 29,
+       "n": 180,
+       "mediana": 1013423.0
+      },
+      {
+       "camada": 30,
+       "n": 180,
+       "mediana": 1012693.0
+      },
+      {
+       "camada": 31,
+       "n": 180,
+       "mediana": 1012289.0
+      }
+     ],
+     "host_seis_operacoes": [
+      {
+       "camada": 0,
+       "n": 180,
+       "mediana_ns": 450513.5
+      },
+      {
+       "camada": 1,
+       "n": 180,
+       "mediana_ns": 421918.5
+      },
+      {
+       "camada": 2,
+       "n": 180,
+       "mediana_ns": 418823.0
+      },
+      {
+       "camada": 3,
+       "n": 180,
+       "mediana_ns": 419898.0
+      },
+      {
+       "camada": 4,
+       "n": 180,
+       "mediana_ns": 415018.0
+      },
+      {
+       "camada": 5,
+       "n": 180,
+       "mediana_ns": 421303.5
+      },
+      {
+       "camada": 6,
+       "n": 180,
+       "mediana_ns": 412713.0
+      },
+      {
+       "camada": 7,
+       "n": 180,
+       "mediana_ns": 415943.5
+      },
+      {
+       "camada": 8,
+       "n": 180,
+       "mediana_ns": 414319.0
+      },
+      {
+       "camada": 9,
+       "n": 180,
+       "mediana_ns": 593569.5
+      },
+      {
+       "camada": 10,
+       "n": 180,
+       "mediana_ns": 1011403.0
+      },
+      {
+       "camada": 11,
+       "n": 180,
+       "mediana_ns": 1013013.0
+      },
+      {
+       "camada": 12,
+       "n": 180,
+       "mediana_ns": 1012983.0
+      },
+      {
+       "camada": 13,
+       "n": 180,
+       "mediana_ns": 1012368.0
+      },
+      {
+       "camada": 14,
+       "n": 180,
+       "mediana_ns": 1013258.0
+      },
+      {
+       "camada": 15,
+       "n": 180,
+       "mediana_ns": 1013293.0
+      },
+      {
+       "camada": 16,
+       "n": 180,
+       "mediana_ns": 1013298.0
+      },
+      {
+       "camada": 17,
+       "n": 180,
+       "mediana_ns": 1013558.0
+      },
+      {
+       "camada": 18,
+       "n": 180,
+       "mediana_ns": 1013668.0
+      },
+      {
+       "camada": 19,
+       "n": 180,
+       "mediana_ns": 1013033.5
+      },
+      {
+       "camada": 20,
+       "n": 180,
+       "mediana_ns": 1013188.0
+      },
+      {
+       "camada": 21,
+       "n": 180,
+       "mediana_ns": 1012263.5
+      },
+      {
+       "camada": 22,
+       "n": 180,
+       "mediana_ns": 1012918.0
+      },
+      {
+       "camada": 23,
+       "n": 180,
+       "mediana_ns": 1012558.0
+      },
+      {
+       "camada": 24,
+       "n": 180,
+       "mediana_ns": 1012933.0
+      },
+      {
+       "camada": 25,
+       "n": 180,
+       "mediana_ns": 1011958.0
+      },
+      {
+       "camada": 26,
+       "n": 180,
+       "mediana_ns": 1012788.0
+      },
+      {
+       "camada": 27,
+       "n": 180,
+       "mediana_ns": 1012688.0
+      },
+      {
+       "camada": 28,
+       "n": 180,
+       "mediana_ns": 1012863.0
+      },
+      {
+       "camada": 29,
+       "n": 180,
+       "mediana_ns": 1012723.0
+      },
+      {
+       "camada": 30,
+       "n": 180,
+       "mediana_ns": 1012488.0
+      },
+      {
+       "camada": 31,
+       "n": 180,
+       "mediana_ns": 1011818.0
+      }
+     ]
+    },
+    "limites": "defasagem negativa e conservada com sinal; tb_obs e tb nao medem a GPU nem identificam o mecanismo de espera; tb inclui leitura, copia e escalonamento do servico"
+   },
+   "hipoteses": {
+    "HA": "dentro",
+    "HB": "dentro",
+    "HC": "dentro",
+    "HD": "sem leitura",
+    "HE": "dentro",
+    "HF": "descritivo",
+    "HG": "sem dado",
+    "HH": "descritivo",
+    "HI": "descritivo"
+   },
+   "ressalvas": [],
+   "resto": 2
+  },
+  "longo": {
+   "status": "OK",
+   "motivos": [],
+   "celulas": [
+    "lastro-3b-L100-longo-quente"
+   ],
+   "pedidos_validos": 5,
+   "minimo_pedidos": 3,
+   "amostras_elegiveis": 220,
+   "medidas": {
+    "ha": 0.9943496766282527,
+    "hb_frac": 0.8109403053612051,
+    "hb_maior": true,
+    "hc": 0.005003203724752354,
+    "hd": 2.4858206610954046,
+    "he": 0.0,
+    "hf_razao": 0.40776688723980203,
+    "hh": 0.9935056749430559,
+    "n_pedidos_com_blocos": 5,
+    "por_pedido": [
+     {
+      "ha": 0.9942997012666793,
+      "hb_frac": 0.8084626261869761,
+      "hc": 0.0050519103463072396,
+      "hd": 2.4684714511282024,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9943496766282527,
+      "hb_frac": 0.8094711585900733,
+      "hc": 0.005175873294759055,
+      "hd": 2.4325519660421224,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9942684743835537,
+      "hb_frac": 0.8109403053612051,
+      "hc": 0.004986665164774658,
+      "hd": 2.4858206610954046,
+      "he": 5.007812378286022e-06
+     },
+     {
+      "ha": 0.9949722229909536,
+      "hb_frac": 0.8130437872338605,
+      "hc": 0.004647138208192083,
+      "hd": 2.5161947725608913,
+      "he": 0.0
+     },
+     {
+      "ha": 0.9944894028170354,
+      "hb_frac": 0.8113671196481315,
+      "hc": 0.005003203724752354,
+      "hd": 2.487084609312181,
+      "he": 0.0
+     }
+    ],
+    "faixa_hf": [
+     0.375,
+     0.625
+    ]
+   },
+   "hi": {
+    "tipo": "hi",
+    "descritivo": true,
+    "unidade": "ns, com sinal",
+    "amostras": 220,
+    "distribuicao": {
+     "defasagem_obs": {
+      "n": 7040,
+      "min": 2350,
+      "mediana": 5343137.0,
+      "p90": 5392813,
+      "max": 5435342
+     },
+     "defasagem": {
+      "n": 7040,
+      "min": 8300,
+      "mediana": 5348212.0,
+      "p90": 5398343,
+      "max": 5468874
+     },
+     "intervalo_obs": {
+      "n": 6820,
+      "min": 770087,
+      "mediana": 1015468.0,
+      "p90": 1021908,
+      "max": 1262590
+     },
+     "intervalo": {
+      "n": 6820,
+      "min": 757446,
+      "mediana": 1015358.0,
+      "p90": 1022018,
+      "max": 1274851
+     }
+    },
+    "mediana_por_camada": {
+     "defasagem_obs": [
+      {
+       "camada": 0,
+       "n": 220,
+       "mediana": 175287.0
+      },
+      {
+       "camada": 1,
+       "n": 220,
+       "mediana": 762186.0
+      },
+      {
+       "camada": 2,
+       "n": 220,
+       "mediana": 1354685.5
+      },
+      {
+       "camada": 3,
+       "n": 220,
+       "mediana": 1945590.0
+      },
+      {
+       "camada": 4,
+       "n": 220,
+       "mediana": 2546850.0
+      },
+      {
+       "camada": 5,
+       "n": 220,
+       "mediana": 3135764.0
+      },
+      {
+       "camada": 6,
+       "n": 220,
+       "mediana": 3737419.0
+      },
+      {
+       "camada": 7,
+       "n": 220,
+       "mediana": 4319163.5
+      },
+      {
+       "camada": 8,
+       "n": 220,
+       "mediana": 4914983.5
+      },
+      {
+       "camada": 9,
+       "n": 220,
+       "mediana": 5356657.5
+      },
+      {
+       "camada": 10,
+       "n": 220,
+       "mediana": 5361962.5
+      },
+      {
+       "camada": 11,
+       "n": 220,
+       "mediana": 5362237.0
+      },
+      {
+       "camada": 12,
+       "n": 220,
+       "mediana": 5362557.0
+      },
+      {
+       "camada": 13,
+       "n": 220,
+       "mediana": 5365122.5
+      },
+      {
+       "camada": 14,
+       "n": 220,
+       "mediana": 5366807.0
+      },
+      {
+       "camada": 15,
+       "n": 220,
+       "mediana": 5362947.0
+      },
+      {
+       "camada": 16,
+       "n": 220,
+       "mediana": 5362602.0
+      },
+      {
+       "camada": 17,
+       "n": 220,
+       "mediana": 5363772.0
+      },
+      {
+       "camada": 18,
+       "n": 220,
+       "mediana": 5362333.0
+      },
+      {
+       "camada": 19,
+       "n": 220,
+       "mediana": 5361192.0
+      },
+      {
+       "camada": 20,
+       "n": 220,
+       "mediana": 5362672.0
+      },
+      {
+       "camada": 21,
+       "n": 220,
+       "mediana": 5363922.0
+      },
+      {
+       "camada": 22,
+       "n": 220,
+       "mediana": 5363723.0
+      },
+      {
+       "camada": 23,
+       "n": 220,
+       "mediana": 5360507.5
+      },
+      {
+       "camada": 24,
+       "n": 220,
+       "mediana": 5361112.5
+      },
+      {
+       "camada": 25,
+       "n": 220,
+       "mediana": 5360292.5
+      },
+      {
+       "camada": 26,
+       "n": 220,
+       "mediana": 5361357.5
+      },
+      {
+       "camada": 27,
+       "n": 220,
+       "mediana": 5360128.0
+      },
+      {
+       "camada": 28,
+       "n": 220,
+       "mediana": 5360252.5
+      },
+      {
+       "camada": 29,
+       "n": 220,
+       "mediana": 5359762.0
+      },
+      {
+       "camada": 30,
+       "n": 220,
+       "mediana": 5358442.0
+      },
+      {
+       "camada": 31,
+       "n": 220,
+       "mediana": 5358077.5
+      }
+     ],
+     "defasagem": [
+      {
+       "camada": 0,
+       "n": 220,
+       "mediana": 179836.0
+      },
+      {
+       "camada": 1,
+       "n": 220,
+       "mediana": 767856.5
+      },
+      {
+       "camada": 2,
+       "n": 220,
+       "mediana": 1360335.5
+      },
+      {
+       "camada": 3,
+       "n": 220,
+       "mediana": 1952035.0
+      },
+      {
+       "camada": 4,
+       "n": 220,
+       "mediana": 2551965.0
+      },
+      {
+       "camada": 5,
+       "n": 220,
+       "mediana": 3140094.0
+      },
+      {
+       "camada": 6,
+       "n": 220,
+       "mediana": 3741719.0
+      },
+      {
+       "camada": 7,
+       "n": 220,
+       "mediana": 4324033.5
+      },
+      {
+       "camada": 8,
+       "n": 220,
+       "mediana": 4919733.5
+      },
+      {
+       "camada": 9,
+       "n": 220,
+       "mediana": 5361612.5
+      },
+      {
+       "camada": 10,
+       "n": 220,
+       "mediana": 5366832.5
+      },
+      {
+       "camada": 11,
+       "n": 220,
+       "mediana": 5367802.0
+      },
+      {
+       "camada": 12,
+       "n": 220,
+       "mediana": 5368257.5
+      },
+      {
+       "camada": 13,
+       "n": 220,
+       "mediana": 5370852.5
+      },
+      {
+       "camada": 14,
+       "n": 220,
+       "mediana": 5372717.0
+      },
+      {
+       "camada": 15,
+       "n": 220,
+       "mediana": 5368832.5
+      },
+      {
+       "camada": 16,
+       "n": 220,
+       "mediana": 5368607.0
+      },
+      {
+       "camada": 17,
+       "n": 220,
+       "mediana": 5369047.5
+      },
+      {
+       "camada": 18,
+       "n": 220,
+       "mediana": 5366888.0
+      },
+      {
+       "camada": 19,
+       "n": 220,
+       "mediana": 5366237.5
+      },
+      {
+       "camada": 20,
+       "n": 220,
+       "mediana": 5367942.5
+      },
+      {
+       "camada": 21,
+       "n": 220,
+       "mediana": 5369177.0
+      },
+      {
+       "camada": 22,
+       "n": 220,
+       "mediana": 5369328.0
+      },
+      {
+       "camada": 23,
+       "n": 220,
+       "mediana": 5366777.5
+      },
+      {
+       "camada": 24,
+       "n": 220,
+       "mediana": 5366432.0
+      },
+      {
+       "camada": 25,
+       "n": 220,
+       "mediana": 5364897.5
+      },
+      {
+       "camada": 26,
+       "n": 220,
+       "mediana": 5366917.5
+      },
+      {
+       "camada": 27,
+       "n": 220,
+       "mediana": 5364787.5
+      },
+      {
+       "camada": 28,
+       "n": 220,
+       "mediana": 5364657.5
+      },
+      {
+       "camada": 29,
+       "n": 220,
+       "mediana": 5364247.0
+      },
+      {
+       "camada": 30,
+       "n": 220,
+       "mediana": 5363767.5
+      },
+      {
+       "camada": 31,
+       "n": 220,
+       "mediana": 5363958.0
+      }
+     ],
+     "intervalo_obs": [
+      {
+       "camada": 0,
+       "n": 0,
+       "mediana": null
+      },
+      {
+       "camada": 1,
+       "n": 220,
+       "mediana": 1015907.5
+      },
+      {
+       "camada": 2,
+       "n": 220,
+       "mediana": 1015443.0
+      },
+      {
+       "camada": 3,
+       "n": 220,
+       "mediana": 1015608.0
+      },
+      {
+       "camada": 4,
+       "n": 220,
+       "mediana": 1015868.0
+      },
+      {
+       "camada": 5,
+       "n": 220,
+       "mediana": 1015673.0
+      },
+      {
+       "camada": 6,
+       "n": 220,
+       "mediana": 1015413.0
+      },
+      {
+       "camada": 7,
+       "n": 220,
+       "mediana": 1015733.0
+      },
+      {
+       "camada": 8,
+       "n": 220,
+       "mediana": 1016428.0
+      },
+      {
+       "camada": 9,
+       "n": 220,
+       "mediana": 1015643.0
+      },
+      {
+       "camada": 10,
+       "n": 220,
+       "mediana": 1015627.5
+      },
+      {
+       "camada": 11,
+       "n": 220,
+       "mediana": 1015893.0
+      },
+      {
+       "camada": 12,
+       "n": 220,
+       "mediana": 1015482.5
+      },
+      {
+       "camada": 13,
+       "n": 220,
+       "mediana": 1016613.0
+      },
+      {
+       "camada": 14,
+       "n": 220,
+       "mediana": 1015717.5
+      },
+      {
+       "camada": 15,
+       "n": 220,
+       "mediana": 1015988.0
+      },
+      {
+       "camada": 16,
+       "n": 220,
+       "mediana": 1015353.0
+      },
+      {
+       "camada": 17,
+       "n": 220,
+       "mediana": 1015258.0
+      },
+      {
+       "camada": 18,
+       "n": 220,
+       "mediana": 1015713.0
+      },
+      {
+       "camada": 19,
+       "n": 220,
+       "mediana": 1015697.5
+      },
+      {
+       "camada": 20,
+       "n": 220,
+       "mediana": 1014768.0
+      },
+      {
+       "camada": 21,
+       "n": 220,
+       "mediana": 1015268.0
+      },
+      {
+       "camada": 22,
+       "n": 220,
+       "mediana": 1014653.0
+      },
+      {
+       "camada": 23,
+       "n": 220,
+       "mediana": 1015378.0
+      },
+      {
+       "camada": 24,
+       "n": 220,
+       "mediana": 1015153.0
+      },
+      {
+       "camada": 25,
+       "n": 220,
+       "mediana": 1015128.0
+      },
+      {
+       "camada": 26,
+       "n": 220,
+       "mediana": 1014518.0
+      },
+      {
+       "camada": 27,
+       "n": 220,
+       "mediana": 1015398.0
+      },
+      {
+       "camada": 28,
+       "n": 220,
+       "mediana": 1014643.0
+      },
+      {
+       "camada": 29,
+       "n": 220,
+       "mediana": 1014908.0
+      },
+      {
+       "camada": 30,
+       "n": 220,
+       "mediana": 1014733.5
+      },
+      {
+       "camada": 31,
+       "n": 220,
+       "mediana": 1014898.0
+      }
+     ],
+     "intervalo": [
+      {
+       "camada": 0,
+       "n": 0,
+       "mediana": null
+      },
+      {
+       "camada": 1,
+       "n": 220,
+       "mediana": 1015793.5
+      },
+      {
+       "camada": 2,
+       "n": 220,
+       "mediana": 1015008.0
+      },
+      {
+       "camada": 3,
+       "n": 220,
+       "mediana": 1015533.0
+      },
+      {
+       "camada": 4,
+       "n": 220,
+       "mediana": 1016158.5
+      },
+      {
+       "camada": 5,
+       "n": 220,
+       "mediana": 1015453.0
+      },
+      {
+       "camada": 6,
+       "n": 220,
+       "mediana": 1015433.0
+      },
+      {
+       "camada": 7,
+       "n": 220,
+       "mediana": 1015773.0
+      },
+      {
+       "camada": 8,
+       "n": 220,
+       "mediana": 1016448.0
+      },
+      {
+       "camada": 9,
+       "n": 220,
+       "mediana": 1015698.0
+      },
+      {
+       "camada": 10,
+       "n": 220,
+       "mediana": 1015483.0
+      },
+      {
+       "camada": 11,
+       "n": 220,
+       "mediana": 1015403.0
+      },
+      {
+       "camada": 12,
+       "n": 220,
+       "mediana": 1015898.0
+      },
+      {
+       "camada": 13,
+       "n": 220,
+       "mediana": 1016768.0
+      },
+      {
+       "camada": 14,
+       "n": 220,
+       "mediana": 1015483.0
+      },
+      {
+       "camada": 15,
+       "n": 220,
+       "mediana": 1015833.0
+      },
+      {
+       "camada": 16,
+       "n": 220,
+       "mediana": 1014963.0
+      },
+      {
+       "camada": 17,
+       "n": 220,
+       "mediana": 1015268.5
+      },
+      {
+       "camada": 18,
+       "n": 220,
+       "mediana": 1015533.0
+      },
+      {
+       "camada": 19,
+       "n": 220,
+       "mediana": 1015913.0
+      },
+      {
+       "camada": 20,
+       "n": 220,
+       "mediana": 1014813.0
+      },
+      {
+       "camada": 21,
+       "n": 220,
+       "mediana": 1015798.0
+      },
+      {
+       "camada": 22,
+       "n": 220,
+       "mediana": 1014758.0
+      },
+      {
+       "camada": 23,
+       "n": 220,
+       "mediana": 1015173.0
+      },
+      {
+       "camada": 24,
+       "n": 220,
+       "mediana": 1014698.0
+      },
+      {
+       "camada": 25,
+       "n": 220,
+       "mediana": 1015328.0
+      },
+      {
+       "camada": 26,
+       "n": 220,
+       "mediana": 1014258.0
+      },
+      {
+       "camada": 27,
+       "n": 220,
+       "mediana": 1014973.0
+      },
+      {
+       "camada": 28,
+       "n": 220,
+       "mediana": 1014733.0
+      },
+      {
+       "camada": 29,
+       "n": 220,
+       "mediana": 1014998.0
+      },
+      {
+       "camada": 30,
+       "n": 220,
+       "mediana": 1014907.5
+      },
+      {
+       "camada": 31,
+       "n": 220,
+       "mediana": 1014503.0
+      }
+     ],
+     "host_seis_operacoes": [
+      {
+       "camada": 0,
+       "n": 220,
+       "mediana_ns": 449238.5
+      },
+      {
+       "camada": 1,
+       "n": 220,
+       "mediana_ns": 418569.0
+      },
+      {
+       "camada": 2,
+       "n": 220,
+       "mediana_ns": 420118.5
+      },
+      {
+       "camada": 3,
+       "n": 220,
+       "mediana_ns": 419533.0
+      },
+      {
+       "camada": 4,
+       "n": 220,
+       "mediana_ns": 412743.0
+      },
+      {
+       "camada": 5,
+       "n": 220,
+       "mediana_ns": 419793.0
+      },
+      {
+       "camada": 6,
+       "n": 220,
+       "mediana_ns": 410613.0
+      },
+      {
+       "camada": 7,
+       "n": 220,
+       "mediana_ns": 418273.5
+      },
+      {
+       "camada": 8,
+       "n": 220,
+       "mediana_ns": 414833.5
+      },
+      {
+       "camada": 9,
+       "n": 220,
+       "mediana_ns": 606644.5
+      },
+      {
+       "camada": 10,
+       "n": 220,
+       "mediana_ns": 1013428.0
+      },
+      {
+       "camada": 11,
+       "n": 220,
+       "mediana_ns": 1014753.0
+      },
+      {
+       "camada": 12,
+       "n": 220,
+       "mediana_ns": 1014698.0
+      },
+      {
+       "camada": 13,
+       "n": 220,
+       "mediana_ns": 1015703.0
+      },
+      {
+       "camada": 14,
+       "n": 220,
+       "mediana_ns": 1015708.0
+      },
+      {
+       "camada": 15,
+       "n": 220,
+       "mediana_ns": 1015643.0
+      },
+      {
+       "camada": 16,
+       "n": 220,
+       "mediana_ns": 1015323.0
+      },
+      {
+       "camada": 17,
+       "n": 220,
+       "mediana_ns": 1015488.0
+      },
+      {
+       "camada": 18,
+       "n": 220,
+       "mediana_ns": 1016933.0
+      },
+      {
+       "camada": 19,
+       "n": 220,
+       "mediana_ns": 1015283.0
+      },
+      {
+       "camada": 20,
+       "n": 220,
+       "mediana_ns": 1015278.0
+      },
+      {
+       "camada": 21,
+       "n": 220,
+       "mediana_ns": 1015528.0
+      },
+      {
+       "camada": 22,
+       "n": 220,
+       "mediana_ns": 1015483.0
+      },
+      {
+       "camada": 23,
+       "n": 220,
+       "mediana_ns": 1015513.0
+      },
+      {
+       "camada": 24,
+       "n": 220,
+       "mediana_ns": 1016043.0
+      },
+      {
+       "camada": 25,
+       "n": 220,
+       "mediana_ns": 1015223.0
+      },
+      {
+       "camada": 26,
+       "n": 220,
+       "mediana_ns": 1015362.5
+      },
+      {
+       "camada": 27,
+       "n": 220,
+       "mediana_ns": 1014653.5
+      },
+      {
+       "camada": 28,
+       "n": 220,
+       "mediana_ns": 1015073.0
+      },
+      {
+       "camada": 29,
+       "n": 220,
+       "mediana_ns": 1015037.5
+      },
+      {
+       "camada": 30,
+       "n": 220,
+       "mediana_ns": 1015368.0
+      },
+      {
+       "camada": 31,
+       "n": 220,
+       "mediana_ns": 1014803.0
+      }
+     ]
+    },
+    "limites": "defasagem negativa e conservada com sinal; tb_obs e tb nao medem a GPU nem identificam o mecanismo de espera; tb inclui leitura, copia e escalonamento do servico"
+   },
+   "hipoteses": {
+    "HA": "dentro",
+    "HB": "dentro",
+    "HC": "dentro",
+    "HD": "sem leitura",
+    "HE": "dentro",
+    "HF": "descritivo",
+    "HG": "sem dado",
+    "HH": "descritivo",
+    "HI": "descritivo"
+   },
+   "ressalvas": [],
+   "resto": 4
+  }
+ },
+ "orcamento": {
+  "modelos": [
+   "3b"
+  ],
+  "limite_s": 1200,
+  "folga_s": 180,
+  "decorrido_s": 309,
+  "cortes": [],
+  "reps": {
+   "quente_nominal": 5,
+   "controle": 3
+  },
+  "cortado": false,
+  "nao_rodou": [],
+  "estimativas_sao_tetos_de_processo": true
+ },
+ "teto_excedido": []
+}

@@ -1640,9 +1640,53 @@ fn ensaio(args: &Args, exe: &Path, modo: Modo) -> Result<(), String> {
     Ok(())
 }
 
+/// Subcomandos de planejamento da janela da F2 (puros, sem GPU, sem portões): `--planeja-celula`, `--planeja-controle` e `--planeja-tetos --modelo 1b|3b` (imprime `smoke medio curto longo`). O roteiro bash consulta ESTA função
+/// (fonte única da regra, testada em `perfil_bloco`) em vez de reimplementá-la. Saída: `cinco|tres|nao-rodou` ou `cabe|nao-cabe`.
+fn planeja_cli(modo: &str, v: &[String]) -> Result<i32, String> {
+    use moe_rt::perfil_bloco as pb;
+    if modo == "--planeja-tetos" {
+        let m3 = match v {
+            [f, m] if f == "--modelo" && m == "1b" => false,
+            [f, m] if f == "--modelo" && m == "3b" => true,
+            _ => return Err("uso: --planeja-tetos --modelo 1b|3b".into()),
+        };
+        println!("{} {} {} {}", pb::TETO_SMOKE_S, pb::teto_processo_s(m3, pb::CelulaF2::Medio), pb::teto_processo_s(m3, pb::CelulaF2::Curto), pb::teto_processo_s(m3, pb::CelulaF2::Longo));
+        return Ok(0);
+    }
+    let (mut dec, mut rest, mut folga, mut teto, mut cortado) = (None, None, pb::FOLGA_S, pb::TETO_JANELA_S, false);
+    let num = |s: &str| s.parse::<u64>().map_err(|_| format!("número inválido: {s}"));
+    let lista = |s: &str| s.split(',').filter(|x| !x.is_empty()).map(num).collect::<Result<Vec<u64>, String>>();
+    let mut i = 0;
+    while i < v.len() {
+        let pede = |i: usize| v.get(i + 1).ok_or_else(|| format!("{} pede um valor", v[i]));
+        match v[i].as_str() {
+            "--decorrido" => { dec = Some(num(pede(i)?)?); i += 2; }
+            "--restantes" | "--tetos" => { rest = Some(lista(pede(i)?)?); i += 2; }
+            "--folga" => { folga = num(pede(i)?)?; i += 2; }
+            "--teto" => { teto = num(pede(i)?)?; i += 2; }
+            "--ja-cortado" => { cortado = true; i += 1; }
+            o => return Err(format!("argumento desconhecido: {o}")),
+        }
+    }
+    let (dec, rest) = (dec.ok_or("sem --decorrido")?, rest.ok_or("sem --restantes/--tetos")?);
+    if rest.is_empty() {
+        return Err("lista --restantes/--tetos vazia: recusado (falha fechada)".into());
+    }
+    if modo == "--planeja-controle" {
+        println!("{}", if pb::controle_cabe(dec, &rest, folga, teto) { "cabe" } else { "nao-cabe" });
+    } else {
+        println!("{}", match pb::planeja_celula(dec, &rest, folga, teto, cortado) { pb::PlanoCelula::Cinco => "cinco", pb::PlanoCelula::Tres => "tres", pb::PlanoCelula::NaoRodou => "nao-rodou" });
+    }
+    Ok(0)
+}
+
 /// Devolve o código de saída: 0, 1 (gravado com falha) ou, por `Err`, 2 (recusa antes de qualquer trabalho).
 fn principal(t0: Instant) -> Result<i32, String> {
-    let args = parse_args(args_utf8(std::env::args_os().skip(1))?)?;
+    let todos = args_utf8(std::env::args_os().skip(1))?;
+    if let Some(m) = todos.first().filter(|m| *m == "--planeja-celula" || *m == "--planeja-controle" || *m == "--planeja-tetos") {
+        return planeja_cli(m, &todos[1..]);
+    }
+    let args = parse_args(todos)?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let modo = args.modo.ok_or("sem --modo")?;
     if let Some(dir) = &args.consolida {

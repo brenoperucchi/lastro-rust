@@ -1,0 +1,437 @@
+#!/usr/bin/env bash
+# F2 do host por operação em L100 (criterio-f2-host-20261111.md, plano-f2-host-20261111.md versão 3): UMA janela POR MODELO (uma de cada vez), de até 20 min na RTX 3080 Ti (12 GB), SÓ o Lastro,
+# com o binário F2 (cópia congelada fora do git), descritiva. Derivado de roda-instrumento-janela.sh: mesmo envelope (janela-e4b.sh pausa e restaura os timers; roda-com-limite.sh põe o limite; este script em
+# modo interno), mesma falha FECHADA antes de tocar em timers ou na GPU, mesmo FIXO com shas e --verifica-fixos.
+#
+#   roda-f2-janela.sh --modelos 1b|3b --saida DIR [--estado-janela DIR] [--bin PRIMEIRA_PALAVRA_F2] [--limite S]
+#   roda-f2-janela.sh --verifica-fixos     (sem GPU, sem autorização, só lê: confere os shas congelados do FIXO contra os arquivos reais; código 0 só se todos OK)
+#
+# --modelos 1b|3b é OBRIGATÓRIO. --limite padrão 1200 s e máximo 1200 s (20 min), TETO GLOBAL por janela/modelo (smoke, controle, curto e longo juntos); o de fora é o de dentro mais 120 s. Sem repetição automática.
+# Antes da janela: systemctl --user stop voxtype; ao fim: systemctl --user start voxtype (passo manual, não automatizado; o voxtype em compute na 3080 Ti recusa a janela com código 2).
+#
+# Ordem da janela (seção 7 do critério): (1) preflight, (2) smoke: 1 processo no curto, em B, 1 aquecimento e 1 medida, teto 60 s; (3) controle de 9 processos no texto MÉDIO, ordem D A B, B D A, A B D, cada um
+# `--so-texto medio --repete 3` (1 aquecimento + 3 medidas), pasta celulas/ctrl-<modelo>-L100-medio-<NN>-<D|A|B>; (4) curto em B (1 processo, 1 aquecimento + 5 ou 3 medidas); (5) longo em B (idem).
+#  Braços: D = nada ligado (env -u nas duas variáveis), A = só LASTRO_PERFIL_BLOCO=1, B = LASTRO_PERFIL_BLOCO=1 e LASTRO_PERFIL_F2=1. As variáveis ligam SÓ por processo, na chamada, nunca herdadas (recusa 2 no
+#  modo real se vierem no ambiente); prova-variavel.txt grava o ambiente passado e as linhas `perfil-bloco: ...` e `perfil-f2: ...` que o binário imprimiu (qualquer incoerência vai para a decisão).
+#  Série fixa L100 (CMP_FRACAO_SLOTS=1.0, sem CMP_CAMADAS_CPU).
+# TETOS DE PROCESSO (ponto 8 do critério): 60 s (1B) e 90 s (3B) no médio e no curto; 75 s (1B) e 120 s (3B) no longo; smoke 60 s. Passar do teto = processo morto (`timeout`, o grupo inteiro), registrado em
+# teto-excedido.txt (processo inválido, sem repetição). O teto de 1200 s é GLOBAL e separado deles.
+# PLANEJAMENTO (ponto 7): quem decide é `primeira-palavra --planeja-celula` e `--planeja-controle` (fonte única das regras, em perfil_bloco.rs; este roteiro só repete a TABELA de tetos, conferida por teste):
+#  o controle (nove tetos) cabe inteiro (decorrido + 9 tetos + folga 180 s <= limite) ou os nove viram NÃO RODOU (controle incompleto, todas as H do modelo SEM PROVA); curto e longo: cinco medidas se a projeção
+#  das restantes com N = 5 cabe, senão corte único e permanente para 3 (`--ja-cortado`), e NÃO RODOU só pela célula atual com N = 3. O controle nunca é cortado. Antes de tocar em timers, o modo externo exige
+#  que smoke + nove tetos + folga caibam no limite; se não couber, a janela NÃO COMEÇA (código 2, DIR/decisao.txt, nada tocado).
+#
+# Falha FECHADA antes de tocar em timers ou na GPU: PRIMEIRA_PALAVRA_AUTORIZADA=1 e CUDA_VISIBLE_DEVICES igual ao UUID da 3080 Ti (a 4090 e a 5090 NUNCA entram); --saida e --estado-janela pastas novas ou vazias;
+# power.limit 370.00 W no início (e ao fim, senão a janela vira SEM PROVA e o extrator RECUSA); QUALQUER PID C ou C+G na 3080 Ti recusa; RECUSA TAMBÉM se houver `cargo test`/`cargo nextest`, binário de teste do cargo
+# (target/*/deps/<nome>-<hash>), primeira-palavra ou llama.* em execução; o sha do binário é conferido ANTES de parar timers/voxtype (--verifica-fixos). Variáveis só para teste (JANELA_SH, LIMITE_SH, JANELA_TIMERS,
+# LASTRO_SH_CMP, EXTRAI_PY, PERFIL_EXTRAI_PY, INSTR_EXTRAI_PY, F2_EXTRAI_PY, CMP_RELOGIO_ARQ, CMP_FOLGA, F2_TETO_FORCADO, CMP_FAKE_*, MODELO_1B, MODELO_3B, TEXTOS_5C, REF_5C, IDS_CMP, CRITERIO_*, PLANO_F2,
+# SEM_SHA_FIXO, NVIDIA_SMI, ..., LASTRO_PERFIL_BLOCO, LASTRO_PERFIL_F2): no modo real qualquer uma presente no ambiente é RECUSADA com código 2; só CMP_MODO_TESTE=1 as aceita. SEM_SHA_FIXO=1 só com CMP_MODO_TESTE=1.
+# CMP_AVISO_CMD continua permitida (só avisa). Fim da janela: aviso (notify-send se houver, ou CMP_AVISO_CMD) e DIR.aviso.txt. Este roteiro NÃO é rodado na entrega.
+# Códigos: 0 se decisao.txt foi gravada, o do comando (124 limite, ...) ou 2 recusa de uso, portão, ambiente ou orçamento que não cabe.
+set -u
+AQUI=$(cd "$(dirname "$0")" && pwd -P)
+UUID=GPU-b22d9465-8552-9f97-812e-380b590645f8
+JANELA=${JANELA_SH:-$AQUI/janela-e4b.sh}
+LIMITE_SH=${LIMITE_SH:-$AQUI/roda-com-limite.sh}
+LASTRO_SH=${LASTRO_SH_CMP:-$AQUI/roda-cmp-lastro.sh}
+MONITOR=${MONITOR_SH:-$AQUI/roda-cmp-monitor.sh}
+EXTRAI=${EXTRAI_PY:-$AQUI/cmp-extrai.py}
+PERFIL_EXTRAI=${PERFIL_EXTRAI_PY:-$AQUI/perfil-extrai.py}
+INSTR_EXTRAI=${INSTR_EXTRAI_PY:-$AQUI/instrumento-extrai.py}
+F2_EXTRAI=${F2_EXTRAI_PY:-$AQUI/f2-extrai.py}
+BIN=$AQUI/../../.herdr/binarios/primeira-palavra-f2-e182736f
+M1=${MODELO_1B:-/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct}
+M3=${MODELO_3B:-/home/brenoperucchi/models/granite-3.1-3b-a800m-instruct}
+TEXTOS=${TEXTOS_5C:-$AQUI/5c-textos}
+REFS=${REF_5C:-$AQUI/5c-referencia}
+IDS=${IDS_CMP:-$AQUI/cmp-ids-prompt.json}
+CRIT_F2=${CRITERIO_F2:-$AQUI/criterio-f2-host-20261111.md}
+PLANO=${PLANO_F2:-$AQUI/plano-f2-host-20261111.md}
+CRIT=${CRITERIO_CMP:-$AQUI/criterio-comparacao-llamacpp-20261108.md}
+CRIT_D1=${CRITERIO_D1:-$AQUI/criterio-degrau1-100pct-20261109.md}
+CRIT_D2=${CRITERIO_D2:-$AQUI/criterio-degrau2-camadas-20261109.md}
+FOLGA=${CMP_FOLGA:-180}
+LIMITE_MAX=1200
+ORDEM_CTRL=DABBDAABD
+SAIDA=; ESTADO=; LIMITE=$LIMITE_MAX; INTERNO=0; MODELOS=; VERIFICA=0
+usa() { echo "uso: roda-f2-janela.sh --modelos 1b|3b --saida DIR [--estado-janela DIR] [--bin PRIMEIRA_PALAVRA_F2] [--limite S] | --verifica-fixos" >&2; }
+recusa() { echo "roda-f2-janela: $*" >&2; exit 2; }
+# Potência: le_pot lê só o power.limit da 3080 Ti (vazio se a leitura falhar); 370.00 W no preflight (senão recusa 2) e de novo ao fim (senão integridade QUEBRADA)
+POT_OK="370.00 W"
+le_pot() { local o; o=$("${NVIDIA_SMI:-nvidia-smi}" -i "$UUID" --query-gpu=power.limit --format=csv,noheader 2> /dev/null) || return 1; printf '%s\n' "$o" | head -n 1 | cut -d, -f1 | sed 's/^ *//;s/ *$//'; }
+pot_tok() { local v=${1:-}; [ -n "$v" ] || v=ilegivel; echo "${v// /_}"; }
+while [ $# -gt 0 ]; do
+  case $1 in
+    --saida) [ $# -ge 2 ] || { usa; exit 2; }; SAIDA=$2; shift 2;;
+    --estado-janela) [ $# -ge 2 ] || { usa; exit 2; }; ESTADO=$2; shift 2;;
+    --bin) [ $# -ge 2 ] || { usa; exit 2; }; BIN=$2; shift 2;;
+    --limite) [ $# -ge 2 ] || { usa; exit 2; }; LIMITE=$2; shift 2;;
+    --modelos) [ $# -ge 2 ] || { usa; exit 2; }; MODELOS=$2; shift 2;;
+    --verifica-fixos) VERIFICA=1; shift;;
+    --interno) INTERNO=1; shift;;
+    *) usa; exit 2;;
+  esac
+done
+# variáveis só de teste no ambiente do modo real OU interno = recusa 2 (validado logo após os argumentos, antes de consumir qualquer override); só CMP_MODO_TESTE=1 as aceita. `compgen -e` lista só as EXPORTADAS.
+if [ "${VERIFICA:-0}" != 1 ] && [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
+  for v in $(compgen -e); do
+    case $v in
+      LASTRO_PERFIL_BLOCO|LASTRO_PERFIL_F2|CMP_FRACAO_SLOTS|CMP_CAMADAS_CPU|CRITERIO_F2|PLANO_F2|CRITERIO_D1|CRITERIO_D2|SEM_SHA_FIXO|MONITOR_SH|LASTRO_SH_CMP|EXTRAI_PY|PERFIL_EXTRAI_PY|INSTR_EXTRAI_PY|F2_EXTRAI_PY|CMP_RELOGIO_ARQ|NVIDIA_SMI|MODELO_1B|MODELO_3B|TEXTOS_5C|REF_5C|IDS_CMP|CRITERIO_CMP \
+      |PROC_STAT|CMP_CPU_JANELA|CMP_CPU_ESPERA|CMP_FOLGA|CMP_SEM_MEMORIA|ESPERA_PRONTO|LOADAVG_ARQ|SYSTEMCTL|SYSTEMD_RUN|PENDENTE|CGROUP_RAIZ|PROC_LISTA|F2_TETO_FORCADO \
+      |CMP_EST_*|CMP_FAKE_*|JANELA_*|LIMITE_*)
+        recusa "variável só de teste presente no modo real: $v (só CMP_MODO_TESTE=1, o modo de teste explícito, a aceita); limpe o ambiente de quem chama";;
+    esac
+  done
+fi
+sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+
+# SHAs congelados. O próprio roda-f2-janela.sh NÃO pode conter o seu sha (nem o critério o do roteiro nem o do extrator): --verifica-fixos imprime o do roteiro e o do extrator à parte (linhas informativas).
+declare -A FIXO=(
+  [criterio-f2-host]=2e929110082e0c026a29c7b98dad6407eee41664848d46745af3ce78697dff70
+  [plano-f2-host]=fe79869575118da063b1a2042305dbd201e3fb231acf1d565ed3104214618b31
+  [binario-f2]=e182736f4133b494a14847f2cae5edd3dad91a7eeadf9a850180c8c52b0ba2e3
+  [script-f2-extrai]=f68129e832a5f617cc682b966293a502c4c095439c6e8673828e80e4363391fc
+  [script-instrumento-extrai]=6f7169d4bcfa5946b15801543b783b702ead6e16e39b3014293aaa59c76f23d7
+  [script-perfil-extrai]=755e1d7dd622e98dce9513ef30584e21667a5bc9d8c08cce4198090b2c34ba68
+  [script-cmp-extrai]=c5e44529c7ca958f6943ce12381b1da1a4eadd64453cb271cbc0d1b7536e7585
+  [script-lastro]=8e924a36fff414f337857ffc75fc88c5b23e4cf12c3d6314384f3979cab80757
+  [script-monitor]=3252c690ea38c447ec7dda24bbbe4ca801f3daefb93e63009564df3c62eac017
+  [script-janela]=a168e6672ba87429b8c5ccc0c80ba7daa36335f6a911b91a3744454cf7e63d60
+  [script-limite]=196c05649b43e64361766e98e5bab9873636799dfa5d83f70a468436cd4759cc
+  [criterio-cmp]=8d9d6ad3ff1ef23d417e41982228ec55638823c613b4a2cbf00d813dc1f85b35
+  [criterio-degrau1]=8c3406a9fd3ba55133dfb2c2d3800076c6ee0a765735edf8be65f6ba1a72c7de
+  [criterio-degrau2]=bd8cb0510d5a6c3f55ec320a3177e2bec7ebce7b5776529989f0c45a61599b2a
+  [cmp-ids-prompt]=2a2613cdbaf9acdb76bd9aa416107474b3d888b6aa37b94b429546a5dca78d8b
+  [texto-curto]=5b6fad6f3825d430bad4f924d227105032581906739d68c726ac8e4827df2d4d
+  [texto-medio]=bb0a067ae8839616f33b21ba41b362bdf16353a57d70321252a2d47851f1c32a
+  [texto-longo]=821e0f15139b58173b5c17f5e9428527bb27b03dc10b35e38cbeed044defbaea
+  [textos-json]=5b16e34095e882b517a5b9dabb22e956e7d4cf688c0d2a6c4caf9c61abf99e5e
+  [ref5c-1b]=9584fcabe7d8b2a1821207267651504c72d317ce9b566cd967d390a1dbbad259
+  [ref5c-3b]=968d9b391324a99fbaf5c772a351018b90105f572b32ee2db3140f79da123124
+  [tokenizer-1b]=ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654
+  [tokenizer-3b]=ed944c0b3d71e2d651a5ba0f8e7b350faff30031c8e3353de70b12b9c1bf5654
+)
+CHAVES=(); CAMINHOS=()
+# monta_lista ESCOPO: ESCOPO = 1b | 3b (só os arquivos do modelo da janela) ou todos (--verifica-fixos: os dois modelos)
+monta_lista() {
+  local escopo=$1
+  CHAVES=(); CAMINHOS=()
+  add() { CHAVES+=("$1"); CAMINHOS+=("$2"); }
+  add criterio-f2-host "$CRIT_F2"; add plano-f2-host "$PLANO"
+  add binario-f2 "$BIN"
+  add script-f2-extrai "$F2_EXTRAI"; add script-instrumento-extrai "$INSTR_EXTRAI"; add script-perfil-extrai "$PERFIL_EXTRAI"; add script-cmp-extrai "$EXTRAI"; add script-lastro "$LASTRO_SH"; add script-monitor "$MONITOR"
+  add script-janela "$JANELA"; add script-limite "$LIMITE_SH"
+  add criterio-cmp "$CRIT"; add criterio-degrau1 "$CRIT_D1"; add criterio-degrau2 "$CRIT_D2"
+  add cmp-ids-prompt "$IDS"
+  add texto-curto "$TEXTOS/texto-curto.txt"; add texto-medio "$TEXTOS/texto-medio.txt"; add texto-longo "$TEXTOS/texto-longo.txt"; add textos-json "$TEXTOS/textos.json"
+  add ref5c-1b "$REFS/ref5c-1b.json"; add ref5c-3b "$REFS/ref5c-3b.json"
+  if [ "$escopo" = 1b ] || [ "$escopo" = todos ]; then
+    add config-1b "$M1/config.json"; add tokenizer-1b "$M1/tokenizer.json"; add safetensors-1b "$M1/model.safetensors"
+  fi
+  if [ "$escopo" = 3b ] || [ "$escopo" = todos ]; then
+    add config-3b "$M3/config.json"; add tokenizer-3b "$M3/tokenizer.json"
+    add safetensors-3b-1 "$M3/model-00001-of-00002.safetensors"; add safetensors-3b-2 "$M3/model-00002-of-00002.safetensors"; add indice-3b "$M3/model.safetensors.index.json"
+  fi
+}
+# coleta_shas ARQ: uma linha "chave sha" por item (vazio = ilegível); hashes em paralelo (os arquivos grandes dominam o tempo).
+coleta_shas() {
+  local tmp="$SAIDA/.shas-$(basename "$1")" i
+  mkdir -p "$tmp"
+  for i in "${!CHAVES[@]}"; do ( sha "${CAMINHOS[$i]}" > "$tmp/$i" ) & done
+  wait
+  : > "$1"
+  for i in "${!CHAVES[@]}"; do echo "${CHAVES[$i]} $(cat "$tmp/$i" 2>/dev/null)" >> "$1"; done   # os temporários ficam em DIR/.shas-* (nada é removido por este roteiro)
+}
+# Processos que recusam a janela: `cargo test`/`cargo nextest`/`cargo bench`, binário de teste do cargo (target/<perfil>/deps/<nome>-<hash de 16 hex>), primeira-palavra, llama.*.
+# Lista = `ps -eo pid=,args=` (ou o arquivo PROC_LISTA, só em teste: linhas "PID ARGS"); este script e os ancestrais dele ficam de fora. Imprime uma linha por processo encontrado.
+cargo_teste() { # "args": 0 só se o EXECUTÁVEL (primeira palavra, basename) é `cargo` com `test|t|nextest|bench` como subcomando, ou `cargo-nextest`; descrição de dispatcher, grep, bash -c etc. não contam
+  local w base first=1 achou=0
+  for w in $1; do
+    base=${w##*/}; base=${base//[\"\']/}
+    if [ $first = 1 ]; then
+      first=0
+      case $base in cargo) achou=1; continue;; cargo-nextest) return 0;; *) return 1;; esac
+    fi
+    case $w in -*|+*) continue;; esac
+    case $w in test|t|nextest|bench) return 0;; esac
+    return 1
+  done
+  return 1
+}
+# Códigos: 0 = nenhum processo proibido, 1 = achou, 2 = falha ao ler a lista de processos (recusa com motivo; nunca vira "lista vazia").
+proc_proibidos() {
+  local lista pid args exe base achou=0 anc=" $$ " p rc_l=0
+  p=$$; while [ "$p" -gt 1 ] 2> /dev/null; do p=$(awk '{print $4}' "/proc/$p/stat" 2> /dev/null) || break; [ -n "$p" ] || break; anc+="$p "; done
+  if [ -n "${PROC_LISTA:-}" ]; then lista=$(cat "$PROC_LISTA" 2> /dev/null); rc_l=$?; else lista=$(ps -eo pid=,args= 2> /dev/null); rc_l=$?; fi
+  if [ $rc_l != 0 ]; then echo "falha ao ler a lista de processos (${PROC_LISTA:-ps}, código $rc_l)"; return 2; fi
+  while read -r pid args; do
+    [ -n "$pid" ] || continue
+    case $anc in *" $pid "*) continue;; esac
+    exe=${args%% *}; base=${exe##*/}
+    if cargo_teste "$args"; then echo "$pid ($args)"; achou=1; continue; fi
+    if [[ $args =~ (^|[/\ ])deps/[A-Za-z0-9_]+-[0-9a-f]{16}( |$) ]]; then echo "$pid ($args)"; achou=1; continue; fi
+    case $base in primeira-palavra*|llama-server*|llama-bench*|llama-cli*) echo "$pid ($args)"; achou=1;; esac
+  done <<< "$lista"
+  [ $achou = 0 ]
+}
+# portão do binário: o executável escolhido (--bin incluso) tem de ter o sha do FIXO ANTES de qualquer envelope, smoke ou célula (SEM_SHA_FIXO=1, só em teste, dispensa)
+confere_binario() { [ "${SEM_SHA_FIXO:-0}" = 1 ] || [ "$(sha "$BIN")" = "${FIXO[binario-f2]}" ]; }
+
+# --verifica-fixos: só lê (sem GPU, sem autorização, sem tocar em timers). AUSENTE = arquivo que não existe aqui e conta como falha (código 1).
+if [ $VERIFICA = 1 ]; then
+  monta_lista todos
+  rc_v=0
+  for i in "${!CHAVES[@]}"; do
+    k=${CHAVES[$i]}
+    [ -n "${FIXO[$k]:-}" ] || continue
+    h=$(sha "${CAMINHOS[$i]}")
+    if [ -z "$h" ]; then echo "$k ${FIXO[$k]} - AUSENTE ${CAMINHOS[$i]##*/}"; rc_v=1
+    elif [ "$h" = "${FIXO[$k]}" ]; then echo "$k ${FIXO[$k]} $h OK"
+    else echo "$k ${FIXO[$k]} $h FALHA"; rc_v=1; fi
+  done
+  echo "informativo: roda-f2-janela.sh sha256 $(sha "$AQUI/roda-f2-janela.sh") (autorreferente, fora do FIXO; conferir por fora)"
+  exit $rc_v
+fi
+# --modelos: uma janela por modelo; ausente ou inválido = recusa 2 (nunca as duas de uma vez)
+case $MODELOS in
+  1b|3b) ;;
+  '') usa; recusa "--modelos 1b|3b é obrigatório: uma janela por modelo";;
+  *) recusa "--modelos inválido: '$MODELOS' (use 1b ou 3b, nunca os dois)";;
+esac
+[ -n "$SAIDA" ] || { usa; exit 2; }
+# Tetos de processo em segundos (tabela do ponto 8; a mesma de perfil_bloco.rs::teto_processo_s, conferida por teste). F2_TETO_FORCADO só em teste.
+teto_proc() { # TEXTO (curto|medio|longo|smoke)
+  if [ -n "${F2_TETO_FORCADO:-}" ]; then echo "$F2_TETO_FORCADO"; return; fi
+  case $1 in
+    smoke) echo 60;;
+    longo) [ "$MODELOS" = 1b ] && echo 75 || echo 120;;
+    *) [ "$MODELOS" = 1b ] && echo 60 || echo 90;;
+  esac
+}
+TETOS9=$(for _ in 1 2 3 4 5 6 7 8 9; do printf '%s,' "$(teto_proc medio)"; done); TETOS9=${TETOS9%,}
+# bloco obrigatório da janela: smoke + nove tetos do controle + folga (o controle nunca é cortado)
+bloco_obrig_s() { echo $(( $(teto_proc smoke) + 9 * $(teto_proc medio) + FOLGA )); }
+
+# ---------------------------------------------------------------- modo interno (dentro da janela, com o portão e o UUID no ambiente)
+if [ $INTERNO = 1 ]; then
+  [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] && [ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "modo interno sem portão ou UUID"
+  confere_binario || recusa "binário com sha diferente do FIXO (${FIXO[binario-f2]}): $BIN (modo interno)"
+  PROIB_I=$(proc_proibidos) || recusa "cargo test, processo CUDA em execução ou lista de processos ilegível (modo interno): $(echo "$PROIB_I" | head -n 3 | tr '\n' ' ')"
+  mkdir -p "$SAIDA/celulas" || exit 2
+  # as variáveis do instrumento NÃO são limpas aqui: cada processo recebe o seu ambiente explícito (D: env -u nas duas; A: só bloco; B: as duas); o que o ambiente de quem chama trouxer não vale
+  unset CMP_FRACAO_SLOTS CMP_CAMADAS_CPU
+  agora_s() { if [ -n "${CMP_RELOGIO_ARQ:-}" ]; then cat "$CMP_RELOGIO_ARQ"; else date +%s; fi; }
+  INICIO=$(agora_s)
+  decorrido() { echo $(( $(agora_s) - INICIO )); }
+  SMI=${NVIDIA_SMI:-nvidia-smi}
+  monta_lista "$MODELOS"
+  coleta_shas "$SAIDA/integridade-antes.txt"
+  {
+    echo "inicio=$(date -Is)"
+    echo "uuid=$UUID"
+    echo "modelo=$MODELOS"
+    echo "limite_s=$LIMITE folga_s=$FOLGA"
+    "$SMI" --query-gpu=name,driver_version,clocks.max.memory --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu=/'
+    "$SMI" -i "$UUID" --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu_limites=/'
+    POT_INI=$(le_pot) || POT_INI=; echo "potencia_inicio=$(pot_tok "$POT_INI")"
+    echo "loadavg=$(cut -d' ' -f1-3 < /proc/loadavg 2>/dev/null)"
+    if [ "${CMP_SEM_MEMORIA:-0}" != 1 ]; then
+      mts=$(sudo -n dmidecode -t memory 2>/dev/null | awk -F': ' '/Configured Memory Speed/ && $2 ~ /[0-9]/ { split($2, a, " "); print a[1]; exit }')
+      [ -z "$mts" ] || echo "memoria_mts=$mts"
+    fi
+  } > "$SAIDA/ambiente.txt" 2>&1
+  POT_INI=${POT_INI:-}
+  CORTADO=0; CORTES=(); NAO_RODOU=()
+  : > "$SAIDA/ordem.txt"; : > "$SAIDA/orcamento-log.txt"; : > "$SAIDA/prova-variavel.txt"; : > "$SAIDA/teto-excedido.txt"
+  {
+    echo "plano da janela da F2 do host, modelo $MODELOS (ordem fixa; só Lastro, L100, quentes, binário F2; sem repetição automática)"
+    echo "tetos de processo: smoke $(teto_proc smoke) s; médio $(teto_proc medio) s; curto $(teto_proc curto) s; longo $(teto_proc longo) s; teto global $LIMITE s; folga $FOLGA s"
+    echo "0 smoke smoke-$MODELOS-L100-curto-B (n=1, B)"
+    i=0; for b in $(echo "$ORDEM_CTRL" | sed 's/./& /g'); do i=$((i + 1)); printf 'controle ctrl-%s-L100-medio-%02d-%s (--repete 3; braço %s)\n' "$MODELOS" "$i" "$b" "$b"; done
+    for t in curto longo; do echo "célula lastro-$MODELOS-L100-$t-quente (B; 5 medidas, corte único permanente para 3)"; done
+  } > "$SAIDA/plano.txt"
+  SEQ=0; ABORTA=0
+  nr() { NAO_RODOU+=("$1"); echo "NÃO RODOU: $1" >> "$SAIDA/orcamento-log.txt"; }
+  # ambiente de UM processo, por braço (D = nenhuma variável; A = só LASTRO_PERFIL_BLOCO; B = as duas). GNU env só lê -u ANTES das atribuições NOME=valor: os -u vêm primeiro.
+  env_proc() {
+    local u=(-u CMP_CAMADAS_CPU) a=(CMP_FRACAO_SLOTS=1.0)
+    case $1 in
+      D) u+=(-u LASTRO_PERFIL_BLOCO -u LASTRO_PERFIL_F2);;
+      A) u+=(-u LASTRO_PERFIL_F2); a+=(LASTRO_PERFIL_BLOCO=1);;
+      B) a+=(LASTRO_PERFIL_BLOCO=1 LASTRO_PERFIL_F2=1);;
+    esac
+    ENVX=("${u[@]}" "${a[@]}")
+  }
+  # roda_processo CHAVE TEXTO N BRACO TETO: UMA chamada ao roda-cmp-lastro.sh (processo único com --repete N) sob `timeout` (o grupo inteiro morre no teto); registra a ordem, a prova das variáveis e o teto excedido.
+  roda_processo() {
+    local chave=$1 t=$2 n=$3 b=$4 teto=$5 t0 rc lb lf dir inc=
+    SEQ=$((SEQ + 1)); t0=$(decorrido); dir="$SAIDA/celulas/$chave"
+    env_proc "$b"
+    timeout -k 5 "$teto" env "${ENVX[@]}" "$LASTRO_SH" --modelo "$MODELOS" --texto "$t" --estado quente --n "$n" --saida "$dir" --bin "$BIN" > "$SAIDA/celulas-$chave.log" 2>&1
+    rc=$?
+    printf '%02d %s n=%s braco=%s inicio=%ss fim=%ss rc=%s\n' "$SEQ" "$chave" "$n" "$b" "$t0" "$(decorrido)" "$rc" >> "$SAIDA/ordem.txt"
+    [ "$rc" != 124 ] && [ "$rc" != 137 ] || { echo "$chave teto=${teto}s rc=$rc" >> "$SAIDA/teto-excedido.txt"; echo "teto de processo excedido em $chave ($teto s): processo inválido, sem repetição" >> "$SAIDA/orcamento-log.txt"; }
+    lb=$(grep -h '^perfil-bloco: ' "$dir"/p*/stdout.txt 2> /dev/null | sort -u | tr '\n' '|' | sed 's/|$//')
+    lf=$(grep -h '^perfil-f2: ' "$dir"/p*/stdout.txt 2> /dev/null | sort -u | tr '\n' '|' | sed 's/|$//')
+    case $b in
+      D) [ "$lb" = "perfil-bloco: desligado" ] && [ "$lf" = "perfil-f2: desligado" ] || inc=" INCOERENTE";;
+      A) [ "$lb" = "perfil-bloco: ligado" ] && [ "$lf" = "perfil-f2: desligado" ] || inc=" INCOERENTE";;
+      B) [ "$lb" = "perfil-bloco: ligado" ] && [ "$lf" = "perfil-f2: ligado" ] || inc=" INCOERENTE";;
+    esac
+    printf '%s braco=%s env="%s" linha_bloco="%s" linha_f2="%s"%s\n' "$chave" "$b" "${ENVX[*]}" "${lb:-ausente}" "${lf:-ausente}" "$inc" >> "$SAIDA/prova-variavel.txt"
+    [ "$rc" != 2 ] || { ABORTA=1; echo "processo $chave recusou o ambiente (código 2): janela interrompida" >> "$SAIDA/orcamento-log.txt"; }
+    return $rc
+  }
+  # consulta o planejamento ao binário (fonte única); saída vazia ou código != 0 = falha FECHADA (devolve "erro")
+  planeja() { # --planeja-celula|--planeja-controle  args...
+    local o; o=$("$BIN" "$@" 2> /dev/null) || { echo erro; return 0; }
+    case $o in cinco|tres|nao-rodou|cabe|nao-cabe) echo "$o";; *) echo erro;; esac
+  }
+  # ---- (2) smoke: 1 processo no curto, em B (1 aquecimento + 1 medida), teto 60 s; falha NÃO interrompe a janela (o extrator marca todas as H SEM PROVA); código 2 interrompe
+  SMOKE_CHAVE="smoke-$MODELOS-L100-curto-B"; SMOKE_RC=0
+  roda_processo "$SMOKE_CHAVE" curto 1 B "$(teto_proc smoke)"; SMOKE_RC=$?
+  [ $SMOKE_RC = 0 ] || echo "SMOKE FALHOU (rc $SMOKE_RC): todas as H do modelo SEM PROVA; a janela segue" >> "$SAIDA/orcamento-log.txt"
+  # ---- (3) controle de 9 processos no MÉDIO: cabe inteiro (decorrido + 9 tetos + folga) ou os nove viram NÃO RODOU; o 1º com erro encerra o controle (sem repetição) e o resto vira NÃO RODOU; nunca é cortado
+  CTRL_PAROU=
+  CTRL_OK=$(planeja --planeja-controle --decorrido "$(decorrido)" --tetos "$TETOS9" --folga "$FOLGA" --teto "$LIMITE")
+  for nn in 1 2 3 4 5 6 7 8 9; do
+    b=${ORDEM_CTRL:$((nn - 1)):1}; chave="ctrl-$MODELOS-L100-medio-$(printf '%02d' "$nn")-$b"
+    if [ $ABORTA != 0 ]; then nr "$chave: janela interrompida por recusa de ambiente (código 2)"; continue; fi
+    if [ "$CTRL_OK" != cabe ]; then nr "$chave: o controle de 9 processos não cabe no limite ($LIMITE s; planejador: $CTRL_OK)"; continue; fi
+    if [ -n "$CTRL_PAROU" ]; then nr "$chave: controle encerrado ($CTRL_PAROU), sem repetição"; continue; fi
+    roda_processo "$chave" medio 3 "$b" "$(teto_proc medio)"; rc=$?
+    [ $rc = 0 ] || { [ $ABORTA != 0 ] || CTRL_PAROU="processo $chave saiu com código $rc"; }
+  done
+  # ---- (4)(5) curto e longo em B: 5 medidas; corte único e permanente 5 -> 3 (ja_cortado); NÃO RODOU só pela célula atual com N = 3
+  CELS=(curto longo)
+  for ((ci = 0; ci < ${#CELS[@]}; ci++)); do
+    t=${CELS[$ci]}; chave="lastro-$MODELOS-L100-$t-quente"
+    if [ $ABORTA != 0 ]; then nr "$chave: janela interrompida por recusa de ambiente (código 2)"; continue; fi
+    REST=; for ((j = ci; j < ${#CELS[@]}; j++)); do REST+="$(teto_proc "${CELS[$j]}"),"; done; REST=${REST%,}
+    CJ=(); [ $CORTADO = 0 ] || CJ=(--ja-cortado)
+    PL=$(planeja --planeja-celula --decorrido "$(decorrido)" --restantes "$REST" --folga "$FOLGA" --teto "$LIMITE" "${CJ[@]}")
+    case $PL in
+      cinco) N=5;;
+      tres) N=3; if [ $CORTADO = 0 ]; then CORTADO=1; CORTES+=("quente cai de 5 para 3 medidas (nas células ainda não iniciadas, a partir de $chave)"); echo "corte em $(decorrido) s: ${CORTES[-1]}" >> "$SAIDA/orcamento-log.txt"; fi;;
+      nao-rodou) nr "$chave: não cabe nem com 3 medidas (decorrido $(decorrido) s, limite $LIMITE s)"; continue;;
+      *) nr "$chave: planejador indisponível ou resposta ilegível ('$PL'): falha fechada"; continue;;
+    esac
+    roda_processo "$chave" "$t" "$N" B "$(teto_proc "$t")" || true
+  done
+  [ $ABORTA = 0 ] || nr "janela interrompida por recusa de ambiente (código 2) no processo ${SEQ}"
+
+  # ---- integridade depois
+  coleta_shas "$SAIDA/integridade-depois.txt"
+  POT_FIM=$(le_pot) || POT_FIM=; echo "potencia_fim=$(pot_tok "$POT_FIM")" >> "$SAIDA/ambiente.txt"
+  INTEGRO=1; NOTAS=()
+  if ! cmp -s "$SAIDA/integridade-antes.txt" "$SAIDA/integridade-depois.txt"; then INTEGRO=0; NOTAS+=("sha mudou entre antes e depois"); fi
+  : > "$SAIDA/.integridade-fixos.tmp"
+  while read -r k h; do
+    [ -n "$h" ] || { INTEGRO=0; NOTAS+=("$k ilegível"); echo "$k - - FALHA ilegível" >> "$SAIDA/.integridade-fixos.tmp"; continue; }
+    if [ -n "${FIXO[$k]:-}" ]; then
+      if [ "${SEM_SHA_FIXO:-0}" = 1 ]; then echo "$k ${FIXO[$k]} $h NAO-CONFERIDO" >> "$SAIDA/.integridade-fixos.tmp"
+      elif [ "$h" = "${FIXO[$k]}" ]; then echo "$k ${FIXO[$k]} $h OK" >> "$SAIDA/.integridade-fixos.tmp"
+      else INTEGRO=0; NOTAS+=("$k com sha $h, não o congelado"); echo "$k ${FIXO[$k]} $h FALHA" >> "$SAIDA/.integridade-fixos.tmp"; fi
+    fi
+  done < "$SAIDA/integridade-antes.txt"
+  if [ "$POT_INI" = "$POT_OK" ] && [ "$POT_FIM" = "$POT_OK" ]; then echo "potencia ${POT_OK// /_} $(pot_tok "$POT_FIM") OK" >> "$SAIDA/.integridade-fixos.tmp"
+  else INTEGRO=0; NOTAS+=("power.limit fora de $POT_OK ou ilegível (início '${POT_INI:-ilegível}', fim '${POT_FIM:-ilegível}')"); echo "potencia inicio=$(pot_tok "$POT_INI") fim=$(pot_tok "$POT_FIM") FALHA" >> "$SAIDA/.integridade-fixos.tmp"; fi
+  mv "$SAIDA/.integridade-fixos.tmp" "$SAIDA/integridade-fixos.txt"
+  # ---- orçamento declarado (nao_rodou traz a chave da pasta de cada processo que não rodou: o extrator usa o prefixo ctrl-<modelo>-L100- para marcar o controle incompleto)
+  {
+    printf '{"modelos": ["%s"], "limite_s": %s, "folga_s": %s, "decorrido_s": %s, "cortes": [' "$MODELOS" "$LIMITE" "$FOLGA" "$(decorrido)"
+    sep=; for c in "${CORTES[@]:-}"; do [ -n "$c" ] || continue; printf '%s"%s"' "$sep" "$c"; sep=', '; done
+    printf '], "reps": {"quente_nominal": 5, "controle": 3}, "cortado": %s, "nao_rodou": [' "$([ $CORTADO = 1 ] && echo true || echo false)"
+    sep=; for c in "${NAO_RODOU[@]:-}"; do [ -n "$c" ] || continue; printf '%s"%s"' "$sep" "$(echo "$c" | tr -d '"\\')"; sep=', '; done
+    printf '], "estimativas_sao_tetos_de_processo": true}\n'
+  } > "$SAIDA/orcamento.json"
+  python3 -I "$F2_EXTRAI" --saida "$SAIDA" --ids "$IDS" --refs "$REFS" --textos "$TEXTOS/textos.json" > "$SAIDA/f2-extrai.out" 2>&1; RC_EXT=$?
+  NINC=$(grep -c ' INCOERENTE$' "$SAIDA/prova-variavel.txt" 2> /dev/null || true)
+  {
+    echo "F2 do host por operação em L100, janela do modelo $MODELOS, critério sha256 $(sha "$CRIT_F2"), roteiro sha256 $(sha "$AQUI/roda-f2-janela.sh")"
+    echo "resultado DESCRITIVO: sem veredito geral e sem PASSA/REPROVA; HA a HI são previsões pré-registradas conferidas; só Lastro na 3080 Ti, binário F2 sha256 $(sha "$BIN")"
+    [ $SMOKE_RC = 0 ] || echo "SMOKE FALHOU (rc $SMOKE_RC): todas as H do modelo SEM PROVA (a janela seguiu)"
+    echo "variáveis do instrumento: ${NINC:-0} processo(s) INCOERENTE(S) em prova-variavel.txt (D desligado/desligado, A ligado/desligado, B ligado/ligado)"
+    echo "tetos de processo excedidos: $(wc -l < "$SAIDA/teto-excedido.txt" 2> /dev/null || echo 0) (teto-excedido.txt)"
+    if [ $INTEGRO = 1 ]; then echo "integridade: íntegra (binário, scripts, modelo, textos, referências, ids e critérios iguais antes e depois$([ "${SEM_SHA_FIXO:-0}" = 1 ] && echo '; congelados NÃO conferidos: SEM_SHA_FIXO=1' || echo ' e aos congelados onde há'))"
+    else echo "integridade: QUEBRADA: todas as H SEM PROVA, com as medidas brutas preservadas (e o extrator recusa sem a prova de potência)"; for n in "${NOTAS[@]}"; do echo "  $n"; done; fi
+    echo "cortes de orçamento: ${CORTES[*]:-nenhum}"
+    echo "decorrido $(decorrido) s de $LIMITE s"
+    echo "não rodou: ${#NAO_RODOU[@]} item(ns); ver orcamento.json"
+    echo "extrator: $(cat "$SAIDA/f2-extrai.out") (código $RC_EXT)"
+    echo "processos executados: $SEQ (ordem.txt; plano em plano.txt; prova das variáveis em prova-variavel.txt)"
+  } > "$SAIDA/decisao.txt"
+  cat "$SAIDA/decisao.txt"
+  exit 0
+fi
+
+# ---------------------------------------------------------------- modo externo (portões, janela e limite)
+case $LIMITE in ''|*[!0-9]*) recusa "limite inválido: $LIMITE";; esac
+[ "$LIMITE" -ge 1 ] && [ "$LIMITE" -le $LIMITE_MAX ] || recusa "limite fora de 1..$LIMITE_MAX s: $LIMITE"
+[ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] || recusa "portão fechado: sem PRIMEIRA_PALAVRA_AUTORIZADA=1 (o 'autorizo' do Breno que nomeia a janela)"
+[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a 3080 Ti; a 4090 e a 5090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
+[ -x "$BIN" ] || recusa "binário não executável: $BIN"
+[ -x "$JANELA" ] && [ -x "$LIMITE_SH" ] && [ -x "$LASTRO_SH" ] && [ -x "$MONITOR" ] || recusa "faltam janela-e4b.sh, roda-com-limite.sh, roda-cmp-lastro.sh ou roda-cmp-monitor.sh executáveis"
+[ -f "$EXTRAI" ] && [ -f "$PERFIL_EXTRAI" ] && [ -f "$INSTR_EXTRAI" ] && [ -f "$F2_EXTRAI" ] || recusa "faltam cmp-extrai.py, perfil-extrai.py, instrumento-extrai.py ou f2-extrai.py"
+[ -f "$CRIT_F2" ] || recusa "falta o critério da F2: $CRIT_F2"
+[ -n "$ESTADO" ] || ESTADO=$SAIDA-estado-janela
+for d in "$SAIDA" "$ESTADO"; do
+  if [ -e "$d" ]; then
+    [ -d "$d" ] && [ -z "$(ls -A "$d")" ] || recusa "$d já existe e não está vazio: uma janela nova pede pasta nova"
+  fi
+done
+SAIDA=$(realpath -m "$SAIDA"); BIN=$(realpath "$BIN")
+# sha do binário (e --verifica-fixos do pacote todo) ANTES de parar timers/voxtype: nada é tocado se algo não bater
+confere_binario || recusa "binário com sha diferente do FIXO: $BIN tem sha256 $(sha "$BIN"), o congelado é ${FIXO[binario-f2]}; nada foi tocado (sem envelope, timers, smoke)"
+if [ "${SEM_SHA_FIXO:-0}" != 1 ]; then
+  # captura a saída E o status do verificador antes de qualquer filtro (um pipe com grep mascararia o código de saída dele)
+  VF=$("$AQUI/roda-f2-janela.sh" --verifica-fixos 2>&1); RC_VF=$?
+  [ $RC_VF = 0 ] || recusa "--verifica-fixos falhou (código $RC_VF) antes de tocar em envelope, monitor, timers ou GPU (algum arquivo congelado mudou ou sumiu); nada foi tocado: $(echo "$VF" | grep -E 'FALHA|AUSENTE' | head -n 3 | tr '\n' ' ')"
+fi
+# cargo test / processo CUDA em execução: recusa ANTES de tocar em timers ou na GPU
+PROIB=$(proc_proibidos) || recusa "processo que pode usar a 3080 Ti em execução (cargo test, binário de teste do cargo, primeira-palavra ou llama.*) ou lista de processos ilegível: feche antes da janela; nada foi tocado: $(echo "$PROIB" | head -n 3 | tr '\n' ' ')"
+POT_PRE=$(le_pot) || POT_PRE=
+[ "$POT_PRE" = "$POT_OK" ] || recusa "power.limit da 3080 Ti tem de ser $POT_OK (lido: '${POT_PRE:-ilegível}'); a série vale só no limite vigente; nada foi tocado, não mexa no limite por este roteiro"
+PREFLIGHT=$("$MONITOR" preflight 2>&1) || recusa "processo(s) de compute na 3080 Ti que precisam ser FECHADOS antes da janela (voxtype, processo de GPU do Chrome...): $PREFLIGHT"
+# bloco obrigatório (smoke + nove tetos + folga): não cabendo no limite pedido, a janela NÃO COMEÇA: SEM PROVA da unidade inteira, registrada, sem repetição automática e sem encolher o controle
+NEC=$(bloco_obrig_s)
+if [ "$NEC" -gt "$LIMITE" ]; then
+  mkdir -p "$SAIDA" || exit 2
+  { echo "SEM PROVA da unidade inteira: a janela do modelo $MODELOS NÃO COMEÇOU (o bloco obrigatório do controle não cabe)"
+    echo "necessário (tetos): $NEC s = smoke $(teto_proc smoke) + 9 processos x $(teto_proc medio) + folga $FOLGA; limite pedido: $LIMITE s"
+    echo "nada foi tocado (timers, GPU, voxtype); sem repetição automática; o controle não é encolhido"; } > "$SAIDA/decisao.txt"
+  cat "$SAIDA/decisao.txt" >&2
+  exit 2
+fi
+TIMERS=()
+[ -z "${JANELA_TIMERS:-}" ] || TIMERS=(--timers "$JANELA_TIMERS")
+coleta() {
+  {
+    echo "$1 $(date '+%d/%m %H:%M:%S')"
+    "${NVIDIA_SMI:-nvidia-smi}" --query-gpu=uuid,memory.used,utilization.gpu --format=csv 2>&1 || echo "nvidia-smi indisponível"
+    "${NVIDIA_SMI:-nvidia-smi}" --query-compute-apps=pid,used_memory,name --format=csv,noheader 2>&1 || true
+    echo "loadavg $(cat "${LOADAVG_ARQ:-/proc/loadavg}" 2>&1)"
+    echo "binário $(sha "$BIN")"
+  } > "$2" 2>&1 || true
+}
+PASSA=("CUDA_VISIBLE_DEVICES=$UUID" PRIMEIRA_PALAVRA_AUTORIZADA=1)
+for v in MODELO_1B MODELO_3B TEXTOS_5C REF_5C IDS_CMP CRITERIO_F2 PLANO_F2 CRITERIO_CMP CRITERIO_D1 CRITERIO_D2 SEM_SHA_FIXO CMP_MODO_TESTE NVIDIA_SMI PROC_STAT CMP_CPU_JANELA CMP_CPU_ESPERA LASTRO_SH_CMP EXTRAI_PY PERFIL_EXTRAI_PY INSTR_EXTRAI_PY F2_EXTRAI_PY \
+         CMP_RELOGIO_ARQ CMP_FOLGA CMP_SEM_MEMORIA MONITOR_SH ESPERA_PRONTO LOADAVG_ARQ PROC_LISTA F2_TETO_FORCADO LASTRO_PERFIL_BLOCO LASTRO_PERFIL_F2 $(compgen -v | grep -E '^CMP_(EST|FAKE)_' || true); do
+  [ -z "${!v+x}" ] || PASSA+=("$v=${!v}")
+done
+lista_systemd() {
+  "${SYSTEMCTL:-systemctl}" --user list-unit-files --type=service,timer > "$SAIDA.unidades-$1.txt" 2>&1 || true
+  "${SYSTEMCTL:-systemctl}" --user list-timers --all > "$SAIDA.timers-$1.txt" 2>&1 || true
+}
+lista_systemd antes
+coleta início "$SAIDA.carga-antes.txt"
+"$JANELA" --estado "$ESTADO" "${TIMERS[@]}" --limite $((LIMITE + 120)) --kill-apos 30 -- \
+  "$LIMITE_SH" --limite "$LIMITE" -- env "${PASSA[@]}" "$AQUI/roda-f2-janela.sh" --interno --modelos "$MODELOS" --saida "$SAIDA" --bin "$BIN" --limite "$LIMITE"
+RC=$?
+coleta fim "$SAIDA.carga-depois.txt"
+lista_systemd depois
+MSG="janela da F2 do host do Lastro ($MODELOS) terminou (código $RC): $SAIDA"
+echo "$MSG" > "$SAIDA.aviso.txt"
+if [ -n "${CMP_AVISO_CMD:-}" ]; then "$CMP_AVISO_CMD" "$MSG" > /dev/null 2>&1 || true
+elif command -v notify-send > /dev/null 2>&1; then notify-send "F2 do host (Lastro)" "$MSG" > /dev/null 2>&1 || true; fi
+exit $RC
