@@ -89,7 +89,7 @@ pub(crate) static FAULT_DOWN: std::sync::atomic::AtomicBool = std::sync::atomic:
 /// Espera a stream de cálculo. Os kernels já enfileirados leem os tensores que as variáveis locais seguram; o cutile libera
 /// um tensor com `cuMemFreeAsync` numa stream de desalocação que não espera a nossa (`cuda-async/src/device_buffer.rs:128`),
 /// então o erro tem de esperar a stream ANTES de a função retornar e soltar os locais (o idioma de `gpu::sync_on_err`).
-fn sync_before_drop(raw: sys::CUstream) {
+pub(crate) fn sync_before_drop(raw: sys::CUstream) {
     #[cfg(test)]
     ERR_SYNCS.fetch_add(1, Ordering::Relaxed);
     // SAFETY: só espera a stream.
@@ -573,6 +573,18 @@ impl CudaBackend {
     #[doc(hidden)]
     pub fn injeta_falha_na_copia_dos_logits(on: bool) {
         crate::cuda_dense::FALHA_NA_COPIA_DOS_LOGITS.store(on, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Só para o teste de GPU da O1 (política A): 1 a 4 faz falhar o lançamento reformado de mesmo número em `attn_block_b`; 0 desliga.
+    #[doc(hidden)]
+    pub fn injeta_falha_no_lancamento_reformado(n: usize) {
+        crate::cuda_dense::FALHA_NO_LANCAMENTO_REFORMADO.store(n, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Só para o teste de GPU da O1 (política A): `n > 0` faz falhar a n-ésima reforma seguinte (ímpares são a ida, pares a volta); 0 desliga.
+    #[doc(hidden)]
+    pub fn injeta_falha_na_reforma(n: usize) {
+        crate::cuda_dense::FALHA_NA_REFORMA_N.store(n, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// O KV da camada `l` até `len` posições (E4b, oráculo): sincroniza a stream de cálculo e copia o cache para o host.

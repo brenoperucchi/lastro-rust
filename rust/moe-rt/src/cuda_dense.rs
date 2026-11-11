@@ -4,10 +4,14 @@
 //!
 //! Os tensores de trabalho ficam sempre donos do estado e os lançadores recebem partições emprestadas (`&mut`), pela razão da
 //! rodada 10 do A1.2: um lançamento que falha só derruba o empréstimo, e o tensor segue vivo até a espera da stream. Onde um
-//! kernel pede outra forma do mesmo buffer (por exemplo `[cabeças·2, metade]` no RoPE), o dado passa por uma cópia
-//! device-para-device (`memcpy_dtod_async`) entre dois buffers já formados, e não por `reshape`, que consome o tensor.
+//! kernel pede outra forma do mesmo buffer (por exemplo `[cabeças·2, metade]` no RoPE), a O1 do plano de cópias (11/11, aprovada
+//! pelo Breno às 15:23, política de erro A) usa `reshape`, que muda só os metadados: o tensor sai do campo, é reformado,
+//! emprestado ao kernel e devolvido na forma original por [`crate::reforma::com_forma`]; em qualquer erro ele volta ao campo e, se a
+//! restauração falhar, o dono espera a stream antes de cair. As duas cópias device-para-device (`memcpy_dtod_async`) que sobram por
+//! camada e posição são as do cache K/V, que movem dado de verdade.
 #![allow(unsafe_code)]
-use crate::cuda_backend::{fail_k, kernel_err, CudaError};
+use crate::cuda_backend::{fail_k, kernel_err, sync_before_drop, CudaError};
+use crate::reforma::{com_forma, Reformavel};
 use crate::gpu::{gemv_generics, kernels, tile_k, AXPBY_B, GEMV_BM};
 use crate::gpu_model::{attention_b, ATTN_BN, ATTN_NS};
 use crate::perfil_bloco::{self as pb, AccB};
@@ -40,17 +44,14 @@ pub struct Dense {
     lm_head: Tensor<bf16>,
     norm: Tensor<f32>,
     layers: Vec<DenseLayer>,
-    // buffers de trabalho, cada um na forma de quem o lê
-    q: Tensor<f32>,
-    k: Tensor<f32>,
+    // buffers de trabalho. `q`, `k`, `qr` e `att2` são `Option` porque a O1 os tira do campo para reformar (`com_forma`); fora de uma
+    // chamada de `attn_block_b` estão sempre `Some`, na forma de `new` (só `None` se uma restauração falhou depois de a stream ser esperada).
+    q: Option<Tensor<f32>>,
+    k: Option<Tensor<f32>>,
     v: Tensor<f32>,
-    q2: Tensor<f32>,
-    qr: Tensor<f32>,
-    qh: Tensor<f32>,
-    k2: Tensor<f32>,
+    qr: Option<Tensor<f32>>,
     kr: Tensor<f32>,
-    att2: Tensor<f32>,
-    att: Tensor<f32>,
+    att2: Option<Tensor<f32>>,
     part: Tensor<f32>,
     o: Tensor<f32>,
     logits: Tensor<f32>,
@@ -89,6 +90,65 @@ pub static FALHA_NA_LEITURA_DO_KV: std::sync::atomic::AtomicBool = std::sync::at
 /// Só para o mutante do oráculo do E4b: `attn_block_at` usa o comprimento da última posição do passo em todas (atenção não causal).
 pub static MUTANTE_LENS_DA_ULTIMA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Só para o teste de GPU da O1: 1 a 4 faz falhar o lançamento reformado de mesmo número (RoPE de Q, RoPE de K, atenção, gemv de `o`),
+/// depois de a stream esperar como em qualquer falha de lançamento; 0 desliga. Uma leitura relaxada por lançamento, só nesses quatro.
+pub static FALHA_NO_LANCAMENTO_REFORMADO: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// Só para o teste de GPU da O1: `n > 0` faz falhar a n-ésima chamada seguinte de reforma (em `attn_block_b`: 1 e 2 Q, 3 e 4 K, 5 e 6 `qr`,
+/// 7 e 8 `att2`; ímpares são a ida, pares a volta), devolvendo o dono; 0 desliga.
+pub static FALHA_NA_REFORMA_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn injeta_lancamento(n: usize) -> bool {
+    FALHA_NO_LANCAMENTO_REFORMADO.load(std::sync::atomic::Ordering::Relaxed) == n
+}
+
+fn injeta_reforma() -> bool {
+    use std::sync::atomic::Ordering::Relaxed;
+    let n = FALHA_NA_REFORMA_N.load(Relaxed);
+    if n == 0 {
+        return false;
+    }
+    FALHA_NA_REFORMA_N.store(n - 1, Relaxed);
+    n == 1
+}
+
+/// Strides de um tensor contíguo de forma `shape` (a mesma regra que o cutile confere em `reshape`).
+fn strides_contiguos(shape: &[i32]) -> Vec<i32> {
+    let mut st = vec![1i32; shape.len()];
+    for i in (0..shape.len().saturating_sub(1)).rev() {
+        st[i] = st[i + 1] * shape[i + 1];
+    }
+    st
+}
+
+impl Reformavel for Tensor<f32> {
+    type Erro = CudaError;
+    fn forma(&self) -> Vec<usize> {
+        self.shape().iter().map(|&x| x as usize).collect()
+    }
+    /// Confere antes de consumir o tensor exatamente o que `reshape` confere (contíguo e mesmo número de elementos), para que o erro devolva
+    /// o dono; passada a conferência, `reshape` só repete as mesmas verificações e não falha.
+    fn reformar(self, forma: &[usize]) -> Result<Self, (Option<Self>, CudaError)> {
+        use cutile::tensor::Reshape;
+        if injeta_reforma() {
+            return Err((Some(self), CudaError::Config("falha injetada na reforma")));
+        }
+        let n: usize = forma.iter().product();
+        if n != self.size() || self.strides() != strides_contiguos(self.shape()).as_slice() {
+            return Err((Some(self), CudaError::Config("reforma incompatível com o tensor")));
+        }
+        self.reshape(forma).map_err(|e| (None, kernel_err(e)))
+    }
+}
+
+/// O tensor de trabalho de um campo reformável, ou o erro de campo vazio (uma restauração anterior falhou).
+fn campo(o: &mut Option<Tensor<f32>>) -> Result<&mut Tensor<f32>, CudaError> {
+    o.as_mut().ok_or(CudaError::Config("buffer de trabalho ausente (uma restauração anterior falhou)"))
+}
+
+fn ausente() -> CudaError {
+    CudaError::Config("buffer de trabalho ausente (uma restauração anterior falhou)")
+}
+
 impl Dense {
     pub fn new(m: &HostModel, s: &Arc<Stream>, max_len: usize) -> Result<Self, CudaError> {
         let c = m.cfg.clone();
@@ -123,16 +183,12 @@ impl Dense {
             max_len,
             pos: 0,
             cur: 0,
-            q: zeros(&[qd], s)?,
-            k: zeros(&[kvd], s)?,
+            q: Some(zeros(&[qd], s)?),
+            k: Some(zeros(&[kvd], s)?),
             v: zeros(&[kvd], s)?,
-            q2: zeros(&[c.heads * 2, half], s)?,
-            qr: zeros(&[c.heads * 2, half], s)?,
-            qh: zeros(&[c.heads, d], s)?,
-            k2: zeros(&[c.kv_heads * 2, half], s)?,
+            qr: Some(zeros(&[c.heads * 2, half], s)?),
             kr: zeros(&[c.kv_heads * 2, half], s)?,
-            att2: zeros(&[c.heads, d], s)?,
-            att: zeros(&[qd], s)?,
+            att2: Some(zeros(&[c.heads, d], s)?),
             part: zeros(&[c.heads * ATTN_NS * 2, d], s)?,
             o: zeros(&[h], s)?,
             logits: zeros(&[vocab_pad], s)?,
@@ -276,27 +332,54 @@ impl Dense {
         // são do estado e vivem além da sincronização da stream; só esta stream os toca, em ordem.
         unsafe {
             med!(pb::B_LANCA, kernels::rmsnorm((&mut *xn).partition([norm_c]), &*h, &lay.ln_attn, c.eps).generics(gen_norm.clone()).async_on(s).map_err(fail_k(raw)))?;
-            med!(pb::B_LANCA, kernels::gemv((&mut self.q).partition([GEMV_BM]), &lay.q, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw)))?;
-            med!(pb::B_LANCA, kernels::gemv((&mut self.k).partition([GEMV_BM]), &lay.k, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw)))?;
+            med!(pb::B_LANCA, kernels::gemv(campo(&mut self.q)?.partition([GEMV_BM]), &lay.q, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw)))?;
+            med!(pb::B_LANCA, kernels::gemv(campo(&mut self.k)?.partition([GEMV_BM]), &lay.k, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw)))?;
             med!(pb::B_LANCA, kernels::gemv((&mut self.v).partition([GEMV_BM]), &lay.v, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw)))?;
         }
-        med!(pb::B_DTOD, dtod(&self.q2, 0, &self.q, qd, s, raw))?;
-        med!(pb::B_DTOD, dtod(&self.k2, 0, &self.k, kvd, s, raw))?;
+        // O1: `q` e `k` viram `[cabeças·2, metade]` por reforma (sem cópia) só enquanto o RoPE os lê; as reformas ficam fora de qualquer
+        // operação medida (caem no resíduo do nível B). Mesmos kernels, mesmos argumentos, mesma ordem de lançamento.
+        let seguro = |e: CudaError| -> CudaError {
+            sync_before_drop(raw);
+            e
+        };
         // SAFETY: como acima.
-        unsafe {
-            med!(pb::B_LANCA, kernels::rope((&mut self.qr).partition([2, half]), &self.q2, &self.cs).generics(gen_rope.clone()).async_on(s).map_err(fail_k(raw)))?;
-            med!(pb::B_LANCA, kernels::rope((&mut self.kr).partition([2, half]), &self.k2, &self.cs).generics(gen_rope.clone()).async_on(s).map_err(fail_k(raw)))?;
-        }
+        com_forma(&mut self.q, &[c.heads * 2, half], ausente, || sync_before_drop(raw), |q2| {
+            if injeta_lancamento(1) {
+                return Err(seguro(CudaError::Config("falha injetada no lançamento reformado 1")));
+            }
+            unsafe { med!(pb::B_LANCA, kernels::rope(campo(&mut self.qr)?.partition([2, half]), &*q2, &self.cs).generics(gen_rope.clone()).async_on(s).map_err(fail_k(raw))) }
+            .map(|_| ())
+        })?;
+        com_forma(&mut self.k, &[c.kv_heads * 2, half], ausente, || sync_before_drop(raw), |k2| {
+            if injeta_lancamento(2) {
+                return Err(seguro(CudaError::Config("falha injetada no lançamento reformado 2")));
+            }
+            // SAFETY: como acima.
+            unsafe { med!(pb::B_LANCA, kernels::rope((&mut self.kr).partition([2, half]), &*k2, &self.cs).generics(gen_rope.clone()).async_on(s).map_err(fail_k(raw))) }
+            .map(|_| ())
+        })?;
         med!(pb::B_DTOD, dtod(&lay.k_cache, self.cur * kvd, &self.kr, kvd, s, raw))?;
         med!(pb::B_DTOD, dtod(&lay.v_cache, self.cur * kvd, &self.v, kvd, s, raw))?;
-        med!(pb::B_DTOD, dtod(&self.qh, 0, &self.qr, qd, s, raw))?;
-        // SAFETY: `lens` está entre 1 e `max_len` (`begin_token`); as formas são as de `new`.
-        unsafe { attention_b(s, &mut self.att2, &mut self.part, &self.qh, &lay.k_cache, &lay.v_cache, &self.lens, c.attention_multiplier, (c.heads, c.kv_heads, d, ATTN_NS), acc.as_deref_mut()) }
-            .map_err(fail_k(raw))?;
-        med!(pb::B_DTOD, dtod(&self.att, 0, &self.att2, qd, s, raw))?;
+        // `qr` (`[cabeças·2, metade]`, saída do RoPE de Q) vira `[cabeças, d]` para a atenção.
+        com_forma(&mut self.qr, &[c.heads, d], ausente, || sync_before_drop(raw), |qh| {
+            if injeta_lancamento(3) {
+                return Err(seguro(CudaError::Config("falha injetada no lançamento reformado 3")));
+            }
+            // SAFETY: `lens` está entre 1 e `max_len` (`begin_token`); as formas são as de `new`.
+            unsafe { attention_b(s, campo(&mut self.att2)?, &mut self.part, &*qh, &lay.k_cache, &lay.v_cache, &self.lens, c.attention_multiplier, (c.heads, c.kv_heads, d, ATTN_NS), acc.as_deref_mut()) }
+                .map_err(fail_k(raw))
+        })?;
+        // `att2` (`[cabeças, d]`, saída da atenção) vira `[qd]` para o gemv de `o`.
+        com_forma(&mut self.att2, &[qd], ausente, || sync_before_drop(raw), |att| {
+            if injeta_lancamento(4) {
+                return Err(seguro(CudaError::Config("falha injetada no lançamento reformado 4")));
+            }
+            // SAFETY: como acima.
+            unsafe { med!(pb::B_LANCA, kernels::gemv((&mut self.o).partition([GEMV_BM]), &lay.o, &*att).generics(gen_qd).async_on(s).map_err(fail_k(raw))) }
+            .map(|_| ())
+        })?;
         // SAFETY: como acima.
         unsafe {
-            med!(pb::B_LANCA, kernels::gemv((&mut self.o).partition([GEMV_BM]), &lay.o, &self.att).generics(gen_qd).async_on(s).map_err(fail_k(raw)))?;
             med!(pb::B_LANCA, kernels::axpby((&mut *h).partition([AXPBY_B]), &self.o, c.residual_multiplier, 1.0f32).generics(vec![AXPBY_B.to_string()]).async_on(s).map_err(fail_k(raw)))?;
             med!(pb::B_LANCA, kernels::rmsnorm((&mut *xn).partition([norm_c]), &*h, &lay.ln_moe, c.eps).generics(gen_norm).async_on(s).map_err(fail_k(raw)))?;
         }

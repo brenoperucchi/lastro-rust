@@ -28,6 +28,7 @@ pub mod motor;
 pub mod npy;
 pub mod perfil_bloco;
 pub mod pool;
+pub(crate) mod reforma;
 pub mod primeira_palavra_regra;
 pub mod reset_regra;
 pub mod route;
