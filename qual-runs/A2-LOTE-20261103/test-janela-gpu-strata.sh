@@ -120,10 +120,10 @@ INICIAL=inactive prepara i1; lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera
 INICIAL=activating prepara i2; lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "inicial incomum: recusa" 2 $?
 # 5. P1-2: start falho / sem estado active: rc 6, log ATENCAO; comando falho preserva
 JGS_ESPERA_START=1 prepara r1; touch "$FS/start_falha"; lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "start falha, comando 0: rc 6" 6 $?
-log | grep -q "ATENCAO: Strata NAO voltou" && ok "start falho: registrado no log" || ruim "start falho: sem ATENCAO no log"
+log | grep -q "o Strata nao voltou a active" && ok "start falho: registrado no log" || ruim "start falho: sem ATENCAO no log"
 JGS_ESPERA_START=1 prepara r2; touch "$FS/start_sem_estado"; lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "start rc 0 mas inactive: rc 6" 6 $?
 JGS_ESPERA_START=1 prepara r3; touch "$FS/start_falha"; COM_MODO=rc7 lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "start falha, comando 7: preserva 7" 7 $?
-log | grep -q "ATENCAO: Strata NAO voltou" && ok "comando falho + start falho: falha de religacao no log" || ruim "sem ATENCAO"
+log | grep -q "o Strata nao voltou a active" && ok "comando falho + start falho: falha de religacao no log" || ruim "sem ATENCAO"
 # 6. P1-3: TERM/HUP/INT no envelope com a unidade lastro-limite viva: unidade encerrada ANTES do start
 for S in TERM HUP INT; do
   prepara u-$S; COM_UNIDADE=1 COM_MODO=espera lanca --teto 30 -- "$BASE/cmd.sh"

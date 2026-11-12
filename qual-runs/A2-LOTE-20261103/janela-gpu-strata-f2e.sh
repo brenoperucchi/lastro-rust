@@ -59,6 +59,9 @@ verifica_unidades() {
   out=$("$SYSCTL" --user list-units --all --plain --no-legend 'lastro-limite-*.service' 2>/dev/null); rc=$?
   if [ "$rc" -ne 0 ]; then INCERTO=1; DIAG="list-units falhou (rc $rc)"; return 0; fi
   lista=$(printf '%s\n' "$out" | grep -o 'lastro-limite-[^ ]*\.service' | sort -u)
+  # une as unidades cujo cgroup ainda existe no disco, mesmo que o systemd ja nao as liste (cgroup que sobrou nao pode passar despercebido)
+  for d in "$CG_RAIZ"/lastro-limite-*.service; do [ -e "$d" ] && lista="$lista $(basename "$d")"; done
+  lista=$(printf '%s\n' $lista | sort -u)
   for u in $lista; do
     st=$("$SYSCTL" --user is-active "$u" 2>/dev/null)
     case "$st" in
