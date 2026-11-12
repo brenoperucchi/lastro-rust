@@ -23,7 +23,10 @@ case "$acao" in
     if [ "$alvo" = strata.service ]; then
       if [ -f "$FS/sinal_no_is_active" ] && grep -q '^stop$' "$FS/eventos" 2> /dev/null; then s=$(cat "$FS/sinal_no_is_active"); rm -f "$FS/sinal_no_is_active"; kill -"$s" "$(envpid)"; sleep 0.5; fi
       cat "$FS/strata"
-    else cat "$FS/unit-$alvo" 2> /dev/null || echo inactive; fi ;;
+    else
+      [ -f "$FS/isactive_ilegivel" ] && { echo "weird"; exit 1; }
+      cat "$FS/unit-$alvo" 2> /dev/null || echo inactive
+    fi ;;
   stop)
     if [ "$alvo" = strata.service ]; then
       echo stop >> "$FS/eventos"
@@ -43,13 +46,17 @@ case "$acao" in
     [ -f "$FS/start_falha" ] && exit 1
     [ -f "$FS/start_sem_estado" ] && exit 0
     echo active > "$FS/strata" ;;
-  list-units) cat "$FS/units" 2> /dev/null ;;
+  list-units)
+    [ -f "$FS/list_falha" ] && exit 1
+    if [ -f "$FS/list_falha_2a" ]; then n=$(cat "$FS/listcount" 2> /dev/null || echo 0); n=$((n + 1)); echo $n > "$FS/listcount"; [ "$n" -ge 2 ] && exit 1; fi
+    cat "$FS/units" 2> /dev/null ;;
 esac
 exit 0
 FAKE
 cat > "$BASE/nvidia-smi" <<'FAKE'
 #!/usr/bin/env bash
-case "$*" in *compute-apps*) ;; *memory.used*) echo 120 ;; esac
+[ -f "$FS/smi_falha" ] && exit 1
+case "$*" in *compute-apps*) [ -f "$FS/gpu_ocupada" ] && echo 1234 ;; *memory.used*) echo 120 ;; esac
 exit 0
 FAKE
 cat > "$BASE/cmd.sh" <<'FAKE'
@@ -61,7 +68,9 @@ if [ -n "${COM_UNIDADE:-}" ]; then
   setsid sleep 7771 > /dev/null 2>&1 &
   echo $! > "$FS/worker.pid"; echo $! > "$FS/cg/$U/cgroup.procs"
   echo "$U loaded active running x" > "$FS/units"; echo active > "$FS/unit-$U"
+  [ -f "$FS/cg_ilegivel" ] && chmod 000 "$FS/cg/$U/cgroup.procs"
 fi
+case "${COM_GPU:-}" in ocupada) touch "$FS/gpu_ocupada" ;; falha) touch "$FS/smi_falha" ;; esac
 MODO=${COM_MODO:-rc0}
 case "$MODO" in
   rc*) exit "${MODO#rc}" ;;
@@ -80,7 +89,8 @@ lanca() {
   bash -c 'echo $$ > "$FS/env.pid"; exec bash "$@"' _ "$ENV_SH" "$@" > "$FS/saida.txt" 2>&1 &
   EP=$!
 }
-limpa() { pkill -f "sleep 7771" 2> /dev/null; unset COM_UNIDADE COM_MODO INICIAL; }
+limpa() { pkill -f "sleep 7771" 2> /dev/null; unset COM_UNIDADE COM_MODO COM_GPU INICIAL; }
+alerta_existe() { ls "$FS"/home/lastro-janelas/ATENCAO-STRATA-PARADO-*.txt > /dev/null 2>&1; }
 starts() { local n; n=$(grep -c '^start' "$FS/eventos" 2> /dev/null); echo "${n:-0}"; }
 log() { cat "$FS"/home/lastro-janelas/*.log 2> /dev/null; }
 
@@ -130,10 +140,32 @@ limpa
 # 7. unidade que nao encerra: NAO religa, rc 5 (ou o rc do comando se != 0), registra
 prepara k1; touch "$FS/unidade_teimosa"; COM_UNIDADE=1 lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "unidade teimosa, comando 0: rc 5" 5 $?
 [ "$(starts)" = 0 ] && ok "unidade teimosa: Strata NAO religado" || ruim "unidade teimosa: religou"
-log | grep -q "Strata NAO religado" && ok "unidade teimosa: registrado" || ruim "unidade teimosa: sem registro"
+log | grep -q "NAO religado automaticamente" && ok "unidade teimosa: registrado" || ruim "unidade teimosa: sem registro"
+alerta_existe && ok "unidade teimosa: arquivo de estado criado" || ruim "unidade teimosa: sem arquivo de estado"
 limpa
 prepara k2; touch "$FS/unidade_teimosa"; COM_UNIDADE=1 COM_MODO=rc7 lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "unidade teimosa, comando 7: preserva 7" 7 $?
 [ "$(starts)" = 0 ] && ok "unidade teimosa + rc 7: nao religou" || ruim "religou"
+limpa
+# 7b. P1 da rodada 179: confirmacao de termino FALHA FECHADA. Nenhuma incerteza pode dar rc 0 nem start; ha aviso em arquivo de estado
+fechada() { # nome, arquivo-flag, [COM_UNIDADE], [COM_GPU]
+  prepara "$1"; [ -n "$2" ] && touch "$FS/$2"
+  COM_UNIDADE=$3 COM_GPU=$4 lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "$1: sem prova de termino" 5 $?
+  [ "$(starts)" = 0 ] && ok "$1: Strata NAO religado" || ruim "$1: religou (starts=$(starts))"
+  alerta_existe && ok "$1: arquivo de estado ATENCAO-STRATA-PARADO criado" || ruim "$1: sem arquivo de estado"
+  log | grep -q "ATENCAO" && ok "$1: aviso no log" || ruim "$1: sem aviso no log"
+  limpa
+}
+fechada lf-com-unidade list_falha 1 ""
+fechada lf-sem-unidade list_falha "" ""
+fechada isactive-ilegivel isactive_ilegivel 1 ""
+fechada cgroup-ilegivel cg_ilegivel 1 ""
+fechada lista-falha-na-2a list_falha_2a 1 ""
+fechada gpu-ocupada "" "" ocupada
+fechada smi-falha-no-fim "" "" falha
+# controles: lista vazia consultada com sucesso e unidade encerrada antes do start religam (n1 e u-*); incerteza com comando falho preserva o rc
+prepara lf-rc7; touch "$FS/list_falha"; COM_MODO=rc7 lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "incerteza + comando rc 7: preserva 7" 7 $?
+[ "$(starts)" = 0 ] && ok "incerteza + rc 7: nao religou" || ruim "religou"
+alerta_existe && ok "incerteza + rc 7: aviso criado" || ruim "sem aviso"
 limpa
 # 8. dry-run
 prepara d1; lanca --dry-run --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "dry-run" 0 $?

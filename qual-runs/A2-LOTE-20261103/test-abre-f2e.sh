@@ -23,12 +23,12 @@ HFAKE=$B/home; mkdir -p "$HFAKE"; cp "$B/janela-falsa.sh" "$HFAKE/janela-gpu-str
 roda() { ( cd "$REPO" && env HOME="$HFAKE" F2E_TMPDIR="$B/tmp" "$@" ); }
 
 # modo real: HOME de mentira com um janela de sha DIFERENTE do revisado -> recusa 2 sem chamar
-roda bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o1.txt" 2>&1; espera "modo real, envelope com sha diferente do revisado" 2 $?
+roda F2E_COMMIT=$COMMIT bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o1.txt" 2>&1; espera "modo real, envelope com sha diferente do revisado" 2 $?
 grep -q "o revisado é" "$B/o1.txt" && ok "mensagem de sha do envelope" || ruim "sem mensagem de sha: $(cat "$B/o1.txt")"
 [ ! -e "$B/chamadas.txt" ] && ok "envelope nao foi chamado" || ruim "envelope chamado"
 # arvore suja
 echo x >> "$REPO/roda-f2e-janela.sh"
-roda bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o2.txt" 2>&1; espera "arvore com arquivo rastreado modificado" 2 $?
+roda F2E_COMMIT=$COMMIT bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o2.txt" 2>&1; espera "arvore com arquivo rastreado modificado" 2 $?
 grep -q "arquivo rastreado modificado" "$B/o2.txt" && ok "mensagem de arvore suja" || ruim "sem mensagem: $(cat "$B/o2.txt")"
 git -C "$REPO" checkout -q -- roda-f2e-janela.sh
 # F2E_COMMIT errado
@@ -37,6 +37,20 @@ grep -q "não em F2E_COMMIT" "$B/o3.txt" && ok "mensagem de commit" || ruim "sem
 # F2E_COMMIT certo e arvore limpa chega ao teste do envelope (falha so no sha)
 roda F2E_COMMIT=$COMMIT bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o4.txt" 2>&1; espera "commit certo, arvore limpa, mas envelope diferente" 2 $?
 grep -q "o revisado é" "$B/o4.txt" && ok "passou pelas travas de clone e parou no envelope" || ruim "o4: $(cat "$B/o4.txt")"
+# sem F2E_COMMIT: recusa 2 (obrigatorio fora do modo de teste)
+roda bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o9.txt" 2>&1; espera "sem F2E_COMMIT" 2 $?
+grep -q "falta F2E_COMMIT" "$B/o9.txt" && ok "mensagem de F2E_COMMIT obrigatorio" || ruim "o9: $(cat "$B/o9.txt")"
+# git status que FALHA (rc 128, stdout vazio) nao passa por arvore limpa
+mkdir -p "$B/bin"; GIT_REAL=$(command -v git)
+printf '#!/usr/bin/env bash\ncase "$*" in *status*) echo "fatal: index file corrupt" >&2; exit 128;; esac\nexec %s "$@"\n' "$GIT_REAL" > "$B/bin/git"; chmod +x "$B/bin/git"
+roda PATH="$B/bin:$PATH" F2E_COMMIT=$COMMIT bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o10.txt" 2>&1; espera "git status falha (rc 128, stdout vazio)" 2 $?
+grep -q "git status falhou" "$B/o10.txt" && ok "mensagem de git status falho" || ruim "o10: $(cat "$B/o10.txt")"
+[ ! -e "$B/chamadas.txt" ] && ok "sem chamada" || ruim "chamou"
+# o roteiro real recusa as variaveis de teste da abertura no modo real
+for V in F2E_MODO_TESTE F2E_ENVELOPE_SHA_ESPERADO F2E_JANELA_GPU; do
+  env "$V=1" bash "$AQUI/roda-f2e-janela.sh" --modelos 1b --saida "$B/saida-$V" > "$B/o11.txt" 2>&1; espera "roteiro real recusa $V" 2 $?
+  [ ! -e "$B/saida-$V" ] && ok "$V: nada criado" || ruim "$V: criou saida"
+done
 # F2E_JANELA_GPU sem modo de teste
 roda F2E_JANELA_GPU="$B/janela-falsa.sh" bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o5.txt" 2>&1; espera "F2E_JANELA_GPU sem F2E_MODO_TESTE" 2 $?
 [ ! -e "$B/chamadas.txt" ] && ok "sem chamada" || ruim "chamou"

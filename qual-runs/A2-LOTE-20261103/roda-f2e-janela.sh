@@ -85,7 +85,7 @@ if [ "${VERIFICA:-0}" != 1 ] && [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
     case $v in
       LASTRO_PERFIL_BLOCO|LASTRO_PERFIL_F2|LASTRO_PERFIL_F2B|LASTRO_GANCHO_LOGITS|CMP_FRACAO_SLOTS|CMP_CAMADAS_CPU|CRITERIO_F2E|PLANO_O3|DECISAO_F2E|F2B_EXTRAI_PY|F2E_EXTRAI_PY|CRITERIO_D1|CRITERIO_D2|SEM_SHA_FIXO|MONITOR_SH|LASTRO_SH_CMP|EXTRAI_PY|PERFIL_EXTRAI_PY|INSTR_EXTRAI_PY|F2_EXTRAI_PY|CMP_RELOGIO_ARQ|NVIDIA_SMI|MODELO_1B|MODELO_3B|TEXTOS_5C|REF_5C|IDS_CMP|CRITERIO_CMP \
       |PROC_STAT|CMP_CPU_JANELA|CMP_CPU_ESPERA|CMP_FOLGA|CMP_SEM_MEMORIA|ESPERA_PRONTO|LOADAVG_ARQ|SYSTEMCTL|SYSTEMD_RUN|PENDENTE|CGROUP_RAIZ|PROC_LISTA|F2E_TETO_FORCADO|F2E_CARGO_TESTE \
-      |CMP_EST_*|CMP_FAKE_*|JANELA_*|LIMITE_*)
+      |CMP_EST_*|CMP_FAKE_*|JANELA_*|LIMITE_*|F2E_MODO_TESTE|F2E_ENVELOPE_SHA_ESPERADO|F2E_JANELA_GPU)
         recusa "variável só de teste presente no modo real: $v (só CMP_MODO_TESTE=1, o modo de teste explícito, a aceita); limpe o ambiente de quem chama";;
     esac
   done
@@ -275,7 +275,8 @@ if [ $INTERNO = 1 ]; then
     "$SMI" -i "$UUID" --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu_limites=/'
     # procedência do clone e do envelope (vai para o resultado pelo extrator): commit do clone, árvore sem modificação rastreada, sha deste roteiro e do envelope
     echo "clone_commit=$(git -C "$AQUI" rev-parse HEAD 2> /dev/null || echo ausente)"
-    if [ -z "$(git -C "$AQUI" status --porcelain --untracked-files=no 2> /dev/null)" ]; then echo "clone_arvore_limpa=sim"; else echo "clone_arvore_limpa=nao"; fi
+    ST_SAIDA=$(git -C "$AQUI" status --porcelain --untracked-files=no 2>&1); ST_RC=$?
+    if [ "$ST_RC" -ne 0 ]; then echo "clone_arvore_limpa=erro"; elif [ -z "$ST_SAIDA" ]; then echo "clone_arvore_limpa=sim"; else echo "clone_arvore_limpa=nao"; fi
     echo "roteiro_sha=$(sha "$0")"
     echo "envelope_sha=${F2E_PROC_ENVELOPE_SHA:-ausente}"
     POT_INI=$(le_pot) || POT_INI=; echo "potencia_inicio=$(pot_tok "$POT_INI")"

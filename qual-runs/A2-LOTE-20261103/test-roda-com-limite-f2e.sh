@@ -12,8 +12,10 @@ ruim() { echo "FALHA $1"; FALHAS=$((FALHAS + 1)); }
 espera() { # nome esperado obtido
   if [ "$2" = "$3" ]; then ok "$1 (código $3)"; else ruim "$1: esperado $2, veio $3"; fi
 }
+export TMPDIR=${TMPDIR:-$HOME/.cache/lastro-testes}; mkdir -p "$TMPDIR"
 T=$(mktemp -d) || exit 2
-trap 'cd /tmp && rm -rf -- "$(basename "$T")"' EXIT
+# nao apaga nada: o caminho e impresso ao fim para limpeza manual com caminho literal
+trap 'echo "pasta temporaria deste teste (apagar a mao, caminho literal): $T"' EXIT
 
 # 1. caminhos normais
 "$R" --limite 20 -- sh -c 'exit 0' >/dev/null 2>&1; espera "termina com 0" 0 $?
