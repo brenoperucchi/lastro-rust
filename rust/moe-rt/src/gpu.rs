@@ -143,6 +143,59 @@ pub mod kernels {
         part_out.store(x2 * c + x1 * s, [1i32, 0i32]);
     }
 
+    /// O3: o RoPE de K de [`rope`] gravando direto na linha `cur` do cache K (`[max_len, kv·D]`), sem a cópia device-para-device. O cache entra como
+    /// partição mapeada `[1, D]` (uma cabeça por tile, `D = 2·HALF`); `iter_indices_within` visita só os tiles da linha `cur` (início em tempo de execução) e cada
+    /// `store` usa o índice cunhado pelo fluxo, então a cabeça `kvh` vem do índice e não do id do bloco. `x` é K reformado para `[kv·2, HALF]` (as duas metades de
+    /// cada cabeça em linhas seguidas), `cs = [cos; sin]` da posição. As duas expressões são as de `rope`; as duas metades saem unidas por `cat` num tile `[1, D]`.
+    #[cutile::entry(unchecked_accesses = true)]
+    unsafe fn rope_kv<const HALF: i32, const D: i32, const MAP_SHAPE: [i32; 2]>(
+        mut kc: MappedPartitionMut<f32, { [1, D] }, MAP_SHAPE>,
+        x: &Tensor<f32, { [-1, HALF] }>,
+        cs: &Tensor<f32, { [-1, HALF] }>,
+        cur: i32,
+    ) {
+        let part_x = x.partition(const_shape![1, HALF]);
+        let part_cs = cs.partition(const_shape![1, HALF]);
+        let c: Tile<f32, { [1, HALF] }> = part_cs.load([0i32, 0i32]);
+        let s: Tile<f32, { [1, HALF] }> = part_cs.load([1i32, 0i32]);
+        for index in kc.iter_indices_within([(cur, 1i32), (0i32, -1i32)]) {
+            let (_linha, kvh) = index.components();
+            let x1: Tile<f32, { [1, HALF] }> = part_x.load([2i32 * kvh, 0i32]);
+            let x2: Tile<f32, { [1, HALF] }> = part_x.load([2i32 * kvh + 1i32, 0i32]);
+            let a: Tile<f32, { [1, HALF] }> = x1 * c - x2 * s;
+            let b: Tile<f32, { [1, HALF] }> = x2 * c + x1 * s;
+            let t: Tile<f32, { [1, D] }> = cat(a, b, 1i32);
+            kc.store(t, index);
+        }
+    }
+
+    /// O3: o `gemv` de V gravando direto na linha `cur` do cache V (`[max_len, kv·D]`), sem a cópia device-para-device. O cache entra como partição mapeada
+    /// `[1, BM]`; cada índice cunhado da linha `cur` dá o bloco de `BM` linhas do peso (`part_w.load([j, i])`, com `j` do índice e não do id do bloco) e um único `store`
+    /// do tile `[1, BM]`. O corpo é o de `gemv` (mesma ordem de soma).
+    #[cutile::entry(unchecked_accesses = true)]
+    unsafe fn gemv_row<const BM: i32, const BK: i32, const K: i32, const MAP_SHAPE: [i32; 2]>(
+        mut vc: MappedPartitionMut<f32, { [1, BM] }, MAP_SHAPE>,
+        w: &Tensor<bf16, { [-1, K] }>,
+        x: &Tensor<f32, { [K] }>,
+        cur: i32,
+    ) {
+        let part_w = w.partition(const_shape![BM, BK]);
+        let part_x = x.partition(const_shape![BK]);
+        for index in vc.iter_indices_within([(cur, 1i32), (0i32, -1i32)]) {
+            let (_linha, j) = index.components();
+            let mut acc: Tile<f32, { [BM, BK] }> = constant(0.0, const_shape![BM, BK]);
+            for i in 0i32..(K / BK) {
+                let tw: Tile<bf16, { [BM, BK] }> = part_w.load([j, i]);
+                let tx: Tile<f32, { [1, BK] }> = part_x.load([i]).reshape(const_shape![1, BK]);
+                let tw: Tile<f32, { [BM, BK] }> = convert_tile(tw);
+                acc = acc + tw * tx.broadcast(const_shape![BM, BK]);
+            }
+            let r: Tile<f32, { [BM] }> = reduce_sum(acc, 1i32);
+            let r: Tile<f32, { [1, BM] }> = r.reshape(const_shape![1, BM]);
+            vc.store(r, index);
+        }
+    }
+
     /// Atenção de decode, primeira passada (divisão do KV, como no flash-decoding): o bloco `h·ns + sp` cuida da cabeça de Q
     /// `h` (cabeça de KV `h / G`) contra a fatia `sp` das posições do cache `[posições, kv·D]`. As `nb = ⌈len/BN⌉` fatias de
     /// `BN` posições se dividem entre os `ns` blocos da cabeça, `⌈nb/ns⌉` por bloco; `len` vem de um tensor da GPU, então a

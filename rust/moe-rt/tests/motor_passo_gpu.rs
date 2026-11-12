@@ -299,6 +299,18 @@ fn leitura_do_kv_que_falha_preserva_o_cache() {
     CudaBackend::injeta_falha_na_leitura_do_kv(false);
     assert!(r.is_err());
     assert_eq!(b.read_kv(&compute, 1, 4).unwrap(), antes, "o cache mudou depois de uma leitura que falhou");
+    // O3 (os kernels gravam direto no campo do cache): um passo seguinte, depois da leitura que falhou, escreve a linha 4 no cache que
+    // `read_kv` devolveu e não toca as linhas 0 a 3 (bit a bit).
+    b.begin_token(&compute, TOKENS[4]).unwrap();
+    let p = eng.next_published().unwrap();
+    eng.run_token(p).unwrap();
+    let depois = b.read_kv(&compute, 1, 5).unwrap();
+    let kvd = depois.0.len() / 5;
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+    assert_eq!(bits(&depois.0[..4 * kvd]), bits(&antes.0), "K das linhas 0 a 3 mudou no passo seguinte à leitura que falhou");
+    assert_eq!(bits(&depois.1[..4 * kvd]), bits(&antes.1), "V das linhas 0 a 3 mudou no passo seguinte à leitura que falhou");
+    assert!(depois.0[4 * kvd..].iter().any(|v| *v != 0.0), "o passo seguinte não gravou a linha 4 do K");
+    assert!(depois.1[4 * kvd..].iter().any(|v| *v != 0.0), "o passo seguinte não gravou a linha 4 do V");
     eng.close().unwrap();
 }
 

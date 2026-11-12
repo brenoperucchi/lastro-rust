@@ -8,6 +8,7 @@
 pub mod affinity;
 pub mod block;
 pub mod cache;
+pub mod cache_direto;
 pub mod cpu;
 pub mod diag;
 pub mod e4b_regra;

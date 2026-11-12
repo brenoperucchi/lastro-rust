@@ -581,6 +581,12 @@ impl CudaBackend {
         crate::cuda_dense::FALHA_NO_LANCAMENTO_REFORMADO.store(n, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Só para o teste de GPU da O3: 1 faz falhar o lançamento do gemv de V, 2 o do RoPE de K (depois de V), 3 força `cur` para fora do cache (recusa no host); 0 desliga.
+    #[doc(hidden)]
+    pub fn injeta_falha_no_lancamento_o3(n: usize) {
+        crate::cuda_dense::FALHA_NO_LANCAMENTO_O3.store(n, std::sync::atomic::Ordering::SeqCst);
+    }
+
     /// Só para o teste de GPU da O1 (política A): `n > 0` faz falhar a n-ésima reforma seguinte (ímpares são a ida, pares a volta); 0 desliga.
     #[doc(hidden)]
     pub fn injeta_falha_na_reforma(n: usize) {

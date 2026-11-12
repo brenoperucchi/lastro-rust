@@ -7,6 +7,8 @@
 //! - falha em cada um dos 4 lançamentos reformados (RoPE de Q, RoPE de K, atenção, gemv de `o`) e na IDA de cada uma das 4 reformas:
 //!   o erro propaga e o `Dense` segue utilizável. Depois do erro, `reset_sequence` e o mesmo token dão logits IGUAIS BIT A BIT aos de uma
 //!   execução limpa;
+//! - O3 (kernels que gravam direto no cache): falha no lançamento do gemv de V (1), do RoPE de K depois de V ter gravado a linha `cur` (2) e
+//!   `cur` forçado para fora do cache (3, recusa no host): mesmo critério, o mesmo token depois de `reset_sequence` dá logits iguais bit a bit;
 //! - falha na VOLTA de cada reforma (restauração): o dono é mantido e a stream é esperada antes do descarte; o campo fica vazio e o uso
 //!   seguinte recusa com erro, sem tocar memória liberada.
 mod common;
@@ -30,6 +32,8 @@ enum Injeta {
     Lancamento(usize),
     /// Falha da n-ésima reforma (1 a 8; ímpares são a ida, pares a volta).
     Reforma(usize),
+    /// O3: 1 falha o lançamento do gemv de V, 2 o do RoPE de K (depois de V ter gravado a linha `cur`), 3 força `cur` para fora do cache.
+    O3(usize),
 }
 
 struct Saida {
@@ -58,10 +62,12 @@ fn roda(injeta: Option<Injeta>) -> Saida {
         match inj {
             Injeta::Lancamento(n) => CudaBackend::injeta_falha_no_lancamento_reformado(n),
             Injeta::Reforma(n) => CudaBackend::injeta_falha_na_reforma(n),
+            Injeta::O3(n) => CudaBackend::injeta_falha_no_lancamento_o3(n),
         }
         primeiro_erro = Backend::pre_layer(&*b, &compute, 0).is_err();
         CudaBackend::injeta_falha_no_lancamento_reformado(0);
         CudaBackend::injeta_falha_na_reforma(0);
+        CudaBackend::injeta_falha_no_lancamento_o3(0);
         // espera a stream antes de qualquer outra coisa (o resultado da leitura não importa)
         let _ = b.read_logits(&compute);
         if let Injeta::Reforma(n) = inj {
@@ -103,7 +109,7 @@ fn bits(v: &[f32]) -> Vec<u32> {
 fn erro_no_lancamento_ou_na_ida_da_reforma_deixa_o_motor_utilizavel_e_igual_bit_a_bit() {
     exige_autorizacao();
     let limpo = roda(None).logits.expect("execução limpa");
-    let casos: Vec<Injeta> = (1..=4).map(Injeta::Lancamento).chain([1, 3, 5, 7].into_iter().map(Injeta::Reforma)).collect();
+    let casos: Vec<Injeta> = (1..=4).map(Injeta::Lancamento).chain([1, 3, 5, 7].into_iter().map(Injeta::Reforma)).chain((1..=3).map(Injeta::O3)).collect();
     for inj in casos {
         let s = roda(Some(inj));
         assert!(s.primeiro_erro, "{inj:?}: a falha injetada devia voltar como erro");

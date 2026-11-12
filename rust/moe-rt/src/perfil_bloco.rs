@@ -1929,7 +1929,7 @@ pub enum ContratoB {
 }
 
 /// O contrato que a produção emite e valida. Passa para `V3` junto com a mudança do motor que tira as duas cópias do cache K/V (O3).
-pub const CONTRATO_B_PRODUCAO: ContratoB = ContratoB::V2;
+pub const CONTRATO_B_PRODUCAO: ContratoB = ContratoB::V3;
 
 impl ContratoB {
     /// O número escrito em `perfil-f2b.json` (campo `contrato_b`); a ausência do campo significa V1.

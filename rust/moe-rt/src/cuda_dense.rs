@@ -7,16 +7,18 @@
 //! kernel pede outra forma do mesmo buffer (por exemplo `[cabeças·2, metade]` no RoPE), a O1 do plano de cópias (11/11, aprovada
 //! pelo Breno às 15:23, política de erro A) usa `reshape`, que muda só os metadados: o tensor sai do campo, é reformado,
 //! emprestado ao kernel e devolvido na forma original por [`crate::reforma::com_forma`]; em qualquer erro ele volta ao campo e, se a
-//! restauração falhar, o dono espera a stream antes de cair. As duas cópias device-para-device (`memcpy_dtod_async`) que sobram por
-//! camada e posição são as do cache K/V, que movem dado de verdade.
+//! restauração falhar, o dono espera a stream antes de cair. A O3 (12/11) tirou as duas cópias device-para-device do cache K/V: o gemv de V
+//! (`gemv_row`) e o RoPE de K (`rope_kv`) gravam direto na linha `cur` do cache da camada, que continua sendo do campo (só um empréstimo
+//! `&mut` por lançamento, a mesma política A); a posição é conferida no host (`cur < max_len`) antes do primeiro lançamento.
 #![allow(unsafe_code)]
 use crate::cuda_backend::{fail_k, kernel_err, sync_before_drop, CudaError};
 use crate::reforma::{com_forma, Reformavel};
+use crate::cache_direto::inicio_da_linha;
 use crate::gpu::{gemv_generics, kernels, tile_k, AXPBY_B, GEMV_BM};
 use crate::gpu_model::{attention_b, ATTN_BN, ATTN_NS};
 use crate::perfil_bloco::{self as pb, AccB};
 use crate::model::{Config, HostModel};
-use cuda_core::{sys, Stream};
+use cuda_core::Stream;
 use cutile::half::bf16;
 use cutile::prelude::*;
 use cutile::tensor::PartitionMut;
@@ -48,9 +50,7 @@ pub struct Dense {
     // chamada de `attn_block_b` estão sempre `Some`, na forma de `new` (só `None` se uma restauração falhou depois de a stream ser esperada).
     q: Option<Tensor<f32>>,
     k: Option<Tensor<f32>>,
-    v: Tensor<f32>,
     qr: Option<Tensor<f32>>,
-    kr: Tensor<f32>,
     att2: Option<Tensor<f32>>,
     part: Tensor<f32>,
     o: Tensor<f32>,
@@ -76,13 +76,6 @@ fn zeros(shape: &[usize], s: &Arc<Stream>) -> Result<Tensor<f32>, CudaError> {
     api::zeros::<f32>(shape).sync_on(s).map_err(kernel_err)
 }
 
-/// Copia `n` floats de `src` (desde o começo) para `dst` a partir do float `off`, na stream.
-fn dtod(dst: &Tensor<f32>, off: usize, src: &Tensor<f32>, n: usize, s: &Arc<Stream>, raw: sys::CUstream) -> Result<(), CudaError> {
-    // SAFETY: os dois tensores têm pelo menos `off + n` e `n` floats (conferido por quem chama); só enfileira uma cópia.
-    unsafe { cuda_core::memcpy_dtod_async::<f32>(dst.device_pointer().cu_deviceptr() + (off * 4) as u64, src.device_pointer().cu_deviceptr(), n, s) }
-        .map_err(fail_k(raw))
-}
-
 /// Só para o teste de regressão: faz `read_logits` falhar depois de trocar o tensor de logits.
 pub(crate) static FALHA_NA_COPIA_DOS_LOGITS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Só para o teste de regressão do caminho de erro de `read_kv`.
@@ -96,6 +89,14 @@ pub static FALHA_NO_LANCAMENTO_REFORMADO: std::sync::atomic::AtomicUsize = std::
 /// Só para o teste de GPU da O1: `n > 0` faz falhar a n-ésima chamada seguinte de reforma (em `attn_block_b`: 1 e 2 Q, 3 e 4 K, 5 e 6 `qr`,
 /// 7 e 8 `att2`; ímpares são a ida, pares a volta), devolvendo o dono; 0 desliga.
 pub static FALHA_NA_REFORMA_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Só para o teste de GPU da O3: 1 faz falhar o lançamento do gemv de V (antes de ele sair), 2 o do RoPE de K (depois de V ter saído), 3 força a
+/// posição `cur` para fora do cache (a conferência do host recusa antes do primeiro lançamento); 0 desliga. Uma leitura relaxada por chamada.
+pub static FALHA_NO_LANCAMENTO_O3: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn injeta_o3(n: usize) -> bool {
+    FALHA_NO_LANCAMENTO_O3.load(std::sync::atomic::Ordering::Relaxed) == n
+}
 
 fn injeta_lancamento(n: usize) -> bool {
     FALHA_NO_LANCAMENTO_REFORMADO.load(std::sync::atomic::Ordering::Relaxed) == n
@@ -185,9 +186,7 @@ impl Dense {
             cur: 0,
             q: Some(zeros(&[qd], s)?),
             k: Some(zeros(&[kvd], s)?),
-            v: zeros(&[kvd], s)?,
             qr: Some(zeros(&[c.heads * 2, half], s)?),
-            kr: zeros(&[c.kv_heads * 2, half], s)?,
             att2: Some(zeros(&[c.heads, d], s)?),
             part: zeros(&[c.heads * ATTN_NS * 2, d], s)?,
             o: zeros(&[h], s)?,
@@ -305,7 +304,7 @@ impl Dense {
     }
 
     /// [`attn_block`](Self::attn_block) com a F2 nível B: com `acc` presente carimba `B_GENERICS` (o prelúdio), `B_LANCA` (cada expressão
-    /// `async_on`, as nove daqui; as duas de `attention_b` ficam lá) e `B_DTOD` (cada `dtod`); com `None` não lê relógio. Mesma ordem de
+    /// `async_on`, as nove daqui; as duas de `attention_b` ficam lá) e `B_DTOD` (sem uso desde a O3: não há mais cópias); com `None` não lê relógio. Mesma ordem de
     /// lançamentos, argumentos, stream e erros.
     pub fn attn_block_b(&mut self, s: &Arc<Stream>, l: usize, h: &mut Tensor<f32>, xn: &mut Tensor<f32>, mut acc: Option<&mut AccB>) -> Result<(), CudaError> {
         // Mede a expressão `$e` (um `Result`) e a devolve; sem acumulador não lê relógio.
@@ -326,7 +325,16 @@ impl Dense {
         let gen_norm = vec![hd.to_string(), norm_c.to_string()];
         let (gen_hh, gen_qd) = (gemv_generics(hd), gemv_generics(qd));
         let gen_rope = vec![half.to_string()];
-        let lay = &self.layers[l];
+        let max_len = self.max_len;
+        // O3: a posição `cur` como início da linha do cache, conferida no host antes do primeiro lançamento.
+        let cur_o3 = if injeta_o3(3) { max_len } else { self.cur };
+        let linha = inicio_da_linha(cur_o3, max_len).map_err(CudaError::Config)?;
+        let (gen_rope_kv, gen_gemv_row) = (vec![half.to_string(), d.to_string(), "1".to_string(), "1".to_string()], {
+            let mut g = gemv_generics(hd);
+            g.extend(["1".to_string(), "1".to_string()]);
+            g
+        });
+        let lay = &mut self.layers[l];
         pb::b_fim(&mut acc, pb::B_GENERICS, t_gen);
         // SAFETY (todos os `async_on` daqui): `unchecked_accesses`; as formas são as de `new`, múltiplas dos blocos; os tensores
         // são do estado e vivem além da sincronização da stream; só esta stream os toca, em ordem.
@@ -334,7 +342,12 @@ impl Dense {
             med!(pb::B_LANCA, kernels::rmsnorm((&mut *xn).partition([norm_c]), &*h, &lay.ln_attn, c.eps).generics(gen_norm.clone()).async_on(s).map_err(fail_k(raw)))?;
             med!(pb::B_LANCA, kernels::gemv(campo(&mut self.q)?.partition([GEMV_BM]), &lay.q, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw)))?;
             med!(pb::B_LANCA, kernels::gemv(campo(&mut self.k)?.partition([GEMV_BM]), &lay.k, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw)))?;
-            med!(pb::B_LANCA, kernels::gemv((&mut self.v).partition([GEMV_BM]), &lay.v, &*xn).generics(gen_hh.clone()).async_on(s).map_err(fail_k(raw)))?;
+            if injeta_o3(1) {
+                sync_before_drop(raw);
+                return Err(CudaError::Config("falha injetada no lançamento O3 1"));
+            }
+            // O3: o gemv de V grava direto na linha `cur` do cache V (sem a cópia device-para-device).
+            med!(pb::B_LANCA, kernels::gemv_row((&mut lay.v_cache).partition([1, GEMV_BM]).map([1, 1], (kvd / GEMV_BM) as u32), &lay.v, &*xn, linha).generics(gen_gemv_row).async_on(s).map_err(fail_k(raw)))?;
         }
         // O1: `q` e `k` viram `[cabeças·2, metade]` por reforma (sem cópia) só enquanto o RoPE os lê; as reformas ficam fora de qualquer
         // operação medida (caem no resíduo do nível B). Mesmos kernels, mesmos argumentos, mesma ordem de lançamento.
@@ -354,12 +367,13 @@ impl Dense {
             if injeta_lancamento(2) {
                 return Err(seguro(CudaError::Config("falha injetada no lançamento reformado 2")));
             }
-            // SAFETY: como acima.
-            unsafe { med!(pb::B_LANCA, kernels::rope((&mut self.kr).partition([2, half]), &*k2, &self.cs).generics(gen_rope.clone()).async_on(s).map_err(fail_k(raw))) }
+            if injeta_o3(2) {
+                return Err(seguro(CudaError::Config("falha injetada no lançamento O3 2")));
+            }
+            // SAFETY: como acima. O3: o RoPE de K grava direto na linha `cur` do cache K (sem a cópia device-para-device).
+            unsafe { med!(pb::B_LANCA, kernels::rope_kv((&mut lay.k_cache).partition([1, d]).map([1, 1], c.kv_heads as u32), &*k2, &self.cs, linha).generics(gen_rope_kv.clone()).async_on(s).map_err(fail_k(raw))) }
             .map(|_| ())
         })?;
-        med!(pb::B_DTOD, dtod(&lay.k_cache, self.cur * kvd, &self.kr, kvd, s, raw))?;
-        med!(pb::B_DTOD, dtod(&lay.v_cache, self.cur * kvd, &self.v, kvd, s, raw))?;
         // `qr` (`[cabeças·2, metade]`, saída do RoPE de Q) vira `[cabeças, d]` para a atenção.
         com_forma(&mut self.qr, &[c.heads, d], ausente, || sync_before_drop(raw), |qh| {
             if injeta_lancamento(3) {
