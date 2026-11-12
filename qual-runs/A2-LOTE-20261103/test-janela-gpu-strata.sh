@@ -160,8 +160,23 @@ fechada lf-sem-unidade list_falha "" ""
 fechada isactive-ilegivel isactive_ilegivel 1 ""
 fechada cgroup-ilegivel cg_ilegivel 1 ""
 fechada lista-falha-na-2a list_falha_2a 1 ""
-fechada gpu-ocupada "" "" ocupada
-fechada smi-falha-no-fim "" "" falha
+# unidades CONFIRMADAS encerradas: GPU ocupada/ilegivel ao fim NAO impede o start (producao parada e pior); aviso visivel, rc do comando preservado
+for G in ocupada falha; do
+  prepara gfim-$G; COM_GPU=$G lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "GPU $G ao fim, unidades limpas: religa" 0 $?
+  [ "$(starts)" = 1 ] && ok "GPU $G ao fim: Strata religado" || ruim "GPU $G ao fim: starts=$(starts)"
+  log | grep -q "religo o Strata mesmo assim" && ok "GPU $G ao fim: aviso no log" || ruim "GPU $G ao fim: sem aviso"
+  limpa
+done
+prepara gfim-start-falha; touch "$FS/start_falha"; JGS_ESPERA_START=1 COM_GPU=ocupada lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "GPU ocupada ao fim + start falho: rc 6" 6 $?
+limpa
+# portao de inicio: GPU ocupada ou nvidia-smi falho DESDE ANTES do comando -> rc 3, comando nao roda, Strata RELIGADO (starts=1), aviso
+for F in gpu_ocupada smi_falha; do
+  prepara gini-$F; touch "$FS/$F"; lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "portao de inicio ($F)" 3 $?
+  [ "$(starts)" = 1 ] && [ "$(cat "$FS/strata")" = active ] && ok "$F no inicio: Strata religado" || ruim "$F no inicio: starts=$(starts)"
+  [ ! -e "$FS/cmd.ran" ] && ok "$F no inicio: comando nao rodou" || ruim "$F no inicio: o comando rodou"
+  log | grep -q "religo o Strata mesmo assim" && ok "$F no inicio: aviso no log" || ruim "$F no inicio: sem aviso"
+  limpa
+done
 # controles: lista vazia consultada com sucesso e unidade encerrada antes do start religam (n1 e u-*); incerteza com comando falho preserva o rc
 prepara lf-rc7; touch "$FS/list_falha"; COM_MODO=rc7 lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "incerteza + comando rc 7: preserva 7" 7 $?
 [ "$(starts)" = 0 ] && ok "incerteza + rc 7: nao religou" || ruim "religou"

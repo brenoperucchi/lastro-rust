@@ -7,7 +7,7 @@
 # Nunca religa por cima de um estado inicial desconhecido. Log em ~/lastro-janelas, nunca sobrescrito.
 # Codigos: o do comando (ou 124 teto); 2 recusa de uso/ambiente; 3 falha ao parar/GPU nao livre; 130 sinal;
 #          5 ficou processo/unidade lastro-limite-* depois do cancelamento, o termino nao pode ser confirmado (consulta falhou/ilegivel) ou a GPU nao
-#            foi confirmada vazia: o Strata NAO foi religado, ha aviso em log/stdout/stderr e ATENCAO-STRATA-PARADO-*.txt em ~/lastro-janelas (decisao humana);
+#            (so quando as unidades NAO foram confirmadas): o Strata NAO foi religado, ha aviso em log/stdout/stderr e ATENCAO-STRATA-PARADO-*.txt em ~/lastro-janelas (decisao humana);
 #          6 o Strata nao voltou a active depois do start (religar a mao). 5 e 6 so substituem o codigo 0; um codigo != 0 do comando e preservado
 #          e a falha de religacao fica no log.
 # Variaveis JGS_* so para teste (servicos simulados); o uso normal nao define nenhuma.
@@ -87,6 +87,10 @@ alerta() {
   } | tee -a "$LOG" "$f" >&2
   say "arquivo de estado: $f"
 }
+# aviso bem visivel (stdout, stderr e log) de algo duvidoso que NAO impediu a religacao
+aviso() {
+  { echo "*** ATENCAO: $* ***"; echo "log da janela: $LOG"; } | tee -a "$LOG" >&2
+}
 # encerra o comando e as unidades; devolve 0 so se a ULTIMA verificacao foi bem-sucedida e nao achou nada vivo
 encerra_tudo() {
   local t=0 v
@@ -137,27 +141,25 @@ religa() {
     else
       gpu_estado; g=$?
       while [ "$g" -ne 0 ] && [ "$t" -lt "$ESPERA_GPU" ]; do sleep "$PASSO"; t=$((t + 1)); gpu_estado; g=$?; done
-      if [ "$g" -ne 0 ]; then
-        # decisao documentada: GPU nao confirmada vazia (ocupada ou ilegivel) NAO segue para o start; producao parada com aviso, decisao humana
-        alerta "GPU nao confirmada vazia depois de ${ESPERA_GPU}s (estado $g: 1 ocupada, 2 ilegivel); nao religo por cima"
-        [ "$FINAL" -ne 0 ] || FINAL=5
+      if [ "$g" -eq 0 ]; then say "GPU vazia confirmada antes de religar"
       else
-        say "GPU vazia confirmada antes de religar"
-        for tent in 1 2 3; do
-          "$SYSCTL" --user start "$UNIDADE" 2>&1 | tee -a "$LOG" > /dev/null
-          [ "${PIPESTATUS[0]}" -eq 0 ] || say "start do Strata falhou (tentativa $tent)"
-          t=0
-          while [ "$t" -lt "$ESPERA_START" ]; do
-            [ "$("$SYSCTL" --user is-active "$UNIDADE" 2>/dev/null)" = "active" ] && { ok=1; break; }
-            sleep "$PASSO"; t=$((t + 1))
-          done
-          [ "$ok" -eq 1 ] && break
+        # unidades do Lastro CONFIRMADAS encerradas: producao parada com certeza e pior que GPU duvidosa. Aviso bem visivel e SEGUE para o start
+        aviso "GPU nao confirmada vazia depois de ${ESPERA_GPU}s (estado $g: 1 ocupada, 2 ilegivel) com as unidades do Lastro confirmadas encerradas; religo o Strata mesmo assim, conferir a GPU depois"
+      fi
+      for tent in 1 2 3; do
+        "$SYSCTL" --user start "$UNIDADE" 2>&1 | tee -a "$LOG" > /dev/null
+        [ "${PIPESTATUS[0]}" -eq 0 ] || say "start do Strata falhou (tentativa $tent)"
+        t=0
+        while [ "$t" -lt "$ESPERA_START" ]; do
+          [ "$("$SYSCTL" --user is-active "$UNIDADE" 2>/dev/null)" = "active" ] && { ok=1; break; }
+          sleep "$PASSO"; t=$((t + 1))
         done
-        if [ "$ok" -eq 1 ]; then say "Strata religado: active"
-        else
-          alerta "o Strata nao voltou a active depois do start (3 tentativas)"
-          [ "$FINAL" -ne 0 ] || FINAL=6
-        fi
+        [ "$ok" -eq 1 ] && break
+      done
+      if [ "$ok" -eq 1 ]; then say "Strata religado: active"
+      else
+        alerta "o Strata nao voltou a active depois do start (3 tentativas)"
+        [ "$FINAL" -ne 0 ] || FINAL=6
       fi
     fi
   elif [ "$limpo" -eq 0 ]; then
