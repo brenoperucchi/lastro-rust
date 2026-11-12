@@ -85,7 +85,8 @@ kill "$VIVO" 2>/dev/null; wait "$VIVO" 2>/dev/null
 set -m   # jobs em segundo plano com INT padrao
 # 6b. CANCELAMENTO por sinal (F2E): TERM, HUP e INT no roteiro encerram a unidade transitoria e so devolvem o controle com o cgroup vazio
 for SIG in TERM HUP INT; do
-  "$R" --limite 60 -- sh -c 'setsid sleep 4343 & wait' >/dev/null 2>&1 &
+  # python restaura SIGINT padrao (um shell nao interativo em segundo plano o herda ignorado, e o bash nao consegue trapear sinal ignorado na entrada)
+  python3 -I -c 'import os,signal,sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execv(sys.argv[1], sys.argv[1:])' "$R" --limite 60 -- sh -c 'setsid sleep 4343 & wait' >/dev/null 2>&1 &
   RP=$!
   sleep 3
   pgrep -f "[s]leep 4343" >/dev/null || ruim "$SIG: o trabalhador nao subiu"
