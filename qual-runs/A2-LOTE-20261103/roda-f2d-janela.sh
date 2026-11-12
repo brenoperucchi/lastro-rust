@@ -231,6 +231,12 @@ esac
 [ -n "$SAIDA" ] || { usa; exit 2; }
 [ $TESTE_GPU = 0 ] || [ $COLETA = 1 ] || recusa "--teste-gpu só existe junto de --coleta"
 [ $TESTE_GPU = 0 ] || [ -n "$WT_CAND" ] || recusa "--teste-gpu exige --worktree-cand DIR (worktree do commit candidato, já compilado com CARGO_TARGET_DIR=DIR/target-f2d)"
+# --worktree-cand canonicalizado com realpath (inode real, sem symlink nem `..`) e recusado já aqui, antes de qualquer mktemp, timer ou GPU, se ficar sob /tmp (testes fora do /tmp).
+if [ $TESTE_GPU = 1 ]; then
+  WT_REAL=$(realpath -e -- "$WT_CAND" 2> /dev/null) || recusa "--worktree-cand '$WT_CAND' não existe ou não é resolvível (realpath)"
+  case "$WT_REAL/" in /tmp/*) recusa "--worktree-cand ($WT_REAL) está sob /tmp: o worktree do candidato e o TMPDIR do teste de GPU ficam fora do /tmp";; esac
+  WT_CAND=$WT_REAL
+fi
 # Tetos de processo em segundos (tabela do ponto 8; a mesma de perfil_bloco.rs::teto_processo_s, conferida por teste). F2D_TETO_FORCADO só em teste.
 teto_proc() { # TEXTO (medio)
   if [ -n "${F2D_TETO_FORCADO:-}" ]; then echo "$F2D_TETO_FORCADO"; return; fi
@@ -348,8 +354,8 @@ if [ $INTERNO = 1 ]; then
     done
     if [ $TESTE_GPU = 1 ] && [ $ABORTA = 0 ]; then
       SEQ=$((SEQ + 1))
-      # TMPDIR do teste de GPU fora do /tmp (regra do Breno: testes fora do /tmp): pasta própria dentro do alvo `target-f2d` do worktree candidato (ignorado pelo git
-      # e fora da conferência de árvore limpa), criada por mktemp e removida ao fim só pelo caminho literal que o mktemp imprimiu (nunca reatribuído nem montado).
+      # TMPDIR do teste de GPU fora do /tmp (regra do Breno: testes fora do /tmp): pasta própria dentro do alvo `target-f2d` do worktree candidato (o git NÃO o ignora: a
+      # conferência de árvore limpa o exclui por `:(exclude)target-f2d`), criada por mktemp e removida ao fim só pelo caminho literal que o mktemp imprimiu (nunca reatribuído nem montado).
       mkdir -p "$WT_CAND/target-f2d" 2> /dev/null
       T_TMP_GPU=$(mktemp -d "$WT_CAND/target-f2d/tmp-teste-gpu.XXXXXX" 2> /dev/null)
       case "$T_TMP_GPU" in
