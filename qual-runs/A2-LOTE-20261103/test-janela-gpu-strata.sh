@@ -56,7 +56,7 @@ FAKE
 cat > "$BASE/nvidia-smi" <<'FAKE'
 #!/usr/bin/env bash
 [ -f "$FS/smi_falha" ] && exit 1
-case "$*" in *compute-apps*) [ -f "$FS/gpu_ocupada" ] && echo 1234 ;; *memory.used*) echo 120 ;; esac
+case "$*" in *compute-apps*) [ -f "$FS/smi_apps_falha" ] && exit 1; [ -f "$FS/gpu_ocupada" ] && echo 1234 ;; *memory.used*) [ -f "$FS/smi_mem_falha" ] && exit 1; echo 120 ;; esac
 exit 0
 FAKE
 cat > "$BASE/cmd.sh" <<'FAKE'
@@ -170,7 +170,7 @@ done
 prepara gfim-start-falha; touch "$FS/start_falha"; JGS_ESPERA_START=1 COM_GPU=ocupada lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "GPU ocupada ao fim + start falho: rc 6" 6 $?
 limpa
 # portao de inicio: GPU ocupada ou nvidia-smi falho DESDE ANTES do comando -> rc 3, comando nao roda, Strata RELIGADO (starts=1), aviso
-for F in gpu_ocupada smi_falha; do
+for F in gpu_ocupada smi_falha smi_apps_falha smi_mem_falha; do
   prepara gini-$F; touch "$FS/$F"; lanca --teto 20 -- "$BASE/cmd.sh"; wait $EP; espera "portao de inicio ($F)" 3 $?
   [ "$(starts)" = 1 ] && [ "$(cat "$FS/strata")" = active ] && ok "$F no inicio: Strata religado" || ruim "$F no inicio: starts=$(starts)"
   [ ! -e "$FS/cmd.ran" ] && ok "$F no inicio: comando nao rodou" || ruim "$F no inicio: o comando rodou"

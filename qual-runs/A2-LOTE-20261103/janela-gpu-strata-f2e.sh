@@ -185,14 +185,14 @@ if [ "$INICIAL" = "active" ]; then
 fi
 
 # GPU livre: nenhum processo de compute e memoria usada baixa (limite 1500 MiB)
+# gpu_estado confere o codigo das DUAS consultas: so retorno 0 (vazia confirmada) inicia o comando; ocupada (1) ou ilegivel (2) = rc 3 e o Strata e religado
 for i in $(seq 1 30); do
-  PROCS=$("$SMI" --query-compute-apps=pid --format=csv,noheader | wc -l)
-  MEM=$("$SMI" --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
-  [ "$PROCS" -eq 0 ] && [ "${MEM:-99999}" -lt 1500 ] && break
+  gpu_estado; G=$?
+  [ "$G" -eq 0 ] && break
   sleep "$PASSO" ; sleep "$PASSO"
 done
-say "GPU: processos=$PROCS memoria usada=${MEM} MiB"
-[ "$PROCS" -eq 0 ] && [ "${MEM:-99999}" -lt 1500 ] || { say "GPU nao ficou livre, abortando (o Strata sera religado)"; exit 3; }
+say "GPU: estado=$G (0 vazia confirmada, 1 ocupada, 2 ilegivel)"
+[ "$G" -eq 0 ] || { say "GPU nao ficou livre (confirmada vazia), abortando (o Strata sera religado)"; exit 3; }
 
 say "rodando: $* (teto ${TETO}s)"
 timeout -k 30 "$TETO" "$@" >> "$LOG" 2>&1 &

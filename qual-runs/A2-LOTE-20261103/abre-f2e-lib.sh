@@ -12,7 +12,7 @@ logs_livres() { local s; for s in "$@"; do [ ! -e "$s.log" ] || { echo "log já 
 [ -x "$JANELA_GPU" ] || { echo "janela-gpu-strata.sh ausente em $JANELA_GPU: recusado (nada foi tocado)"; exit 2; }
 # Procedência (nada foi tocado ainda): o clone onde isto roda tem de estar na árvore do commit e no commit aprovado (F2E_COMMIT obrigatório); o envelope que para e religa
 # o Strata tem de ser byte a byte o revisado (sha de janela-gpu-strata-f2e.sh, versionado ao lado). F2E_JANELA_GPU (envelope de teste) só com F2E_MODO_TESTE=1.
-ENVELOPE_SHA_REVISADO=6a91540f85e5395b047a6d556a6ffc002e3ab5a0842a4e98e215564df534dab5
+ENVELOPE_SHA_REVISADO=3e85f052327e20b78c0897f3b9bad46d358c87d8d788dd186a8502eb6e5a96d4
 [ "${F2E_MODO_TESTE:-0}" != 1 ] || ENVELOPE_SHA_REVISADO=${F2E_ENVELOPE_SHA_ESPERADO:-$ENVELOPE_SHA_REVISADO}   # só em teste
 if [ -n "${F2E_JANELA_GPU:-}" ] && [ "${F2E_MODO_TESTE:-0}" != 1 ]; then echo "F2E_JANELA_GPU só vale com F2E_MODO_TESTE=1 (envelope de teste): recusado (nada foi tocado)"; exit 2; fi
 CLONE_COMMIT=$(git -C "$AQ" rev-parse HEAD 2> /dev/null) || { echo "o clone não é um repositório git legível: recusado (nada foi tocado)"; exit 2; }
