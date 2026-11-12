@@ -2,7 +2,7 @@
 
 Fontes: `plano-o3-cache-direto-20261112.md` (versão 2, aprovada na rodada 173) e a decisão do Breno de 12/11 às 00:37 (`DECISAO-BRENO-O3-OITO-PONTOS-20261112-0037.txt`): O3 com dois kernels novos aceitando ganho pequeno ou nulo, base comum C0 contra C1, dois passos (K e depois V) com uma só janela de medida ao fim, `read_kv` como pendência separada, sem tolerância de bits (kernel que não der os mesmos bits do cache: desistir daquele passo), limites de prefill +1,5% e decode +2% com efeito distinguível só abaixo de -1%, regravação da F2C com a junção da coleta, e a autorização das janelas pelo nome (coleta de bits nos dois modelos, teste de erro em GPU nos dois modelos, medição 1B e medição 3B) pela autorização permanente da 3080 Ti, com voxtype parado e religado e teto de 1200 s por janela e modelo. Revisão nível 2, sem push.
 
-Este arquivo ainda NÃO está congelado: os shas e os hashes de commit abaixo são `PREENCHER NO CONGELAMENTO` e só se preenchem depois da revisão nível 2 do código (C0 e C1) e do pacote.
+Este arquivo está congelado: os hashes de commit e os shas abaixo foram preenchidos depois da revisão nível 2 do código (C0 e C1) e conferidos por `roda-f2d-janela.sh --verifica-fixos`. O commit do pacote congelado vem por cima do commit candidato e não o altera (o critério muda só nas linhas de sha).
 
 ## 1. Braços, binários e sua fonte
 
@@ -13,8 +13,8 @@ Este arquivo ainda NÃO está congelado: os shas e os hashes de commit abaixo s�
 
 Fonte reproduzível, dois commits locais (sem push), cada binário construído do seu commit:
 
-- C0 (base comum): o HEAD da O1 mais a infraestrutura comum. Traz o contrato V3 do instrumento do nível B (`ContratoB::V3`, `ORDEM_POS_B_V3` de 15 registros, capacidade `layers x (15 x max_m + 1)`, texto da contagem, IB3 por contrato) e a constante `CONTRATO_B_PRODUCAO`, ainda no V2 (17 registros), de modo que o motor emite exatamente o que emitia em 71dfc8e. Mantém os kernels e as 2 cópias do cache K/V. Traz também o pacote F2D derivado do da F2C (este critério, `roda-f2d-janela.sh`, `f2d-extrai.py`, `f2b-extrai-v3.py` e os testes). O gancho de coleta já existia. Hash: PREENCHER NO CONGELAMENTO
-- C1 (candidato): C0 mais a O3. O diff `git diff <C0> <C1> --stat` se restringe a estes arquivos, e a nada mais:
+- C0 (base comum): o HEAD da O1 mais a infraestrutura comum. Traz o contrato V3 do instrumento do nível B (`ContratoB::V3`, `ORDEM_POS_B_V3` de 15 registros, capacidade `layers x (15 x max_m + 1)`, texto da contagem, IB3 por contrato) e a constante `CONTRATO_B_PRODUCAO`, ainda no V2 (17 registros), de modo que o motor emite exatamente o que emitia em 71dfc8e. Mantém os kernels e as 2 cópias do cache K/V. Traz também o pacote F2D derivado do da F2C (este critério, `roda-f2d-janela.sh`, `f2d-extrai.py`, `f2b-extrai-v3.py` e os testes). O gancho de coleta já existia. Hash: 7c25e1d126c0e36219e5f325131eb38040a645c3
+- C1 (candidato): C0 mais a O3 (código em `6f7d049`; o candidato é o commit `1fa8abb`, que traz por cima dele só a ampliação do teste de GPU `o3_kernels_gpu`, a regravação da F2C e ajustes do roteiro, nenhum arquivo de motor). O diff do código, `git diff <C0> <C1> --stat -- rust`, se restringe a estes arquivos, e a nada mais:
   - `rust/moe-rt/src/gpu.rs`: os dois kernels novos, `rope_kv` e `gemv_row` (os kernels antigos ficam intactos);
   - `rust/moe-rt/src/cache_direto.rs` (novo) e `rust/moe-rt/src/lib.rs` (só a linha do módulo): `inicio_da_linha`, a conferência `cur < max_len` e que `cur` cabe em `i32`, com testes de CPU;
   - `rust/moe-rt/src/cuda_dense.rs`: `attn_block_b` (V e K gravam direto na linha `cur`; as duas cópias saem), a remoção dos buffers `v` e `kr` e da função `dtod`, e o injetor `FALHA_NO_LANCAMENTO_O3`;
@@ -22,7 +22,7 @@ Fonte reproduzível, dois commits locais (sem push), cada binário construído d
   - `rust/moe-rt/src/perfil_bloco.rs`: somente a troca de `CONTRATO_B_PRODUCAO` para V3 (a emissão dos registros B_DTOD removidos);
   - testes: `tests/motor_passo_gpu.rs` e `tests/motor_reforma_gpu.rs` (estendidos), `tests/o3_contratos_compila.rs`, `tests/o3_kernels_compila.rs` e `tests/o3_kernels_gpu.rs` (novos).
   Custo medido que a O3 acrescenta além dos kernels e da cópia que sai, todo ele no D_O3 e no B2_O3 (não no D_O1): três leituras relaxadas de `AtomicUsize` por chamada de `attn_block_b` (`injeta_o3` 3, 1 e 2); a conferência `inicio_da_linha`; dois vetores de generics por chamada (`gen_rope_kv`, `gen_gemv_row`, um clone no K) e o cálculo automático do `DivHint` do escalar `cur` no lançador, que entra na chave do cache de JIT. Nada disso tem registro do instrumento próprio: no B2_O3 cai no prelúdio (`B_GENERICS`, os vetores) ou no resíduo do nível B (HC5). C1 também deixa de alocar dois buffers pequenos (`v`, `kvd` floats, e `kr`, `kv_heads·d` floats) e passa a não ter `dead_code`.
-  Hash: PREENCHER NO CONGELAMENTO
+  Hash: 1fa8abb77fef9359391fc9bc323602512984094e
 - Antes do congelamento, conferir commits, o diff C0 a C1 e os caminhos com o instrumento desligado, e registrar os hashes e os papéis dos dois binários aqui e na coleta.
 - Build de cada binário (worktree fora da árvore principal e fora do /tmp, alvo de compilação próprio, sem GPU):
   `git worktree add <pasta-c0> <hash-c0>` e `git worktree add <pasta-c1> <hash-c1>`; em cada uma, `cd rust/moe-rt && CUDA_VISIBLE_DEVICES= CARGO_TARGET_DIR=<alvo-proprio> cargo build --release --bin primeira-palavra`. O binário vai para `.herdr/binarios/primeira-palavra-f2d-c0` e `.herdr/binarios/primeira-palavra-f2d-c1`, sem permissão de escrita.
@@ -30,11 +30,12 @@ Fonte reproduzível, dois commits locais (sem push), cada binário construído d
 
 Shas congelados (o roteiro recusa se qualquer um divergir):
 
-- hash do commit base: PREENCHER NO CONGELAMENTO
-- hash do commit candidato: PREENCHER NO CONGELAMENTO
-- binário C0 (D_O1): PREENCHER NO CONGELAMENTO
-- binário C1 (D_O3 e B2_O3): PREENCHER NO CONGELAMENTO
-- f2b-extrai-v3.py: PREENCHER NO CONGELAMENTO; f2d-extrai.py: PREENCHER NO CONGELAMENTO (o f2b-extrai-v2.py e o f2c-extrai.py da F2C, e o f2b-extrai.py de 14:10, ficam intocados com os shas que o critério da F2C cita)
+- hash do commit base: 7c25e1d126c0e36219e5f325131eb38040a645c3
+- hash do commit candidato: 1fa8abb77fef9359391fc9bc323602512984094e
+- binário C0 (D_O1): 4a6f26c7eaf9898cc625ce16e617cc0c68983670abcfec9502f09fd6aab9579a (`.herdr/binarios/primeira-palavra-f2d-base-4a6f26c7`)
+- binário C1 (D_O3 e B2_O3): f295e90a6a2d3b90332ba5bf11f2a0e337aa646806d2a5e308c6f5c2f00c9cea (`.herdr/binarios/primeira-palavra-f2d-cand-f295e90a`)
+- executáveis dos testes de GPU, compilados com `--no-run` no worktree do candidato (`~/.cache/lastro-testes/f2d/wt-c1/target-f2d`, sem GPU), só para registro (o manifesto da coleta grava o sha dos executáveis que de fato rodam; um sha diferente destes é recompilação e vale ser explicado): `motor_reforma_gpu-3d53de78cf94e50f` sha a757aad473596676bad2954dba0badde73595b6496b13b27cc5bedeab3247468; `motor_passo_gpu-e36750539425749e` sha d26b93bde7e6a99da3ae627417f9a304b828350472aa1d2a0804baa77a649d90; `o3_kernels_gpu-b69107fba3a751db` sha 4a5f31d2a05f89a69a94516d486f73ef78b462c076ccb1fcdb2e3bce6b1eaca9
+- f2b-extrai-v3.py: 2bcd8761cba3eef9bb254998ff83e6094028777008e296581b6c14ae85062912; f2d-extrai.py: 098963c9f04c71e6a837ef3eb04397dd455fe13421e15255a5dd85d06d41df15 (o f2b-extrai-v2.py e o f2c-extrai.py da F2C, e o f2b-extrai.py de 14:10, ficam intocados com os shas que o critério da F2C cita)
 
 ## 2. Desenho
 

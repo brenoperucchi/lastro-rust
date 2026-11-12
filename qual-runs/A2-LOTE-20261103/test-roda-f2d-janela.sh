@@ -10,10 +10,9 @@ echo "pasta de teste: $D (apagada ao fim se tudo passar; --guarda mantém)"
 falhas=0
 confere() { if eval "$2"; then echo "ok: $1"; else echo "FALHOU: $1"; falhas=$((falhas+1)); fi; }
 "$J" --verifica-fixos > "$D/vf.txt" 2>&1; rc=$?
-# ANTES do congelamento da F2D: os 7 itens que mudam (critério, plano da O3, decisão, os dois binários, os dois extratores novos) estão PREENCHER_NO_CONGELAMENTO; nada mais pode estar PENDENTE, FALHA ou AUSENTE.
-# Depois do congelamento (shas preenchidos) estas duas linhas passam a exigir sai 0 e nenhum PENDENTE.
-confere "--verifica-fixos antes do congelamento sai 1 (PENDENTE conta como falha)" '[ $rc = 1 ]'
-confere "--verifica-fixos: exatamente os 7 itens a congelar PENDENTES, nenhum FALHA nem AUSENTE" '[ "$(grep -E " PENDENTE " "$D/vf.txt" | cut -d" " -f1 | sort | tr "\n" " ")" = "binario-base binario-cand criterio-f2d decisao-o3 plano-o3 script-f2b-extrai-v3 script-f2d-extrai " ] && ! grep -qE " (FALHA|AUSENTE) " "$D/vf.txt"'
+# DEPOIS do congelamento da F2D: os shas do critério, do plano da O3, da decisão, dos dois binários e dos dois extratores estão preenchidos; --verifica-fixos sai 0 e nada pode estar PENDENTE, FALHA ou AUSENTE.
+confere "--verifica-fixos depois do congelamento sai 0" '[ $rc = 0 ]'
+confere "--verifica-fixos: nenhum PENDENTE, FALHA nem AUSENTE, e os 7 itens congelados OK" '! grep -qE " (PENDENTE|FALHA|AUSENTE)( |$)" "$D/vf.txt" && [ "$(grep -E "^(binario-base|binario-cand|criterio-f2d|decisao-o3|plano-o3|script-f2b-extrai-v3|script-f2d-extrai) .* OK$" "$D/vf.txt" | wc -l)" = 7 ]'
 "$J" > "$D/sa.txt" 2>&1; rc=$?
 confere "sem argumentos sai 2" '[ $rc = 2 ]'
 "$J" --modelos 1b --saida "$D/s" > "$D/pa.txt" 2>&1; rc=$?

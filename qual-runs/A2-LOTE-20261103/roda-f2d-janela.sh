@@ -40,8 +40,8 @@ INSTR_EXTRAI=${INSTR_EXTRAI_PY:-$AQUI/instrumento-extrai.py}
 F2_EXTRAI=${F2_EXTRAI_PY:-$AQUI/f2-extrai.py}
 F2B_EXTRAI=${F2B_EXTRAI_PY:-$AQUI/f2b-extrai-v3.py}
 F2D_EXTRAI=${F2D_EXTRAI_PY:-$AQUI/f2d-extrai.py}
-BIN_BASE=$AQUI/../../.herdr/binarios/primeira-palavra-f2d-c0
-BIN_CAND=$AQUI/../../.herdr/binarios/primeira-palavra-f2d-c1
+BIN_BASE=$AQUI/../../.herdr/binarios/primeira-palavra-f2d-base-4a6f26c7
+BIN_CAND=$AQUI/../../.herdr/binarios/primeira-palavra-f2d-cand-f295e90a
 BIN_CTX=$AQUI/../../.herdr/binarios/primeira-palavra-f2b-22d0bbe0
 M1=${MODELO_1B:-/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct}
 M3=${MODELO_3B:-/home/brenoperucchi/models/granite-3.1-3b-a800m-instruct}
@@ -95,16 +95,16 @@ fi
 sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados. O próprio roda-f2d-janela.sh NÃO pode conter o seu sha (nem o critério o do roteiro nem o do extrator): --verifica-fixos imprime o do roteiro e o dos extratores à parte (linhas informativas).
-# PREENCHER_NO_CONGELAMENTO = ainda não congelado (binários e arquivos que mudam até a aprovação): --verifica-fixos imprime PENDENTE e sai 1, e o modo real recusa; nenhum sha de binário inexistente foi inventado aqui.
+# PREENCHER_NO_CONGELAMENTO = (nenhum mais; vale para o que ainda não for congelado, como nos testes) ainda não congelado (binários e arquivos que mudam até a aprovação): --verifica-fixos imprime PENDENTE e sai 1, e o modo real recusa; nenhum sha de binário inexistente foi inventado aqui.
 declare -A FIXO=(
-  [criterio-f2d]=PREENCHER_NO_CONGELAMENTO
-  [plano-o3]=PREENCHER_NO_CONGELAMENTO
-  [decisao-o3]=PREENCHER_NO_CONGELAMENTO
-  [binario-base]=PREENCHER_NO_CONGELAMENTO
-  [binario-cand]=PREENCHER_NO_CONGELAMENTO
+  [criterio-f2d]=9f595163622092c3e049ff8e406234106c82d07f056ed6ee57060c1308ac1804
+  [plano-o3]=e4edd1d013c4ac56ee0b145527f60f8490a0931e3f1d995ef5172f649795b032
+  [decisao-o3]=1208279673f3058d33ba3667ed956c2259bbfef48adb475fcaec6e102844048a
+  [binario-base]=4a6f26c7eaf9898cc625ce16e617cc0c68983670abcfec9502f09fd6aab9579a
+  [binario-cand]=f295e90a6a2d3b90332ba5bf11f2a0e337aa646806d2a5e308c6f5c2f00c9cea
   [binario-ctx]=22d0bbe048d8c7407f73817b9879f5bc695604bc1bc519e332c9287c193adacf
-  [script-f2b-extrai-v3]=PREENCHER_NO_CONGELAMENTO
-  [script-f2d-extrai]=PREENCHER_NO_CONGELAMENTO
+  [script-f2b-extrai-v3]=2bcd8761cba3eef9bb254998ff83e6094028777008e296581b6c14ae85062912
+  [script-f2d-extrai]=098963c9f04c71e6a837ef3eb04397dd455fe13421e15255a5dd85d06d41df15
   [script-f2-extrai]=f68129e832a5f617cc682b966293a502c4c095439c6e8673828e80e4363391fc
   [script-instrumento-extrai]=6f7169d4bcfa5946b15801543b783b702ead6e16e39b3014293aaa59c76f23d7
   [script-perfil-extrai]=755e1d7dd622e98dce9513ef30584e21667a5bc9d8c08cce4198090b2c34ba68
