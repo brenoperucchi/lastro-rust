@@ -105,10 +105,21 @@
  },
  "HC1": "dentro",
  "HC1b": {
-  "classe": "SEM PROVA",
+  "classe": "dentro",
   "divergencias": [],
-  "motivo": "pasta da coleta não fornecida (--coleta): a coleta é uma execução própria",
-  "problemas": []
+  "problemas": [],
+  "arquivos_sha": {
+   "original": "c458cbdf9875a7871652d2b765f9c482ff6c32f4f8ad7239baa64e2fdf4f50fa",
+   "candidato": "c458cbdf9875a7871652d2b765f9c482ff6c32f4f8ad7239baa64e2fdf4f50fa"
+  },
+  "binarios": {
+   "original": "a76a9e72b962d0f6ecec7a65a47c8506b1f7f65d0c68d0c2414e03148f6a2540",
+   "candidato": "504eca75b908716ee8e75dcdd0c4e859d76207af82071484ed716426d48216f8"
+  },
+  "par_aplicavel": {
+   "base": "a76a9e72b962d0f6ecec7a65a47c8506b1f7f65d0c68d0c2414e03148f6a2540",
+   "candidato": "504eca75b908716ee8e75dcdd0c4e859d76207af82071484ed716426d48216f8"
+  }
  },
  "HC2a": "descritivo",
  "HC2b": {

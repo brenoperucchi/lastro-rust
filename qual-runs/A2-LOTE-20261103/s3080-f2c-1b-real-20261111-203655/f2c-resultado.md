@@ -24,7 +24,7 @@ Resultado conforme os limites congelados: prefill +1,5%, decode +2%, B2_novo con
 ## Hipóteses
 
 - HC1 (ids iguais aos de D_velho e às referências 5c): **dentro**
-- HC1b (hash dos bits dos logits e do KV): **SEM PROVA** (pasta da coleta não fornecida (--coleta): a coleta é uma execução própria)
+- HC1b (hash dos bits dos logits e do KV): **dentro**
 - HC3 (prefill D_novo contra D_velho, razão -5.9%; limite +1,5%): **dentro do limite**
 - HC4 (decode D_novo contra D_velho, razão -5.4%; limite +2%): **dentro do limite**
 - HC6 (B2_novo contra D_novo, prefill, razão -0.1%; decode -0.1%): **comprovada**
