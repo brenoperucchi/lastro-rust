@@ -1917,13 +1917,19 @@ pub const SEM_POS: u16 = u16::MAX;
 
 /// O contrato da sequência de registros por posição do nível B. `V1` é o do instrumento de 14:10 (`attn_block_b` com as seis cópias
 /// device-para-device, 21 registros por posição) e fica só para validar dados já coletados; `V2` é o do instrumento do plano de cópias
-/// (O1: as quatro cópias de reforma viraram `reshape` e saíram da sequência, 17 registros por posição, sem registro fictício). A produção
-/// (capacidade, `ib3`, `contagem_esperada_b`, `ORDEM_POS_B`) é V2.
+/// (O1: as quatro cópias de reforma viraram `reshape` e saíram da sequência, 17 registros por posição, sem registro fictício); `V3` é o do
+/// instrumento do plano da O3 (as duas cópias do cache K/V saíram, porque o RoPE de K e o gemv de V gravam direto no cache: 15 registros por
+/// posição, 11 `B_LANCA`, nenhum `B_DTOD`, sem registro fictício). O contrato de PRODUÇÃO (capacidade, `ib3`, `contagem_esperada_b`, o JSON)
+/// é o de [`CONTRATO_B_PRODUCAO`], a única escolha que o binário faz; os três contratos seguem disponíveis para validar dados já coletados.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ContratoB {
     V1,
     V2,
+    V3,
 }
+
+/// O contrato que a produção emite e valida. Passa para `V3` junto com a mudança do motor que tira as duas cópias do cache K/V (O3).
+pub const CONTRATO_B_PRODUCAO: ContratoB = ContratoB::V2;
 
 impl ContratoB {
     /// O número escrito em `perfil-f2b.json` (campo `contrato_b`); a ausência do campo significa V1.
@@ -1931,12 +1937,14 @@ impl ContratoB {
         match self {
             ContratoB::V1 => 1,
             ContratoB::V2 => 2,
+            ContratoB::V3 => 3,
         }
     }
     pub fn ordem(self) -> &'static [u8] {
         match self {
             ContratoB::V1 => &ORDEM_POS_B_V1,
-            ContratoB::V2 => &ORDEM_POS_B,
+            ContratoB::V2 => &ORDEM_POS_B_V2,
+            ContratoB::V3 => &ORDEM_POS_B_V3,
         }
     }
     /// Registros por posição.
@@ -1948,16 +1956,17 @@ impl ContratoB {
         match self {
             ContratoB::V1 => "B_LOCK 1, B_SETUP 2m, B_GENERICS m, B_ATTN_PREP m, B_LANCA 11m, B_DTOD 6m",
             ContratoB::V2 => "B_LOCK 1, B_SETUP 2m, B_GENERICS m, B_ATTN_PREP m, B_LANCA 11m, B_DTOD 2m",
+            ContratoB::V3 => "B_LOCK 1, B_SETUP 2m, B_GENERICS m, B_ATTN_PREP m, B_LANCA 11m, B_DTOD 0",
         }
     }
 }
 
-/// Registros esperados por camada para a operação `op` num bloco de `m` posições (IB3, contrato V2): 1, 2m, m, m, 11m, 2m.
+/// Registros esperados por camada para a operação `op` num bloco de `m` posições (IB3, contrato de produção): V2 1, 2m, m, m, 11m, 2m; V3 1, 2m, m, m, 11m, 0.
 pub fn contagem_esperada_b(op: u8, m: usize) -> usize {
-    contagem_esperada_b_contrato(op, m, ContratoB::V2)
+    contagem_esperada_b_contrato(op, m, CONTRATO_B_PRODUCAO)
 }
 
-/// Como [`contagem_esperada_b`] para o contrato dado (V1: 6m cópias, V2: 2m).
+/// Como [`contagem_esperada_b`] para o contrato dado (V1: 6m cópias, V2: 2m, V3: nenhuma).
 pub fn contagem_esperada_b_contrato(op: u8, m: usize, c: ContratoB) -> usize {
     match op {
         B_LOCK => 1,
@@ -1967,6 +1976,7 @@ pub fn contagem_esperada_b_contrato(op: u8, m: usize, c: ContratoB) -> usize {
         B_DTOD => match c {
             ContratoB::V1 => 6 * m,
             ContratoB::V2 => 2 * m,
+            ContratoB::V3 => 0,
         },
         _ => 0,
     }
@@ -1981,16 +1991,23 @@ pub const ORDEM_POS_B_V1: [u8; 21] = [
 
 /// A ordem de emissão dos 17 registros de uma posição em `attn_block_at_b` com a O1 (contrato V2): SETUP, GENERICS, 4 LANCA (norma, gemv de Q, K, V),
 /// 2 LANCA (RoPE de Q e de K), 2 DTOD (cache K e V), ATTN_PREP, 2 LANCA (atenção), 3 LANCA (gemv de `o`, residual, norma), SETUP (2/1/1/11/2).
-pub const ORDEM_POS_B: [u8; 17] = [
+pub const ORDEM_POS_B_V2: [u8; 17] = [
     B_SETUP, B_GENERICS, B_LANCA, B_LANCA, B_LANCA, B_LANCA, B_LANCA, B_LANCA, B_DTOD, B_DTOD, B_ATTN_PREP, B_LANCA, B_LANCA, B_LANCA, B_LANCA, B_LANCA, B_SETUP,
 ];
 
-/// Capacidade fixa do acumulador (contrato V2): `layers x (17 x max_m + 1)`, reservada na criação do motor (24 bytes por registro).
+/// A ordem de emissão dos 15 registros de uma posição em `attn_block_at_b` com a O3 (contrato V3): SETUP, GENERICS, 6 LANCA (norma, gemv de Q, K e V,
+/// RoPE de Q e de K; o RoPE de K e o gemv de V já gravam na linha `cur` do cache), ATTN_PREP, 5 LANCA (atenção 2, gemv de `o`, residual, norma), SETUP
+/// (2/1/1/11/0). É a V2 sem os dois `B_DTOD`.
+pub const ORDEM_POS_B_V3: [u8; 15] = [
+    B_SETUP, B_GENERICS, B_LANCA, B_LANCA, B_LANCA, B_LANCA, B_LANCA, B_LANCA, B_ATTN_PREP, B_LANCA, B_LANCA, B_LANCA, B_LANCA, B_LANCA, B_SETUP,
+];
+
+/// Capacidade fixa do acumulador (contrato de produção): `layers x (por_pos x max_m + 1)`, reservada na criação do motor (24 bytes por registro).
 pub fn capacidade_f2b(layers: usize, max_m: usize) -> usize {
-    capacidade_f2b_contrato(layers, max_m, ContratoB::V2)
+    capacidade_f2b_contrato(layers, max_m, CONTRATO_B_PRODUCAO)
 }
 
-/// Como [`capacidade_f2b`] para o contrato dado (V1: `layers x (21 x max_m + 1)`).
+/// Como [`capacidade_f2b`] para o contrato dado (V1: `layers x (21 x max_m + 1)`, V2: 17, V3: 15).
 pub fn capacidade_f2b_contrato(layers: usize, max_m: usize, c: ContratoB) -> usize {
     layers * (c.por_pos() * max_m + 1)
 }
@@ -2124,14 +2141,14 @@ impl BlocoB {
     pub fn ib2(&self, host: &BlocoF2, layers: usize) -> bool {
         (0..layers).all(|l| self.residuo_camada_ns(l, host).is_some_and(|r| r >= -(TOL_RELOGIO_NS as i64)))
     }
-    /// IB3 (contrato V2, o da produção): a sequência esperada, na ordem de emissão: por camada (0..layers-1, em ordem) um `B_LOCK` com `SEM_POS` e,
-    /// para cada posição `0..m-1` em ordem, os 17 registros de [`ORDEM_POS_B`] (SETUP 2, GENERICS 1, ATTN_PREP 1, LANCA 11, DTOD 2) com a camada e a
-    /// posição certas. Nenhum registro perdido, nenhum a mais ou a menos. Troca de rótulos que preserve só as contagens não passa; um bloco do
-    /// contrato V1 (21 por posição) é recusado.
+    /// IB3 (contrato de produção, [`CONTRATO_B_PRODUCAO`]): a sequência esperada, na ordem de emissão: por camada (0..layers-1, em ordem) um `B_LOCK` com
+    /// `SEM_POS` e, para cada posição `0..m-1` em ordem, os registros da ordem do contrato (V2: 17, [`ORDEM_POS_B_V2`]; V3: 15, [`ORDEM_POS_B_V3`]) com a
+    /// camada e a posição certas. Nenhum registro perdido, nenhum a mais ou a menos. Troca de rótulos que preserve só as contagens não passa; um bloco de
+    /// outro contrato é recusado.
     pub fn ib3(&self, layers: usize) -> bool {
-        self.ib3_contrato(layers, ContratoB::V2)
+        self.ib3_contrato(layers, CONTRATO_B_PRODUCAO)
     }
-    /// IB3 para o contrato dado (V1 só para dados de 14:10).
+    /// IB3 para o contrato dado (V1 e V2 só para dados já coletados).
     pub fn ib3_contrato(&self, layers: usize, c: ContratoB) -> bool {
         let por_pos = c.por_pos();
         if self.perdidos > 0 || self.m == 0 || self.regs.len() != layers * (por_pos * self.m + 1) {
@@ -2204,7 +2221,7 @@ impl DadosF2B {
                 continue;
             };
             if !bb.ib3(self.layers) {
-                p.push(format!("bloco {i}: IB3 (contagens: {} registros, {} perdidos, esperados {})", bb.regs.len(), bb.perdidos, self.layers * (17 * bb.m + 1)));
+                p.push(format!("bloco {i}: IB3 (contagens: {} registros, {} perdidos, esperados {})", bb.regs.len(), bb.perdidos, self.layers * (CONTRATO_B_PRODUCAO.por_pos() * bb.m + 1)));
                 continue;
             }
             if !bb.ib1(h) {
@@ -2285,14 +2302,14 @@ pub fn perfil_f2b_json_com(pedidos: &[RecPedido], rotulo: RotuloLanca) -> Value 
     json!({
         "tipo": "perfil-f2b",
         "versao": 1,
-        "contrato_b": ContratoB::V2.numero(),
+        "contrato_b": CONTRATO_B_PRODUCAO.numero(),
         "variavel": VARIAVEL_F2B,
         "exige": [VARIAVEL, VARIAVEL_F2],
         "bloco": BLOCO,
         "unidades": "carimbos e duracoes em ns desde a origem do processo",
         "nomes_op": NOMES_B,
         "campos_reg": ["op", "camada", "pos", "ini_ns", "fim_ns"],
-        "contagem_por_camada": ContratoB::V2.texto_contagem(),
+        "contagem_por_camada": CONTRATO_B_PRODUCAO.texto_contagem(),
         "b_lanca_rotulo": rotulo.texto(),
         "tolerancias": {"relogio_ns": TOL_RELOGIO_NS, "cobertura_residuo": LIM_COBERTURA_HOST},
         "pedidos": pedidos.iter().filter_map(|p| pedido_f2b_json(p, rotulo)).collect::<Vec<_>>(),
@@ -3752,9 +3769,8 @@ mod tests_f2b {
     const REG: u64 = 20;
     const GAP: u64 = 5;
 
-    /// A ordem das operações de uma posição, na sequência real de `attn_block_at_b` com a O1 (contrato V2): SETUP, GENERICS, 6 LANCA, 2 DTOD,
-    /// ATTN_PREP, 5 LANCA, SETUP (11 LANCA, 2 DTOD).
-    fn ordem_pos() -> Vec<u8> {
+    /// A ordem das operações de uma posição no contrato V2 (O1): SETUP, GENERICS, 6 LANCA, 2 DTOD, ATTN_PREP, 5 LANCA, SETUP (11 LANCA, 2 DTOD).
+    fn ordem_pos_v2() -> Vec<u8> {
         let mut v = vec![B_SETUP, B_GENERICS];
         v.extend([B_LANCA; 6]);
         v.extend([B_DTOD; 2]);
@@ -3762,6 +3778,21 @@ mod tests_f2b {
         v.extend([B_LANCA; 5]);
         v.push(B_SETUP);
         v
+    }
+
+    /// A ordem do contrato V3 (O3): a V2 sem os 2 DTOD (SETUP, GENERICS, 6 LANCA, ATTN_PREP, 5 LANCA, SETUP: 11 LANCA, nenhum DTOD).
+    fn ordem_pos_v3() -> Vec<u8> {
+        ordem_pos_v2().into_iter().filter(|&o| o != B_DTOD).collect()
+    }
+
+    /// A ordem do contrato de produção (a que o motor emite): as fixtures "da produção" usam esta, e os testes de V2 e V3 explícitos usam as de cima.
+    fn ordem_pos() -> Vec<u8> {
+        CONTRATO_B_PRODUCAO.ordem().to_vec()
+    }
+
+    /// Registros por posição do contrato de produção.
+    fn por_pos() -> usize {
+        CONTRATO_B_PRODUCAO.por_pos()
     }
 
     /// A ordem do contrato V1 (binário de 14:10): SETUP, GENERICS, 4 LANCA, 2 DTOD, 2 LANCA, 3 DTOD, ATTN_PREP, 2 LANCA, 1 DTOD, 3 LANCA, SETUP
@@ -3782,7 +3813,7 @@ mod tests_f2b {
 
     /// Duração mínima de H_PRE_LAYER para caber os registros de uma camada com `m` posições.
     fn pre_min(m: usize) -> u64 {
-        GAP + REG + GAP + m as u64 * 17 * (REG + GAP) + GAP
+        GAP + REG + GAP + m as u64 * por_pos() as u64 * (REG + GAP) + GAP
     }
 
     /// Host sintético (encadeado, como o do nível A): `pre(l)` dá a duração de H_PRE_LAYER da camada `l`; as demais operações duram 100 ns.
@@ -3812,8 +3843,13 @@ mod tests_f2b {
         BlocoF2 { gen: 7, m, pos_ini: 16, n_ready: 0, ops, entrada, saida: t, t2: T2, t3: t + 50 }
     }
 
-    /// Registros brutos dentro de cada H_PRE_LAYER do host, na ordem do código.
+    /// Registros brutos dentro de cada H_PRE_LAYER do host, na ordem do código (contrato de produção).
     fn regs(h: &BlocoF2, layers: usize, m: usize) -> BlocoB {
+        regs_com(h, layers, m, &ordem_pos())
+    }
+
+    /// Como [`regs`] com a ordem por posição dada (V1, V2 ou V3).
+    fn regs_com(h: &BlocoF2, layers: usize, m: usize, ordem: &[u8]) -> BlocoB {
         let mut v = vec![];
         for l in 0..layers {
             let pre = h.ops.iter().find(|o| o.op == H_PRE_LAYER && o.camada == l as u32).unwrap();
@@ -3821,7 +3857,7 @@ mod tests_f2b {
             v.push(RegB { ini: t, fim: t + REG, camada: l as u16, pos: SEM_POS, op: B_LOCK });
             t += REG + GAP;
             for p in 0..m {
-                for op in ordem_pos() {
+                for &op in ordem {
                     v.push(RegB { ini: t, fim: t + REG, camada: l as u16, pos: p as u16, op });
                     t += REG + GAP;
                 }
@@ -3867,7 +3903,7 @@ mod tests_f2b {
     #[test]
     fn acumulador_tem_capacidade_fixa_registro_de_24_bytes_e_nunca_realoca() {
         assert_eq!(std::mem::size_of::<RegB>(), 24);
-        assert_eq!(capacidade_f2b(24, 8), 24 * 137);
+        assert_eq!(capacidade_f2b(24, 8), 24 * (por_pos() * 8 + 1));
         assert_eq!(capacidade_f2b_contrato(24, 8, ContratoB::V1), 24 * 169);
         let mut a = AccB::com_capacidade(2, 8);
         let cap = a.capacidade();
@@ -3915,8 +3951,8 @@ mod tests_f2b {
         for (layers, m) in [(2usize, 8usize), (3, 2), (2, 1)] {
             let h = host(layers, m, &|_| pre_min(m) + 40);
             let b = regs(&h, layers, m);
-            assert_eq!(ordem_pos().len(), 17);
-            assert_eq!(b.regs.len(), layers * (17 * m + 1));
+            assert_eq!(ordem_pos().len(), por_pos());
+            assert_eq!(b.regs.len(), layers * (por_pos() * m + 1));
             assert!(b.ib1(&h) && b.ib2(&h, layers) && b.ib3(layers));
             assert!(valida(layers, m, &h, &b).is_empty(), "{:?}", valida(layers, m, &h, &b));
             for l in 0..layers {
@@ -3936,14 +3972,14 @@ mod tests_f2b {
         let b = regs(&h, layers, m);
         // Falta e sobra um registro de outra operação: soma igual, contagens diferentes.
         let mut troca = b.clone();
-        let i = troca.regs.iter().position(|r| r.op == B_DTOD).unwrap();
+        let i = troca.regs.iter().position(|r| r.op == B_ATTN_PREP).unwrap();
         troca.regs[i].op = B_LANCA;
         assert_eq!(troca.regs.len(), b.regs.len());
         assert!(!troca.ib3(layers));
         // Camada repetida no lugar de outra (mesmo total).
         let mut rep = b.clone();
         let n = rep.regs.len();
-        for r in rep.regs.iter_mut().skip(n - (17 * m + 1)) {
+        for r in rep.regs.iter_mut().skip(n - (por_pos() * m + 1)) {
             r.camada = 1;
         }
         assert!(!rep.ib3(layers));
@@ -3959,7 +3995,7 @@ mod tests_f2b {
         assert!(!perdido.ib3(layers));
         // Camadas fora de ordem.
         let mut ordem = b.clone();
-        let k = 17 * m + 1;
+        let k = por_pos() * m + 1;
         let (a, c) = (ordem.regs[..k].to_vec(), ordem.regs[k..2 * k].to_vec());
         ordem.regs[..k].clone_from_slice(&c);
         ordem.regs[k..2 * k].clone_from_slice(&a);
@@ -3981,7 +4017,7 @@ mod tests_f2b {
         for (layers, m) in [(2usize, 1usize), (2, 2), (2, 7), (2, 8)] {
             let h = host(layers, m, &|_| pre_min(m) + 40);
             let b = regs(&h, layers, m);
-            assert_eq!(ORDEM_POS_B.to_vec(), ordem_pos());
+            assert_eq!(CONTRATO_B_PRODUCAO.ordem().to_vec(), ordem_pos());
             assert!(b.ib3(layers), "m = {m}");
             assert!(valida(layers, m, &h, &b).is_empty());
         }
@@ -4057,7 +4093,7 @@ mod tests_f2b {
         // Contenção: desloca tudo da camada 0 para fora do `H_PRE_LAYER` (soma e contagem iguais).
         let mut fora = b.clone();
         let pre0 = h.ops.iter().find(|o| o.op == H_PRE_LAYER && o.camada == 0).unwrap();
-        let k = 17 * m + 1;
+        let k = por_pos() * m + 1;
         let desloc = pre0.dur() + 500;
         for r in fora.regs[..k].iter_mut() {
             r.ini += desloc;
@@ -4130,7 +4166,7 @@ mod tests_f2b {
         assert!(valida(layers, m, &h, &p).iter().any(|s| s.contains("IB4")));
         // Registros de uma camada na posição de outra: a contenção do `H_PRE_LAYER` da camada acusa (IB1).
         let mut c = b.clone();
-        let k = 17 * m + 1;
+        let k = por_pos() * m + 1;
         for r in c.regs[..k].iter_mut() {
             r.camada = 1;
         }
@@ -4182,37 +4218,24 @@ mod tests_f2b {
 
     /// Um bloco no contrato V1 (14:10): a mesma construção de `regs`, com os 21 registros por posição.
     fn regs_v1(h: &BlocoF2, layers: usize, m: usize) -> BlocoB {
-        let mut v = vec![];
-        for l in 0..layers {
-            let pre = h.ops.iter().find(|o| o.op == H_PRE_LAYER && o.camada == l as u32).unwrap();
-            let mut t = pre.ini + GAP;
-            v.push(RegB { ini: t, fim: t + REG, camada: l as u16, pos: SEM_POS, op: B_LOCK });
-            t += REG + GAP;
-            for p in 0..m {
-                for op in ordem_pos_v1() {
-                    v.push(RegB { ini: t, fim: t + REG, camada: l as u16, pos: p as u16, op });
-                    t += REG + GAP;
-                }
-            }
-        }
-        BlocoB { gen: h.gen, m, pos_ini: h.pos_ini, regs: v, perdidos: 0 }
+        regs_com(h, layers, m, &ordem_pos_v1())
     }
 
     #[test]
     fn contrato_v2_tem_17_registros_sem_registro_ficticio_e_v1_continua_de_21() {
-        assert_eq!(ORDEM_POS_B.len(), 17);
-        assert_eq!(ORDEM_POS_B.to_vec(), ordem_pos());
+        assert_eq!(ORDEM_POS_B_V2.len(), 17);
+        assert_eq!(ORDEM_POS_B_V2.to_vec(), ordem_pos_v2());
         assert_eq!(ORDEM_POS_B_V1.len(), 21);
         assert_eq!(ORDEM_POS_B_V1.to_vec(), ordem_pos_v1());
         let cont = |o: &[u8], op: u8| o.iter().filter(|&&x| x == op).count();
-        assert_eq!([B_SETUP, B_GENERICS, B_ATTN_PREP, B_LANCA, B_DTOD].map(|op| cont(&ORDEM_POS_B, op)), [2, 1, 1, 11, 2]);
+        assert_eq!([B_SETUP, B_GENERICS, B_ATTN_PREP, B_LANCA, B_DTOD].map(|op| cont(&ORDEM_POS_B_V2, op)), [2, 1, 1, 11, 2]);
         assert_eq!([B_SETUP, B_GENERICS, B_ATTN_PREP, B_LANCA, B_DTOD].map(|op| cont(&ORDEM_POS_B_V1, op)), [2, 1, 1, 11, 6]);
         // V2 é V1 sem as 4 cópias de reforma: as 2 do cache K/V e todos os lançamentos ficam, na mesma ordem relativa.
         let sem_dtod = |o: &[u8]| o.iter().copied().filter(|&x| x != B_DTOD).collect::<Vec<_>>();
-        assert_eq!(sem_dtod(&ORDEM_POS_B), sem_dtod(&ORDEM_POS_B_V1));
-        assert_eq!(contagem_esperada_b(B_DTOD, 8), 16);
+        assert_eq!(sem_dtod(&ORDEM_POS_B_V2), sem_dtod(&ORDEM_POS_B_V1));
+        assert_eq!(contagem_esperada_b_contrato(B_DTOD, 8, ContratoB::V2), 16);
         assert_eq!(contagem_esperada_b_contrato(B_DTOD, 8, ContratoB::V1), 48);
-        assert_eq!(capacidade_f2b(24, 8), 24 * (17 * 8 + 1));
+        assert_eq!(capacidade_f2b_contrato(24, 8, ContratoB::V2), 24 * (17 * 8 + 1));
         assert_eq!(ContratoB::V2.numero(), 2);
         assert_eq!(ContratoB::V1.numero(), 1);
     }
@@ -4221,41 +4244,97 @@ mod tests_f2b {
     fn ib3_v2_aceita_a_sequencia_da_o1_e_recusa_a_v1_e_vice_versa() {
         for (layers, m) in [(2usize, 8usize), (2, 1), (3, 2)] {
             let h = host(layers, m, &|_| pre_min(m) + 40);
-            let novo = regs(&h, layers, m);
+            let novo = regs_com(&h, layers, m, &ordem_pos_v2());
             let velho = regs_v1(&h, layers, m);
-            assert!(novo.ib3(layers) && novo.ib3_contrato(layers, ContratoB::V2), "m = {m}");
-            assert!(!novo.ib3_contrato(layers, ContratoB::V1), "fixture nova só pelo contrato v2 (m = {m})");
+            assert!(novo.ib3_contrato(layers, ContratoB::V2), "m = {m}");
+            assert!(!novo.ib3_contrato(layers, ContratoB::V1), "fixture da O1 só pelo contrato v2 (m = {m})");
+            assert!(!novo.ib3_contrato(layers, ContratoB::V3), "fixture da O1 não passa pelo v3 (m = {m})");
             assert!(velho.ib3_contrato(layers, ContratoB::V1), "m = {m}");
-            assert!(!velho.ib3(layers), "fixture antiga só pelo contrato v1 (m = {m})");
-            assert!(valida(layers, m, &h, &novo).is_empty());
-            assert!(valida(layers, m, &h, &velho).iter().any(|s| s.contains("IB3")));
+            assert!(!velho.ib3_contrato(layers, ContratoB::V2), "fixture antiga só pelo contrato v1 (m = {m})");
         }
         // registro ausente ou trocado continua recusado no v2
         let (layers, m) = (2usize, 8usize);
         let h = host(layers, m, &|_| pre_min(m) + 40);
-        let b = regs(&h, layers, m);
+        let b = regs_com(&h, layers, m, &ordem_pos_v2());
         let mut falta = b.clone();
         let i = falta.regs.iter().position(|r| r.op == B_DTOD).unwrap();
         falta.regs.remove(i);
-        assert!(!falta.ib3(layers));
+        assert!(!falta.ib3_contrato(layers, ContratoB::V2));
         let mut troca = b.clone();
         let i = troca.regs.iter().position(|r| r.op == B_DTOD).unwrap();
         troca.regs[i].op = B_LANCA;
-        assert!(!troca.ib3(layers));
+        assert!(!troca.ib3_contrato(layers, ContratoB::V2));
         // um registro fictício (B_DTOD a mais, de volta ao 21 por posição sem a ordem v1) também é recusado
         let mut a_mais = b.clone();
         let i = a_mais.regs.iter().position(|r| r.op == B_DTOD).unwrap();
         let r = a_mais.regs[i];
         a_mais.regs.insert(i, r);
-        assert!(!a_mais.ib3(layers));
+        assert!(!a_mais.ib3_contrato(layers, ContratoB::V2));
+    }
+
+    /// O contrato V3 (plano da O3): 15 registros por posição, os mesmos da V2 sem os 2 `B_DTOD`, sem registro fictício.
+    #[test]
+    fn contrato_v3_tem_15_registros_sem_dtod_e_sem_registro_ficticio() {
+        assert_eq!(ORDEM_POS_B_V3.len(), 15);
+        assert_eq!(ORDEM_POS_B_V3.to_vec(), ordem_pos_v3());
+        let cont = |o: &[u8], op: u8| o.iter().filter(|&&x| x == op).count();
+        assert_eq!([B_SETUP, B_GENERICS, B_ATTN_PREP, B_LANCA, B_DTOD].map(|op| cont(&ORDEM_POS_B_V3, op)), [2, 1, 1, 11, 0]);
+        let sem_dtod = |o: &[u8]| o.iter().copied().filter(|&x| x != B_DTOD).collect::<Vec<_>>();
+        assert_eq!(sem_dtod(&ORDEM_POS_B_V2), ORDEM_POS_B_V3.to_vec(), "V3 é V2 sem os 2 B_DTOD, na mesma ordem relativa");
+        assert_eq!(contagem_esperada_b_contrato(B_DTOD, 8, ContratoB::V3), 0);
+        for op in [B_LOCK, B_SETUP, B_GENERICS, B_ATTN_PREP, B_LANCA] {
+            assert_eq!(contagem_esperada_b_contrato(op, 8, ContratoB::V3), contagem_esperada_b_contrato(op, 8, ContratoB::V2), "op {op}");
+        }
+        assert_eq!(capacidade_f2b_contrato(24, 8, ContratoB::V3), 24 * (15 * 8 + 1));
+        assert_eq!(ContratoB::V3.numero(), 3);
+        assert_eq!(ContratoB::V3.por_pos(), 15);
+        assert!(ContratoB::V3.texto_contagem().contains("B_DTOD 0") && ContratoB::V3.texto_contagem().contains("B_LANCA 11m"));
+    }
+
+    /// Bloco sintético com a sequência da O3: aceito pela IB3 v3 e recusado pela v2 e v1; e o inverso para a sequência da O1.
+    #[test]
+    fn ib3_v3_aceita_a_sequencia_da_o3_e_recusa_v2_e_v1_e_vice_versa() {
+        for (layers, m) in [(2usize, 8usize), (2, 1), (3, 2), (2, 7)] {
+            let h = host(layers, m, &|_| pre_min(m) + 40);
+            let o3 = regs_com(&h, layers, m, &ordem_pos_v3());
+            let o1 = regs_com(&h, layers, m, &ordem_pos_v2());
+            assert!(o3.ib3_contrato(layers, ContratoB::V3), "m = {m}");
+            assert!(!o3.ib3_contrato(layers, ContratoB::V2) && !o3.ib3_contrato(layers, ContratoB::V1), "sequência da O3 só pelo v3 (m = {m})");
+            assert!(o1.ib3_contrato(layers, ContratoB::V2) && !o1.ib3_contrato(layers, ContratoB::V3), "sequência da O1 só pelo v2 (m = {m})");
+            assert_eq!(o3.regs.len(), layers * (15 * m + 1));
+        }
+        // registro ausente, trocado ou fictício continua recusado no v3
+        let (layers, m) = (2usize, 8usize);
+        let h = host(layers, m, &|_| pre_min(m) + 40);
+        let b = regs_com(&h, layers, m, &ordem_pos_v3());
+        let mut falta = b.clone();
+        let i = falta.regs.iter().position(|r| r.op == B_ATTN_PREP).unwrap();
+        falta.regs.remove(i);
+        assert!(!falta.ib3_contrato(layers, ContratoB::V3));
+        let mut troca = b.clone();
+        let i = troca.regs.iter().position(|r| r.op == B_ATTN_PREP).unwrap();
+        troca.regs[i].op = B_LANCA;
+        assert!(!troca.ib3_contrato(layers, ContratoB::V3));
+        let mut dtod = b.clone();
+        let i = dtod.regs.iter().position(|r| r.op == B_LANCA).unwrap();
+        dtod.regs[i].op = B_DTOD;
+        assert!(!dtod.ib3_contrato(layers, ContratoB::V3), "um B_DTOD no lugar de um B_LANCA não passa pelo v3");
+        let mut a_mais = b.clone();
+        let i = a_mais.regs.iter().position(|r| r.op == B_LANCA).unwrap();
+        let r = a_mais.regs[i];
+        a_mais.regs.insert(i, r);
+        assert!(!a_mais.ib3_contrato(layers, ContratoB::V3));
     }
 
     #[test]
-    fn json_f2b_declara_o_contrato_v2() {
+    fn json_f2b_declara_o_contrato_de_producao() {
         let j = perfil_f2b_json(&[]);
-        assert_eq!(j["contrato_b"], 2);
+        assert_eq!(j["contrato_b"], CONTRATO_B_PRODUCAO.numero());
         assert_eq!(j["versao"], 1);
-        assert!(j["contagem_por_camada"].as_str().unwrap().contains("B_DTOD 2m"));
+        assert_eq!(j["contagem_por_camada"].as_str().unwrap(), CONTRATO_B_PRODUCAO.texto_contagem());
+        assert_eq!(ContratoB::V2.numero(), 2);
+        assert!(ContratoB::V2.texto_contagem().contains("B_DTOD 2m"));
+        assert!(ContratoB::V3.texto_contagem().contains("B_DTOD 0"));
     }
 
     fn bloco_com_pre(layers: usize, m: usize, pre: u64, gen: u32) -> (BlocoB, BlocoF2) {
@@ -4274,10 +4353,13 @@ mod tests_f2b {
         let cheios: Vec<(&BlocoB, &BlocoF2)> = blocos.iter().map(|(b, h)| (b, h)).collect();
         let r = medidas_f2b_pedido(&cheios, layers);
         let (p1, p2, p3, p4) = (r.hb1.unwrap(), r.hb2.unwrap(), r.hb3.unwrap(), r.hb4.unwrap());
-        assert!(p1 > 0.0 && p2 > 0.0 && p3 > 0.0 && p4 > 0.0);
+        let dtod = contagem_esperada_b(B_DTOD, 1);
+        assert!(p1 > 0.0 && p2 > 0.0 && p3 > 0.0 && (p4 > 0.0) == (dtod > 0), "B_DTOD só tem parcela se o contrato de produção emite cópias");
         assert!(p1 + p2 + p3 + p4 <= 1.0 + 1e-9, "as parcelas somadas não passam de 1 (o resíduo é o resto)");
-        // 11 de 17 registros por posição são B_LANCA e todos têm a mesma duração.
-        assert!((p3 / p4 - 11.0 / 2.0).abs() < 1e-9);
+        // 11 registros por posição são B_LANCA e todos têm a mesma duração (as cópias, se o contrato as emite, também).
+        if dtod > 0 {
+            assert!((p3 / p4 - 11.0 / dtod as f64).abs() < 1e-9);
+        }
         assert_eq!(r.h_pre_layer_mediana_camada_ns.len(), layers);
         assert!(r.h_pre_layer_mediana_camada_ns.iter().all(|&x| x == (pre + 20) as f64));
         assert!(r.hb5_p90_sobre_mediana.unwrap() >= 1.0);
