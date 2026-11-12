@@ -1,0 +1,167 @@
+{
+ "tipo": "f2d-resultado",
+ "contrato_b": 3,
+ "criterio": "criterio-f2d-20261112.md",
+ "modelo_da_janela": "3b",
+ "layers": 32,
+ "integridade_problemas": [],
+ "referencia_problemas": [],
+ "bloqueios": [
+  "controle incompleto ou inválido"
+ ],
+ "motivos_controle": [
+  "ctrl-3b-L100-medio-01-DO1: processo inválido: portão antes da célula falhou: CPU da máquina não baixou de 10% em 20 s (última janela: 16.56%);  ",
+  "ctrl-3b-L100-medio-02-DO3: processo inválido: portão antes da célula falhou: CPU da máquina não baixou de 10% em 20 s (última janela: 16.51%);  ",
+  "ctrl-3b-L100-medio-03-B2O3: processo inválido: portão antes da célula falhou: CPU da máquina não baixou de 10% em 20 s (última janela: 19.30%);  ",
+  "ctrl-3b-L100-medio-04-B2O3: processo inválido: portão antes da célula falhou: CPU da máquina não baixou de 10% em 20 s (última janela: 15.79%);  ",
+  "ctrl-3b-L100-medio-05-DO1: processo inválido: portão antes da célula falhou: CPU da máquina não baixou de 10% em 20 s (última janela: 16.14%);  ",
+  "ctrl-3b-L100-medio-06-DO3: processo inválido: portão antes da célula falhou: CPU da máquina não baixou de 10% em 20 s (última janela: 16.27%);  ",
+  "ctrl-3b-L100-medio-07-DO3: processo inválido: portão antes da célula falhou: CPU da máquina não baixou de 10% em 20 s (última janela: 15.98%);  ",
+  "ctrl-3b-L100-medio-08-B2O3: processo inválido: portão antes da célula falhou: CPU da máquina não baixou de 10% em 20 s (última janela: 16.56%);  ",
+  "ctrl-3b-L100-medio-09-DO1: processo inválido: portão antes da célula falhou: CPU da máquina não baixou de 10% em 20 s (última janela: 20.58%);  "
+ ],
+ "ordem_efetiva": "confere com ordem.txt (quadrado latino, rc 0, n 3)",
+ "processos": [
+  {
+   "nn": 1,
+   "braco": "DO1",
+   "pasta": "ctrl-3b-L100-medio-01-DO1",
+   "valido": false,
+   "prefill_ms_mediana": 664.124414,
+   "passo_ms_mediana": 4.383263
+  },
+  {
+   "nn": 2,
+   "braco": "DO3",
+   "pasta": "ctrl-3b-L100-medio-02-DO3",
+   "valido": false,
+   "prefill_ms_mediana": 666.128004,
+   "passo_ms_mediana": 4.409144
+  },
+  {
+   "nn": 3,
+   "braco": "B2O3",
+   "pasta": "ctrl-3b-L100-medio-03-B2O3",
+   "valido": false,
+   "prefill_ms_mediana": 667.979603,
+   "passo_ms_mediana": 4.4177740000000005
+  },
+  {
+   "nn": 4,
+   "braco": "B2O3",
+   "pasta": "ctrl-3b-L100-medio-04-B2O3",
+   "valido": false,
+   "prefill_ms_mediana": 665.3687080000001,
+   "passo_ms_mediana": 4.402014
+  },
+  {
+   "nn": 5,
+   "braco": "DO1",
+   "pasta": "ctrl-3b-L100-medio-05-DO1",
+   "valido": false,
+   "prefill_ms_mediana": 661.924925,
+   "passo_ms_mediana": 4.384194
+  },
+  {
+   "nn": 6,
+   "braco": "DO3",
+   "pasta": "ctrl-3b-L100-medio-06-DO3",
+   "valido": false,
+   "prefill_ms_mediana": 667.589432,
+   "passo_ms_mediana": 4.411654
+  },
+  {
+   "nn": 7,
+   "braco": "DO3",
+   "pasta": "ctrl-3b-L100-medio-07-DO3",
+   "valido": false,
+   "prefill_ms_mediana": 667.122753,
+   "passo_ms_mediana": 4.422974
+  },
+  {
+   "nn": 8,
+   "braco": "B2O3",
+   "pasta": "ctrl-3b-L100-medio-08-B2O3",
+   "valido": false,
+   "prefill_ms_mediana": 667.1516859999999,
+   "passo_ms_mediana": 4.4203339999999995
+  },
+  {
+   "nn": 9,
+   "braco": "DO1",
+   "pasta": "ctrl-3b-L100-medio-09-DO1",
+   "valido": false,
+   "prefill_ms_mediana": 664.214086,
+   "passo_ms_mediana": 4.403024
+  }
+ ],
+ "prefill_ms_mediana_por_braco": {
+  "DO1": null,
+  "DO3": null,
+  "B2O3": null
+ },
+ "passo_ms_mediana_por_braco": {
+  "DO1": null,
+  "DO3": null,
+  "B2O3": null
+ },
+ "comparacao": {
+  "HC3": "SEM PROVA",
+  "HC4": "SEM PROVA",
+  "HC6": "SEM PROVA",
+  "regressao": [],
+  "razao_prefill_novo_sobre_velho": null,
+  "razao_decode_novo_sobre_velho": null,
+  "razao_prefill_b2_sobre_dnovo": null,
+  "razao_decode_b2_sobre_dnovo": null,
+  "efeito_prefill": {
+   "classe": "sem dado",
+   "motivo": "controle incompleto"
+  },
+  "efeito_decode": {
+   "classe": "sem dado",
+   "motivo": "controle incompleto"
+  }
+ },
+ "HC1": "SEM PROVA",
+ "HC1b": {
+  "classe": "dentro",
+  "divergencias": [],
+  "problemas": [],
+  "arquivos_sha": {
+   "original": "c458cbdf9875a7871652d2b765f9c482ff6c32f4f8ad7239baa64e2fdf4f50fa",
+   "candidato": "c458cbdf9875a7871652d2b765f9c482ff6c32f4f8ad7239baa64e2fdf4f50fa"
+  },
+  "binarios": {
+   "original": "4a6f26c7eaf9898cc625ce16e617cc0c68983670abcfec9502f09fd6aab9579a",
+   "candidato": "f295e90a6a2d3b90332ba5bf11f2a0e337aa646806d2a5e308c6f5c2f00c9cea"
+  },
+  "par_aplicavel": {
+   "base": "4a6f26c7eaf9898cc625ce16e617cc0c68983670abcfec9502f09fd6aab9579a",
+   "candidato": "f295e90a6a2d3b90332ba5bf11f2a0e337aa646806d2a5e308c6f5c2f00c9cea"
+  }
+ },
+ "HC2a": "SEM PROVA",
+ "HC2b": {},
+ "HC5": "SEM PROVA",
+ "h_pre_layer_mediana_camada_ns_b2_o3": [],
+ "ids_iguais_entre_braços": true,
+ "divergencias_5c": [],
+ "regressao": [],
+ "orcamento": {
+  "modelos": [
+   "3b"
+  ],
+  "limite_s": 1200,
+  "folga_s": 180,
+  "decorrido_s": 419,
+  "cortes": [],
+  "reps": {
+   "controle": 3
+  },
+  "cortado": false,
+  "nao_rodou": [],
+  "estimativas_sao_tetos_de_processo": true
+ },
+ "teto_excedido": []
+}
