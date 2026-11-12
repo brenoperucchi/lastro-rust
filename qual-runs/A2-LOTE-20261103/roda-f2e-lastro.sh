@@ -13,7 +13,7 @@
 # --novos/--data fora do uso normal com --texto (primeira-palavra.rs, parse_args); r111, rev-1 P1.
 # Monitor (r111, rev-1 P2): falha de inicia/para/avalia ou coleta morta antes do fim da célula fica em celula.json ("monitor_falha"); o extrator trata como SEM PROVA.
 #
-# Falha FECHADA (código 2) sem PRIMEIRA_PALAVRA_AUTORIZADA=1 e sem CUDA_VISIBLE_DEVICES igual ao UUID da RTX 5090 (a RTX 5090; a RTX 5090 e a 4090 nunca), ou com DIR já existente.
+# Falha FECHADA (código 2) sem PRIMEIRA_PALAVRA_AUTORIZADA=1 e sem CUDA_VISIBLE_DEVICES igual ao UUID da RTX 5090 (a RTX 5090; a 3080 Ti e a 4090 nunca), ou com DIR já existente.
 # Variáveis só para teste: MODELO_1B, MODELO_3B, MONITOR_SH, NVIDIA_SMI.
 # Degrau 1 (criterio-degrau1-100pct-20261109.md): CMP_FRACAO_SLOTS=1.0 repassa `--fracao-slots 1.0` ao binário (única fração aceita além de "não definida" = padrão 0,10 do binário,
 # sem a flag); a célula passa a ser da série L100 (celula.json: "serie": "L100", "fracao_slots": "1.0") e a linha de comando de cada processo fica em DIR/cmdline.txt (uma linha por
@@ -32,8 +32,8 @@ AQUI=$(cd "$(dirname "$0")" && pwd -P)
 UUID=GPU-00005090-0000-0000-0000-000000005090
 BIN=$AQUI/../../rust/moe-rt/target/release/primeira-palavra
 MONITOR=${MONITOR_SH:-$AQUI/roda-f2e-monitor.sh}
-M1=${MODELO_1B:-/home/brenoperucchi/models/granite-3.1-1b-a400m-instruct}
-M3=${MODELO_3B:-/home/brenoperucchi/models/granite-3.1-3b-a800m-instruct}
+M1=${MODELO_1B:-$HOME/models/granite-3.1-1b-a400m-instruct}
+M3=${MODELO_3B:-$HOME/models/granite-3.1-3b-a800m-instruct}
 uso() { echo "uso: roda-cmp-lastro.sh --modelo 1b|3b --texto curto|medio|longo --estado frio|quente --n N --saida DIR [--bin BINARIO] | --smoke --modelo 1b|3b --saida DIR [--bin BINARIO]" >&2; exit 2; }
 recusa() { echo "roda-cmp-lastro: $*" >&2; exit 2; }
 MODELO=; TEXTO=; ESTADO=; N=; SAIDA=; SMOKE=0
@@ -77,7 +77,7 @@ case $N in ''|*[!0-9]*) uso;; esac
 [ "$N" -ge 1 ] && [ "$N" -le 50 ] || recusa "--n fora de 1..50: $N"
 [ -n "$SAIDA" ] || uso
 [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] || recusa "portão fechado: sem PRIMEIRA_PALAVRA_AUTORIZADA=1"
-[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a RTX 5090; a 4090 e a 5090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
+[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a RTX 5090; a 3080 Ti e a 4090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
 [ -x "$BIN" ] || recusa "binário não executável: $BIN"
 [ -x "$MONITOR" ] || recusa "monitor não executável: $MONITOR"
 if [ -e "$SAIDA" ]; then recusa "$SAIDA já existe: pasta de saída nova"; fi

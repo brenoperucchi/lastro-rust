@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # F2E: janela do plano da O3, escrever direto no cache K/V (plano-o3-cache-direto-20261112.md versão 2, aprovada na rodada 173; decisão do Breno de 12/11 00:37 em .herdr/DECISAO-BRENO-O3-OITO-PONTOS-20261112-0037.txt;
-# critério em criterio-f2e-20261112.md). UMA janela POR MODELO (uma de cada vez), até 20 min na RTX RTX 5090, SÓ o Lastro, descritiva. Derivado de roda-f2c-janela.sh (mesmo envelope, mesma falha FECHADA antes de tocar em timers ou na
+# critério em criterio-f2e-20261112.md). UMA janela POR MODELO (uma de cada vez), até 20 min na RTX 5090, SÓ o Lastro, descritiva. Derivado de roda-f2c-janela.sh (mesmo envelope, mesma falha FECHADA antes de tocar em timers ou na
 # GPU, mesmo FIXO com shas e --verifica-fixos sem pipe mascarando o código de saída, mesmos portões de UUID e potência). O voxtype NÃO é tratado aqui: o script de abertura em .herdr cuida; este roteiro só recusa se ele estiver em compute.
 #
 #   roda-f2e-janela.sh --modelos 1b|3b --saida DIR [--bin-base BIN] [--bin-cand BIN] [--limite S]
@@ -30,7 +30,7 @@
 set -u
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
 UUID=GPU-00005090-0000-0000-0000-000000005090
-LIMITE_SH=${LIMITE_SH:-$AQUI/roda-com-limite.sh}
+LIMITE_SH=${LIMITE_SH:-$AQUI/roda-com-limite-f2e.sh}
 LASTRO_SH=${LASTRO_SH_CMP:-$AQUI/roda-f2e-lastro.sh}
 MONITOR=${MONITOR_SH:-$AQUI/roda-f2e-monitor.sh}
 EXTRAI=${EXTRAI_PY:-$AQUI/f2e-cmp-extrai.py}
@@ -95,20 +95,20 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 # SHAs congelados. O próprio roda-f2e-janela.sh NÃO pode conter o seu sha (nem o critério o do roteiro nem o do extrator): --verifica-fixos imprime o do roteiro e o dos extratores à parte (linhas informativas).
 # PREENCHER_NO_CONGELAMENTO = (nenhum mais; vale para o que ainda não for congelado, como nos testes) ainda não congelado (binários e arquivos que mudam até a aprovação): --verifica-fixos imprime PENDENTE e sai 1, e o modo real recusa; nenhum sha de binário inexistente foi inventado aqui.
 declare -A FIXO=(
-  [criterio-f2e]=8a2c60680d5a2c61bd078286c000abf2bbbf68a4f75033827d37914de83891e7
+  [criterio-f2e]=60aa300ec78a97806fbce098652fc014449a78fc4e40dfb6c2a6f3295deb6ac0
   [plano-o3]=e4edd1d013c4ac56ee0b145527f60f8490a0931e3f1d995ef5172f649795b032
   [decisao-f2e]=9b3748d61be4c80e68d84be55e72561f7166712a58621294362a3bf679532cc3
   [binario-base]=54c0979a1b91f3afa4a0119bc403f3bff3880d4236f7a8d2ddc6604c79c44ae4
   [binario-cand]=d38a951d81c4144114d5c306c30093ec938551479d841f91ef65c2beed07f21f
   [script-f2b-extrai-v3]=39b4edecbdd6f40a0eeb61d460031aa63454143d8e3f3f18fc1f823975a69a73
-  [script-f2e-extrai]=339bcb9f8c5e3e5c546031396a6446bc5d3e49087ad37c419f24be8cb41a5a1f
+  [script-f2e-extrai]=b57540a7bae920f1176ce14fe48c4d95fa93a5e99aad599a07f313c088f9bec7
   [script-f2-extrai]=b9075ad7baabb8c847cca5d0e6b2049520f98ace792b509389edd88e5bf61aac
   [script-instrumento-extrai]=c0c65a68d1150b77961bb70902360e1a5f8c18a14d3e94634a45afefb57221d5
   [script-perfil-extrai]=0d03c4fdf3939d2eb812d6dd516aad00830f8639a8d25e50765ecbf2fdd47e84
   [script-cmp-extrai]=e706f5d0a2f57a33469c5a72d12ad4657281665a6d151750e2c7f402cbf4ffbb
-  [script-lastro]=35b6e71e24e01a36b9a68b31c8a8431472158843429de659bfdb1613ec6fcb62
+  [script-lastro]=8a65414d009c79d7741efd928ea831e66bec9831d0812ec1d0087c9ebd0bef22
   [script-monitor]=ae80ec1197f29c555d38f15465f981e70db1bdd03057cecd34b1f16f499349ca
-  [script-limite]=196c05649b43e64361766e98e5bab9873636799dfa5d83f70a468436cd4759cc
+  [script-limite]=7ff702fac093ae342c19795e74036c17829209241e0ceed34dc793c783d07aff
   [criterio-cmp]=8d9d6ad3ff1ef23d417e41982228ec55638823c613b4a2cbf00d813dc1f85b35
   [criterio-degrau1]=8c3406a9fd3ba55133dfb2c2d3800076c6ee0a765735edf8be65f6ba1a72c7de
   [criterio-degrau2]=bd8cb0510d5a6c3f55ec320a3177e2bec7ebce7b5776529989f0c45a61599b2a
@@ -273,6 +273,11 @@ if [ $INTERNO = 1 ]; then
     echo "binario_cand=$(sha "$BIN_CAND")"
     "$SMI" --query-gpu=name,driver_version,clocks.max.memory --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu=/'
     "$SMI" -i "$UUID" --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max --format=csv,noheader 2>&1 | head -n 2 | sed 's/^/gpu_limites=/'
+    # procedência do clone e do envelope (vai para o resultado pelo extrator): commit do clone, árvore sem modificação rastreada, sha deste roteiro e do envelope
+    echo "clone_commit=$(git -C "$AQUI" rev-parse HEAD 2> /dev/null || echo ausente)"
+    if [ -z "$(git -C "$AQUI" status --porcelain --untracked-files=no 2> /dev/null)" ]; then echo "clone_arvore_limpa=sim"; else echo "clone_arvore_limpa=nao"; fi
+    echo "roteiro_sha=$(sha "$0")"
+    echo "envelope_sha=${F2E_PROC_ENVELOPE_SHA:-ausente}"
     POT_INI=$(le_pot) || POT_INI=; echo "potencia_inicio=$(pot_tok "$POT_INI")"
     echo "loadavg=$(cut -d' ' -f1-3 < /proc/loadavg 2>/dev/null)"
     if [ "${CMP_SEM_MEMORIA:-0}" != 1 ]; then
@@ -451,9 +456,9 @@ fi
 case $LIMITE in ''|*[!0-9]*) recusa "limite inválido: $LIMITE";; esac
 [ "$LIMITE" -ge 1 ] && [ "$LIMITE" -le $LIMITE_MAX ] || recusa "limite fora de 1..$LIMITE_MAX s: $LIMITE"
 [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] || recusa "portão fechado: sem PRIMEIRA_PALAVRA_AUTORIZADA=1 (o 'autorizo' do Breno que nomeia a janela)"
-[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a RTX 5090; a RTX 5090 e a 4090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
+[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a RTX 5090; a 3080 Ti e a 4090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
 [ -x "$BIN_BASE" ] && [ -x "$BIN_CAND" ] || recusa "binário não executável: $BIN_BASE ou $BIN_CAND"
-[ -x "$LIMITE_SH" ] && [ -x "$LASTRO_SH" ] && [ -x "$MONITOR" ] || recusa "faltam roda-com-limite.sh, roda-f2e-lastro.sh ou roda-f2e-monitor.sh executáveis"
+[ -x "$LIMITE_SH" ] && [ -x "$LASTRO_SH" ] && [ -x "$MONITOR" ] || recusa "faltam roda-com-limite-f2e.sh, roda-f2e-lastro.sh ou roda-f2e-monitor.sh executáveis"
 [ -f "$EXTRAI" ] && [ -f "$PERFIL_EXTRAI" ] && [ -f "$INSTR_EXTRAI" ] && [ -f "$F2_EXTRAI" ] && [ -f "$F2B_EXTRAI" ] && [ -f "$F2E_EXTRAI" ] || recusa "faltam f2e-cmp-extrai.py, f2e-perfil-extrai.py, f2e-instrumento-extrai.py, f2e-f2-extrai.py, f2e-f2b-extrai.py ou f2e-extrai.py"
 [ -f "$CRIT_F2E" ] || recusa "falta o critério da F2E: $CRIT_F2E"
 for d in "$SAIDA"; do
@@ -497,7 +502,7 @@ coleta() {
   } > "$2" 2>&1 || true
 }
 EXTRA_INT=(); [ $COLETA = 0 ] || EXTRA_INT+=(--coleta); [ $TESTE_GPU = 0 ] || EXTRA_INT+=(--teste-gpu --worktree-cand "$WT_CAND"); [ -z "$COLETA_DIR" ] || EXTRA_INT+=(--coleta-dir "$COLETA_DIR")
-PASSA=("CUDA_VISIBLE_DEVICES=$UUID" PRIMEIRA_PALAVRA_AUTORIZADA=1)
+PASSA=("CUDA_VISIBLE_DEVICES=$UUID" PRIMEIRA_PALAVRA_AUTORIZADA=1 "F2E_PROC_ENVELOPE_SHA=${F2E_PROC_ENVELOPE_SHA:-ausente}")
 for v in MODELO_1B MODELO_3B TEXTOS_5C REF_5C IDS_CMP CRITERIO_F2E PLANO_O3 DECISAO_F2E F2B_EXTRAI_PY F2E_EXTRAI_PY CRITERIO_CMP CRITERIO_D1 CRITERIO_D2 SEM_SHA_FIXO CMP_MODO_TESTE NVIDIA_SMI PROC_STAT CMP_CPU_JANELA CMP_CPU_ESPERA LASTRO_SH_CMP EXTRAI_PY PERFIL_EXTRAI_PY INSTR_EXTRAI_PY F2_EXTRAI_PY \
          CMP_RELOGIO_ARQ CMP_FOLGA CMP_SEM_MEMORIA MONITOR_SH ESPERA_PRONTO LOADAVG_ARQ PROC_LISTA F2E_TETO_FORCADO F2E_CARGO_TESTE LASTRO_PERFIL_BLOCO LASTRO_PERFIL_F2 LASTRO_PERFIL_F2B LASTRO_GANCHO_LOGITS $(compgen -v | grep -E '^CMP_(EST|FAKE)_' || true); do
   [ -z "${!v+x}" ] || PASSA+=("$v=${!v}")

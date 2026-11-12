@@ -544,6 +544,16 @@ def relatorio(res):
     return "\n".join(o) + "\n"
 
 
+def procedencia_clone(saida):
+    """Procedência da execução, gravada pelo roteiro em ambiente.txt: commit do clone, árvore limpa, sha do roteiro e do envelope janela-gpu-strata. Ausente = None."""
+    amb = X.le_chave_valor(os.path.join(saida, "ambiente.txt")) or {}
+    return {k: amb.get(k) for k in ("clone_commit", "clone_arvore_limpa", "roteiro_sha", "envelope_sha")}
+
+
+def linha_procedencia(p):
+    return "Procedência da execução: clone no commit %s (árvore limpa: %s); roteiro sha256 %s; envelope janela-gpu-strata sha256 %s\n" % (p.get("clone_commit") or "n/d", p.get("clone_arvore_limpa") or "n/d", p.get("roteiro_sha") or "n/d", p.get("envelope_sha") or "n/d")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="extrator da F2E (plano de cópias)")
     ap.add_argument("--saida")
@@ -572,10 +582,11 @@ def main(argv=None):
         tg = {"executado": rc_txt is not None, "rc": rc_t, "passou": rc_t == 0 and proc_ok, "procedencia_completa": proc_ok, "commit_worktree": man.get("teste_gpu_commit"), "sha_executavel": man.get("teste_gpu_exe_sha"), "sha_executavel_reforma": man.get("teste_gpu_exe_sha_reforma"), "sha_executavel_o3": man.get("teste_gpu_exe_sha_o3")}
         h["par_aplicavel"] = {"base": man.get("binario_original"), "candidato": man.get("binario_candidato")}
         with open(os.path.join(a.saida, "f2e-coleta-resultado.json"), "w", encoding="utf-8") as fo:
-            json.dump({"tipo": "f2e-coleta-resultado", "modelo": m, "HC1b": h, "teste_gpu": tg}, fo, ensure_ascii=False, indent=1)
+            json.dump({"tipo": "f2e-coleta-resultado", "modelo": m, "HC1b": h, "teste_gpu": tg, "procedencia_clone": procedencia_clone(a.saida)}, fo, ensure_ascii=False, indent=1)
         with open(os.path.join(a.saida, "f2e-coleta-resultado.md"), "w", encoding="utf-8") as fo:
             fo.write("# F2E, coleta HC1b, modelo %s\n\nHC1b: **%s** (vale só para o par: base %s, candidato %s)\n\nTeste de erro em GPU: %s\n\n%s\n" % (m.upper(), h["classe"], (man.get("binario_original") or "?")[:12], (man.get("binario_candidato") or "?")[:12],
                 "não executado" if not tg["executado"] else ("passou" if tg["passou"] else ("rc 0, procedência incompleta (commit do worktree e shas dos três executáveis não gravados)" if tg["rc"] == 0 else "FALHOU (rc %s)" % tg["rc"])), "\n".join("- " + x for x in (h.get("problemas") or []) + (h.get("divergencias") or [])) or "sem divergência nem problema de cobertura/procedência"))
+            fo.write("\n" + linha_procedencia(procedencia_clone(a.saida)))
         print("f2e-extrai: HC1b %s; gravados f2e-coleta-resultado.json e f2e-coleta-resultado.md" % h["classe"])
         return 0
     try:
@@ -587,11 +598,12 @@ def main(argv=None):
         with open(os.path.join(a.saida, "f2e-resultado.md"), "w", encoding="utf-8") as fo:
             fo.write("# F2E: RECUSADO\n\n%s\n\nNenhuma classificação foi feita; os dados brutos ficam na pasta.\n" % ex)
         return 2
+    res["procedencia_clone"] = procedencia_clone(a.saida)
     X.limpa_nao_finitos(res)
     with open(os.path.join(a.saida, "f2e-resultado.json"), "w", encoding="utf-8") as fo:
         json.dump(res, fo, ensure_ascii=False, indent=1, allow_nan=False)
     with open(os.path.join(a.saida, "f2e-resultado.md"), "w", encoding="utf-8") as fo:
-        fo.write(relatorio(res))
+        fo.write(relatorio(res) + "\n" + linha_procedencia(res["procedencia_clone"]))
     print("f2e-extrai: regressão %s; gravados f2e-resultado.json e f2e-resultado.md" % (", ".join(res["regressao"]) or "nenhuma"))
     return 0
 
