@@ -1,0 +1,62 @@
+# Pacote das execuções da F2E (plano da O3 na RTX 5090): coletas e janelas, 12/11/2026
+
+## O que é
+A medição da O3 (o gemv de V e o RoPE de K gravam direto na linha `cur` do cache K/V, sem as duas cópias device-para-device) na RTX 5090 de outro computador, chamado aqui de "maquina 5090". Série NOVA só da 5090, sem comparar com a 3080 Ti; a prova de bits e o teste de erro em GPU da 3080 Ti não valem aqui e se refazem na 5090 antes da medição (decisão do Breno de 12/11, relatada em `decisao-f2e-5090-20261112.txt`). Mesma estrutura da F2D (`criterio-f2d-20261112.md`, `pacote-janela-f2d-20261112.md`): braços D_O1 (C0), D_O3 (C1) e B2_O3 (C1), quadrado latino 3x3, HC1 a HC6, limites +1,5% no prefill e +2% no decode, efeito distinguível só abaixo de -1%. Critério: `criterio-f2e-20261112.md`; plano v2: `plano-o3-cache-direto-20261112.md`.
+
+Tudo roda NA maquina 5090, por ssh, a partir do clone do repositório em `~/lastro-rust` (a fonte; o clone local só edita e commita). Nada de nome ou endereço da máquina em arquivo versionado ou resultado publicado.
+
+## Máquina e portões
+- GPU: RTX 5090, UUID `GPU-00005090-0000-0000-0000-000000005090`; `CUDA_VISIBLE_DEVICES` tem de ser esse UUID. Limite de potência 600.00 W lido do `nvidia-smi` no preflight e ao fim (valor vigente em 12/11; outro valor recusa). 28 núcleos.
+- Sem voxtype. A GPU é ocupada pelo `strata.service` (unidade de usuário, cerca de 30 GB): o Strata é parado e religado SÓ pelo `~/janela-gpu-strata.sh --teto SEG -- <comando>` (para, confirma GPU livre, roda, religa no EXIT, log em `~/lastro-janelas`). Os dois scripts de abertura entregam a execução a ele; o roteiro não mexe em serviço nenhum.
+- Portão de CPU abaixo de 10% (janela de 3 s em `/proc/stat`, espera de até 20 s) medido na própria máquina antes de cada célula; célula que não passa é SEM PROVA, sem repetição.
+- Cutile/JIT: a placa é consultada no driver em tempo de execução (sm_120); os binários não têm alvo fixado na compilação. O script de abertura exporta `CUDA_TOOLKIT_PATH=/usr/local/cuda` e o `bin` dele no `PATH` para o `tileiras`, e `~/.cargo/env` para o `cargo` do teste de GPU.
+- Teto de 1200 s por janela e modelo; teto de processo 60 s (1B) e 90 s (3B). O controle (9 processos) cabe inteiro ou os nove viram NÃO RODOU; sem repetição automática.
+
+## Fonte e binários congelados
+- Commit base C0: `7c25e1d126c0e36219e5f325131eb38040a645c3`. Commit candidato C1: `1fa8abb77fef9359391fc9bc323602512984094e` (código da O3 em `6f7d049`; mesmo candidato da F2D).
+- Binário base (D_O1): sha256 `54c0979a1b91f3afa4a0119bc403f3bff3880d4236f7a8d2ddc6604c79c44ae4`, em `~/lastro-f2e/binarios/primeira-palavra-f2e-base-54c0979a`.
+- Binário candidato (D_O3 e B2_O3): sha256 `d38a951d81c4144114d5c306c30093ec938551479d841f91ef65c2beed07f21f`, em `~/lastro-f2e/binarios/primeira-palavra-f2e-cand-d38a951d`.
+- Construídos na maquina 5090, em worktrees fora do repositório e fora do /tmp (`~/lastro-f2e/wt-c0` e `wt-c1`), alvo de compilação próprio (`target-f2e` de cada worktree), `--release --bin primeira-palavra`, `CUDA_VISIBLE_DEVICES` vazio, sem rodar nada na GPU; cópias modo 555.
+- Executáveis dos testes de GPU, `--no-run` em `~/lastro-f2e/wt-c1/target-f2e/release/deps/`: `motor_reforma_gpu-0273f9e3452a9799` (sha `0200af2e...`), `motor_passo_gpu-9aca5be16f40dc68` (sha `a105095e...`), `o3_kernels_gpu-b2483507a5044105` (sha `18ab08b3...`).
+- Scripts novos (cópias derivadas, com UUID e potência da 5090): cadeia de extratores `f2e-cmp-extrai.py`, `f2e-perfil-extrai.py`, `f2e-instrumento-extrai.py`, `f2e-f2-extrai.py`, `f2e-f2b-extrai.py`, `f2e-extrai.py`; `roda-f2e-lastro.sh`, `roda-f2e-monitor.sh`, `roda-f2e-janela.sh`. Os da F2C e da F2D ficam intocados. Todos no FIXO de `roda-f2e-janela.sh` (shas conferidos), exceto o próprio roteiro (autorreferente; o verificador o imprime à parte).
+
+## FIXO
+`bash ~/lastro-rust/qual-runs/A2-LOTE-20261103/roda-f2e-janela.sh --verifica-fixos` (rodado na maquina 5090, sem GPU, só lê): código 0, todos OK, também para os modelos em `~/models` (mesmos shas dos usados antes). Conferido de novo no modo real, antes de qualquer processo ou GPU.
+
+## Ordem das execuções
+1. Coleta de bits (HC1b) e teste de erro em GPU, 1B e depois 3B (`abre-f2e-coleta.sh`), uma chamada do `janela-gpu-strata.sh`.
+2. Medição 1B e depois 3B (`abre-f2e-medicao.sh`), outra chamada.
+A medição recusa abrir (código 2, sem tocar no Strata) se a coleta de algum modelo não tiver HC1b `dentro` e o teste de GPU passado com procedência completa.
+
+### Comando da coleta (1B+3B, com `motor_reforma_gpu`, `motor_passo_gpu` e `o3_kernels_gpu`)
+Pré-requisito já cumprido: worktree `~/lastro-f2e/wt-c1` no commit candidato, limpo, com os três testes compilados. Rodar desprendido da sessão ssh, porque dura até uns 45 min contando o Strata parar e voltar:
+```
+ssh <maquina 5090> 'cd ~/lastro-rust/qual-runs/A2-LOTE-20261103 && nohup bash abre-f2e-coleta.sh ~/lastro-f2e/wt-c1 > ~/lastro-f2e/coleta.out 2>&1 &'
+```
+O script confere FIXOS, logs livres e os três executáveis ANTES de tocar na GPU, e chama `~/janela-gpu-strata.sh --teto 2700 -- bash abre-f2e-coleta.sh --interno <wt> <carimbo>`. Saídas: `qual-runs/A2-LOTE-20261103/s5090-f2e-coleta-{1b,3b}-real-<carimbo>/` (com `f2e-coleta-resultado.json` e `.md`) e o `.log` ao lado; o carimbo aparece em `~/lastro-f2e/coleta.out`.
+
+### Comando da medição (1B e 3B)
+Com as pastas das coletas aprovadas (as duas do carimbo acima):
+```
+ssh <maquina 5090> 'cd ~/lastro-rust/qual-runs/A2-LOTE-20261103 && nohup bash abre-f2e-medicao.sh $PWD/s5090-f2e-coleta-1b-real-<carimbo> $PWD/s5090-f2e-coleta-3b-real-<carimbo> > ~/lastro-f2e/medicao.out 2>&1 &'
+```
+Chama `~/janela-gpu-strata.sh --teto 2700 -- bash abre-f2e-medicao.sh --interno ...`; roda 1B e 3B com `roda-f2e-janela.sh --modelos <m> --saida s5090-f2e-<m>-real-<carimbo> --coleta-dir <coleta do mesmo modelo>`, de modo que o `f2e-resultado` de cada modelo já sai com o HC1b. Erro no 1B impede o 3B e conserva o código.
+
+## Levar os resultados para o repositório local
+Só os resultados, sem os arquivos da máquina (`ambiente.txt`, `carga-*.txt`, logs, células):
+```
+scp <maquina 5090>:lastro-rust/qual-runs/A2-LOTE-20261103/s5090-f2e-<m>-real-<carimbo>/f2e-resultado.{md,json} qual-runs/A2-LOTE-20261103/s5090-f2e-<m>-real-<carimbo>/
+scp <maquina 5090>:lastro-rust/qual-runs/A2-LOTE-20261103/s5090-f2e-coleta-<m>-real-<carimbo>/f2e-coleta-resultado.{md,json} qual-runs/A2-LOTE-20261103/s5090-f2e-coleta-<m>-real-<carimbo>/
+```
+Antes de commitar, conferir com `grep -il "GPU-\|maquina\|brenoperucchi\|ssh" ` nos quatro arquivos de cada modelo que nenhum traz UUID, nome ou endereço.
+
+## O que cada resultado significa
+- HC1b dentro e teste de GPU passou nos dois modelos: a O3 é bit a bit igual à base na 5090 (logits, KV, ids), o caminho de erro deixa o motor utilizável e igual bit a bit, e a medição pode abrir.
+- HC1b REGRESSÃO (qualquer bit diferente) ou teste de GPU falhou: a O3 não passa na 5090; o passo que causou se desiste (decisão 5 do Breno), sem afrouxar o critério.
+- HC1b SEM PROVA: nada se conclui; a coleta se repete antes de medir.
+- Medição, por métrica (prefill e passo de decode), referência D_O1 da mesma janela: "efeito distinguível" (razão abaixo de -1% e as 3 medianas de D_O3 todas abaixo das 3 de D_O1), "sem efeito distinguível" (qualquer outro caso fora da regressão; nulo não é falha do plano), "REGRESSÃO" (acima de +1,5% no prefill ou +2% no decode, HC6 SEM PROVA, erro de processo), "sem dado" ou SEM PROVA (controle incompleto, portão de CPU, integridade quebrada). HC2a e HC2b são descritivas.
+- A série é da 5090 e não se compara com os números da 3080 Ti.
+- Ids gerados são comparados com as referências 5c (HC1); se a 5090 divergir delas em qualquer id, é regressão do critério, não ajuste de referência.
+
+## Testes sem GPU (rodados na maquina 5090, `TMPDIR` em `~/.cache/lastro-testes`)
+`test-f2e-extrai.py`, `test-f2e-f2b-extrai.py`, `test-f2e-extrai-e2e.py`, `test-roda-f2e-janela.sh`, `cargo test --release --lib` filtrado (`perfil_bloco`, `cache_direto`, `leitura_tests`, `gancho_coleta`, `reforma`, `geracao_regra`, alvo de compilação `~/lastro-f2e/target-lib`).
