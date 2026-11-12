@@ -13,12 +13,12 @@ Uma janela por modelo (1B primeiro, depois 3B, nunca as duas juntas), de até 12
 - Extratores: `f2b-extrai-v3.py` sha `2bcd8761...`, `f2d-extrai.py` sha `098963c9...`; critério `criterio-f2d-20261112.md` sha `9f595163...`; plano sha `e4edd1d0...`; decisão sha `12082796...`. Todos no FIXO de `roda-f2d-janela.sh`. O `f2b-extrai-v2.py` e o `f2c-extrai.py` da F2C ficam intocados.
 
 ## FIXO
-Conferido por `roda-f2d-janela.sh --verifica-fixos` (sem GPU, só lê; código 0 só se todos OK; resultado no momento do congelamento: código 0, todos OK) e de novo no modo real, antes de envelope, monitor, timers ou GPU, sem pipe que mascare o código. O sha do próprio `roda-f2d-janela.sh` não pode estar nele: o verificador o imprime à parte (informativo) e `decisao.txt` o registra. Sha do roteiro no congelamento: `ee3d55cbe52c9b42abc5f59b7c4fb7a87b713ef88ee305b5dad104036fc89672`.
+Conferido por `roda-f2d-janela.sh --verifica-fixos` (sem GPU, só lê; código 0 só se todos OK; resultado no momento do congelamento: código 0, todos OK) e de novo no modo real, antes de envelope, monitor, timers ou GPU, sem pipe que mascare o código. O sha do próprio `roda-f2d-janela.sh` não pode estar nele: o verificador o imprime à parte (informativo) e `decisao.txt` o registra. Sha do roteiro no congelamento: `fb46b8b4ba084b5b13f28a855a1074e26b457d8f228dd44b73976291886ae37f`.
 
 ## Ordem das execuções
 1. Coleta 1B e depois coleta 3B, com o teste de erro em GPU nos dois modelos (`abre-f2d-coleta-20261112.sh`).
 2. Janela de medida 1B e depois 3B (`abre-f2d-20261112.sh`).
-Sem a coleta, a condição de saída bit a bit fica SEM PROVA. A medição só deve abrir depois de a coleta dar HC1b dentro e o teste de GPU passar nos dois modelos; se algum kernel não der os mesmos bits, a janela de medida não se abre para esse passo (ver "Regra de desistir").
+Sem a coleta, a condição de saída bit a bit fica SEM PROVA. A medição só abre depois de a coleta dar HC1b dentro e o teste de GPU passar nos dois modelos, e o script de abertura da medição confere isso mecanicamente; se algum kernel não der os mesmos bits, a janela de medida não se abre para esse passo (ver "Regra de desistir").
 
 ## Execução de coleta (`abre-f2d-coleta-20261112.sh <worktree-cand>`)
 Execução própria, fora da janela de medida (não mede desempenho), com os mesmos portões. Usa `roda-f2d-janela.sh --modelos <m> --saida <pasta> --coleta --teste-gpu --worktree-cand <wt>`: dois processos por modelo (base e candidato), mesmas entradas, `--repete 3`, só `LASTRO_GANCHO_LOGITS=1`, que grava o hash dos logits e do KV por camada (HC1b). Nos DOIS modelos roda também o teste de erro em GPU: `cargo test --release --test motor_reforma_gpu --test motor_passo_gpu --test o3_kernels_gpu -- --ignored --nocapture` com `E4B_GPU_AUTORIZADO=1` (o roteiro define a variável; teto 300 s), com `TMPDIR` numa pasta própria dentro de `target-f2d` do worktree (fora do /tmp, criada por `mktemp -d`, removida ao fim só pelo caminho literal, registrada no manifesto como `teste_gpu_tmpdir`). Grava `teste-gpu.txt`, o rc, o commit e os shas dos três executáveis. O `--worktree-cand` é canonicalizado com `realpath`, recusado se estiver sob /tmp, e só vale se o HEAD é o commit candidato do critério e a árvore está limpa (exceto `target-f2d`).
@@ -36,7 +36,11 @@ bash /home/brenoperucchi/Devs/lastro-rust/.herdr/abre-f2d-coleta-20261112.sh /ho
 O script confere que os três executáveis existem ANTES de parar o voxtype; sem eles, recusa com código 2.
 
 ## Janela de medida (`abre-f2d-20261112.sh`)
-Comando: `bash /home/brenoperucchi/Devs/lastro-rust/.herdr/abre-f2d-20261112.sh`.
+Comando, com a pasta de saída da coleta aprovada de cada modelo (as `s3080-f2d-coleta-1b-real-<T>` e `s3080-f2d-coleta-3b-real-<T>` que a coleta acabou de gravar em `qual-runs/A2-LOTE-20261103/`):
+```
+bash /home/brenoperucchi/Devs/lastro-rust/.herdr/abre-f2d-20261112.sh <pasta-da-coleta-1b> <pasta-da-coleta-3b>
+```
+O script recusa com código 2, ANTES de parar o voxtype, se a pasta não existir, se o `f2d-coleta-resultado.json` não for do mesmo modelo, se o HC1b não for `dentro` ou se o teste de erro em GPU não tiver executado, passado e com procedência completa. Passa então a pasta do MESMO modelo ao roteiro (`--coleta-dir`), que a encaminha ao extrator (`--coleta`): o `f2d-resultado.json` e `.md` de cada modelo saem já com a junção do HC1b (o extrator ainda confere, além disso, que o par de binários e as entradas da coleta são os da janela; coleta de outro modelo ou de outro par continua SEM PROVA). Conferir os arquivos finais: `grep HC1b qual-runs/A2-LOTE-20261103/s3080-f2d-<m>-real-<T>/f2d-resultado.md` tem de mostrar HC1b `dentro` e não "pasta da coleta não fornecida".
 - Por modelo, 9 processos no texto médio, série L100, `--repete 3` (1 aquecimento e 3 medidas), em quadrado latino 3x3: D_O1 D_O3 B2_O3, B2_O3 D_O1 D_O3, D_O3 B2_O3 D_O1.
 - Braços: D_O1 = binário base, nada ligado; D_O3 = binário candidato, nada ligado; B2_O3 = candidato com `LASTRO_PERFIL_BLOCO`, `LASTRO_PERFIL_F2` e `LASTRO_PERFIL_F2B` ligados (instrumento v3, 15 registros por posição, sem B_DTOD). As variáveis só valem por processo; no ambiente de quem chama o roteiro recusa (código 2).
 - Teto de processo 60 s (1B) e 90 s (3B); teto global 1200 s por janela e modelo. O controle cabe inteiro ou os nove viram NÃO RODOU; sem repetição automática. Sem smoke, curto ou longo.
@@ -57,7 +61,7 @@ As quatro execuções nomeadas (coleta de bits nos dois modelos com o teste de e
 - HC2a e HC2b são descritivas (tabela por camada do H_PRE_LAYER, B_LANCA).
 
 ## Regra de desistir do passo
-A O3 tem dois passos (K e depois V) com uma só janela de medida ao fim. Sem tolerância de bits (decisão 5 do Breno): se um kernel novo não der os mesmos bits do cache (HC1b com bit diferente, ou o `o3_kernels_gpu` falhando), desiste-se daquele passo e se reporta, sem afrouxar o critério e sem medir a versão com o passo defeituoso. O passo que o causou é identificado pelo teste isolado `o3_kernels_gpu` (K e V são conferidos em separado) e pela ordem K, V do commit.
+A O3 tem dois passos (K e depois V) com uma só janela de medida ao fim. Sem tolerância de bits (decisão 5 do Breno): se um kernel novo não der os mesmos bits do cache (HC1b com bit diferente, ou o `o3_kernels_gpu` falhando), desiste-se daquele passo e se reporta, sem afrouxar o critério e sem medir a versão com o passo defeituoso. O passo que o causou se identifica pela coleta, que grava o hash do KV por camada e por lado (K e V separados) e dos logits, e pela ordem K, V do commit; o teste isolado `o3_kernels_gpu` ajuda a localizar, mas a atribuição por lado vem da coleta.
 
 ## O que cada janela grava
 - Medida: `decisao.txt`, `ordem.txt`, `prova-variavel.txt`, `plano.txt`, `orcamento.json`, `teto-excedido.txt` (sempre criado; vazio se nenhum teto estourou), `integridade-antes.txt` e `integridade-depois.txt`, `celulas/ctrl-<modelo>-L100-medio-<NN>-<DO1|DO3|B2O3>`, mais `.carga-antes/depois.txt`, `.aviso.txt` e o `.log` ao lado, e os resultados do extrator (`f2d-extrai.out`, `f2d-resultado.json` e `.md`).

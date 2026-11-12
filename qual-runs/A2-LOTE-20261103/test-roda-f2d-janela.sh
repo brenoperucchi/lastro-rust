@@ -5,7 +5,10 @@ unset E4B_GPU_AUTORIZADO E4B_MEDIDA_AUTORIZADA MOE_RT_REQUIRE_GPU PRIMEIRA_PALAV
 export CUDA_VISIBLE_DEVICES=
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
 J=$AQUI/roda-f2d-janela.sh
-D=$(mktemp -d -p "${TMPDIR:-/tmp}" f2d-janela-teste.XXXXXX) || exit 1
+# TMPDIR fora do /tmp (regra do Breno): vazio ou sob /tmp vira ~/.cache/lastro-testes (o padrão dos testes deste projeto), nunca /tmp.
+TMPBASE=${TMPDIR:-}; case "$TMPBASE" in ""|/tmp|/tmp/*) TMPBASE=$HOME/.cache/lastro-testes;; esac
+mkdir -p "$TMPBASE" || { echo "não foi possível criar $TMPBASE"; exit 2; }; export TMPDIR=$TMPBASE
+D=$(mktemp -d -p "$TMPBASE" f2d-janela-teste.XXXXXX) || exit 1
 echo "pasta de teste: $D (apagada ao fim se tudo passar; --guarda mantém)"
 falhas=0
 confere() { if eval "$2"; then echo "ok: $1"; else echo "FALHOU: $1"; falhas=$((falhas+1)); fi; }
@@ -115,6 +118,16 @@ confere "A: DO1 e DO3 sem NENHUMA variável do instrumento mesmo com as quatro n
 confere "A: prova-variavel.txt com 9 linhas, nenhuma INCOERENTE, sha do binário do braço registrado" "[ \$(wc -l < $D/si-A/prova-variavel.txt) = 9 ] && ! grep -q INCOERENTE $D/si-A/prova-variavel.txt && [ \$(grep -c \"braco=DO1 bin=\$(sha256sum $D/pp-base | cut -d' ' -f1) \" $D/si-A/prova-variavel.txt) = 3 ] && [ \$(grep -c \"braco=B2O3 bin=\$(sha256sum $D/pp-cand | cut -d' ' -f1) \" $D/si-A/prova-variavel.txt) = 3 ]"
 confere "A: sem corte, nada NÃO RODOU, sem smoke/curto/longo (nenhuma célula fora dos 9), potência OK, extrator chamado (resultado gravado)" "grep -q '\"cortes\": \[\]' $D/si-A/orcamento.json && grep -q '\"nao_rodou\": \[\]' $D/si-A/orcamento.json && grep -q '^potencia 370.00_W 370.00_W OK' $D/si-A/integridade-fixos.txt && [ -s $D/si-A/f2d-resultado.json ] && [ \$(ls $D/si-A/celulas | wc -l) = 9 ] && ! grep -q 'smoke\|curto-quente\|longo-quente' $D/log-A"
 confere "A: ambiente.txt traz os dois shas dos binários e o de contexto; plano.txt declara teto médio 60 s (1B)" "grep -q '^binario_base=' $D/si-A/ambiente.txt && grep -q '^binario_cand=' $D/si-A/ambiente.txt && grep -q 'médio 60 s; teto global 1200 s' $D/si-A/plano.txt"
+# --coleta-dir (junção do HC1b na janela de medida): o roteiro encaminha a pasta ao extrator (--coleta); sem a opção o HC1b fica "pasta da coleta não fornecida"
+confere "A: sem --coleta-dir, o resultado diz que a pasta da coleta não foi fornecida (comportamento que o abre-f2d deixa de usar)" "grep -q 'pasta da coleta não fornecida' $D/si-A/f2d-resultado.json"
+mkdir -p "$D/colvazia"
+echo 0 > "$D/clock"; : > "$D/log-C"
+PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID CMP_RELOGIO_ARQ=$D/clock CMP_FAKE_RELOGIO=$D/clock CMP_FAKE_LOG=$D/log-C "$J" --interno --modelos 1b --saida "$D/si-C" --bin-base "$D/pp-base" --bin-cand "$D/pp-cand" --limite 1200 --coleta-dir "$D/colvazia" > "$D/outi-C" 2>&1; RC=$?
+confere "C: com --coleta-dir o extrator recebe a pasta da coleta: o resultado deixa de dizer 'não fornecida' e aponta a coleta (vazia) como sem prova" "[ $RC = 0 ] && ! grep -q 'pasta da coleta não fornecida' $D/si-C/f2d-resultado.json && grep -q 'SEM PROVA' $D/si-C/f2d-resultado.json"
+PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID "$J" --modelos 1b --saida "$D/si-C2" --coleta --coleta-dir "$D/colvazia" > "$D/outi-C2" 2>&1; RC=$?
+confere "C2: --coleta-dir junto de --coleta: recusa 2, pasta de saída não criada" "[ $RC = 2 ] && grep -q 'só existe na janela de medida' $D/outi-C2 && [ ! -e $D/si-C2 ]"
+PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID "$J" --modelos 1b --saida "$D/si-C3" --coleta-dir "$D/nao-existe" > "$D/outi-C3" 2>&1; RC=$?
+confere "C3: --coleta-dir que não é pasta: recusa 2, pasta de saída não criada" "[ $RC = 2 ] && grep -q 'não é uma pasta' $D/outi-C3 && [ ! -e $D/si-C3 ]"
 interno A3 1200 3b
 confere "A3 (3B): plano com teto médio 90 s; 9 processos" "grep -q 'médio 90 s; teto global 1200 s' $D/si-A3/plano.txt && [ \$(nproc A3) = 9 ]"
 # teto 1200 s: o bloco de 9 tetos + folga tem de caber no limite pedido; senão nenhum processo roda

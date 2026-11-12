@@ -58,8 +58,8 @@ FOLGA=${CMP_FOLGA:-180}
 LIMITE_MAX=1200
 # quadrado latino 3x3: DO1 = D_O1, DO3 = D_O3, B2O3 = B2_O3
 ORDEM_CTRL=(DO1 DO3 B2O3 B2O3 DO1 DO3 DO3 B2O3 DO1)
-SAIDA=; ESTADO=; LIMITE=$LIMITE_MAX; INTERNO=0; MODELOS=; VERIFICA=0; COLETA=0; TESTE_GPU=0; T_TMP_GPU=; WT_CAND=
-usa() { echo "uso: roda-f2d-janela.sh --modelos 1b|3b --saida DIR [--estado-janela DIR] [--bin-base BIN] [--bin-cand BIN] [--limite S] [--coleta [--teste-gpu --worktree-cand DIR]] | --verifica-fixos" >&2; }
+SAIDA=; ESTADO=; LIMITE=$LIMITE_MAX; INTERNO=0; MODELOS=; VERIFICA=0; COLETA=0; TESTE_GPU=0; T_TMP_GPU=; WT_CAND=; COLETA_DIR=
+usa() { echo "uso: roda-f2d-janela.sh --modelos 1b|3b --saida DIR [--estado-janela DIR] [--coleta-dir DIR (medição: coleta do mesmo modelo, para o HC1b no resultado)] [--bin-base BIN] [--bin-cand BIN] [--limite S] [--coleta [--teste-gpu --worktree-cand DIR]] | --verifica-fixos" >&2; }
 recusa() { echo "roda-f2d-janela: $*" >&2; exit 2; }
 # Potência: le_pot lê só o power.limit da 3080 Ti (vazio se a leitura falhar); 370.00 W no preflight (senão recusa 2) e de novo ao fim (senão integridade QUEBRADA)
 POT_OK="370.00 W"
@@ -77,6 +77,7 @@ while [ $# -gt 0 ]; do
     --interno) INTERNO=1; shift;;
     --coleta) COLETA=1; shift;;
     --teste-gpu) TESTE_GPU=1; shift;;
+    --coleta-dir) [ $# -ge 2 ] || { usa; exit 2; }; COLETA_DIR=$2; shift 2;;
     --worktree-cand) [ $# -ge 2 ] || { usa; exit 2; }; WT_CAND=$2; shift 2;;
     *) usa; exit 2;;
   esac
@@ -230,6 +231,8 @@ case $MODELOS in
 esac
 [ -n "$SAIDA" ] || { usa; exit 2; }
 [ $TESTE_GPU = 0 ] || [ $COLETA = 1 ] || recusa "--teste-gpu só existe junto de --coleta"
+[ -z "$COLETA_DIR" ] || [ $COLETA = 0 ] || recusa "--coleta-dir só existe na janela de medida (sem --coleta)"
+[ -z "$COLETA_DIR" ] || [ -d "$COLETA_DIR" ] || recusa "--coleta-dir '$COLETA_DIR' não é uma pasta"
 [ $TESTE_GPU = 0 ] || [ -n "$WT_CAND" ] || recusa "--teste-gpu exige --worktree-cand DIR (worktree do commit candidato, já compilado com CARGO_TARGET_DIR=DIR/target-f2d)"
 # --worktree-cand canonicalizado com realpath (inode real, sem symlink nem `..`) e recusado já aqui, antes de qualquer mktemp, timer ou GPU, se ficar sob /tmp (testes fora do /tmp).
 if [ $TESTE_GPU = 1 ]; then
@@ -427,7 +430,7 @@ if [ $INTERNO = 1 ]; then
   if [ $COLETA = 1 ]; then
     python3 -I "$F2D_EXTRAI" --coleta-so --saida "$SAIDA" --ids "$IDS" --refs "$REFS" > "$SAIDA/f2d-extrai.out" 2>&1; RC_EXT=$?
   else
-    python3 -I "$F2D_EXTRAI" --saida "$SAIDA" --ids "$IDS" --refs "$REFS" --textos "$TEXTOS/textos.json" > "$SAIDA/f2d-extrai.out" 2>&1; RC_EXT=$?
+    python3 -I "$F2D_EXTRAI" --saida "$SAIDA" --ids "$IDS" --refs "$REFS" --textos "$TEXTOS/textos.json" ${COLETA_DIR:+--coleta "$COLETA_DIR"} > "$SAIDA/f2d-extrai.out" 2>&1; RC_EXT=$?
   fi
   if NINC=$(grep -c ' INCOERENTE$' "$SAIDA/prova-variavel.txt" 2> /dev/null); then :; else
     # grep -c sai 1 com 0 ocorrências (contagem válida); sai 2 se o arquivo não pôde ser lido (então o número é desconhecido)
@@ -502,7 +505,7 @@ coleta() {
     echo "binário base $(sha "$BIN_BASE") candidato $(sha "$BIN_CAND")"
   } > "$2" 2>&1 || true
 }
-EXTRA_INT=(); [ $COLETA = 0 ] || EXTRA_INT+=(--coleta); [ $TESTE_GPU = 0 ] || EXTRA_INT+=(--teste-gpu --worktree-cand "$WT_CAND")
+EXTRA_INT=(); [ $COLETA = 0 ] || EXTRA_INT+=(--coleta); [ $TESTE_GPU = 0 ] || EXTRA_INT+=(--teste-gpu --worktree-cand "$WT_CAND"); [ -z "$COLETA_DIR" ] || EXTRA_INT+=(--coleta-dir "$COLETA_DIR")
 PASSA=("CUDA_VISIBLE_DEVICES=$UUID" PRIMEIRA_PALAVRA_AUTORIZADA=1)
 for v in MODELO_1B MODELO_3B TEXTOS_5C REF_5C IDS_CMP CRITERIO_F2D PLANO_O3 DECISAO_O3 F2B_EXTRAI_PY F2D_EXTRAI_PY CRITERIO_CMP CRITERIO_D1 CRITERIO_D2 SEM_SHA_FIXO CMP_MODO_TESTE NVIDIA_SMI PROC_STAT CMP_CPU_JANELA CMP_CPU_ESPERA LASTRO_SH_CMP EXTRAI_PY PERFIL_EXTRAI_PY INSTR_EXTRAI_PY F2_EXTRAI_PY \
          CMP_RELOGIO_ARQ CMP_FOLGA CMP_SEM_MEMORIA MONITOR_SH ESPERA_PRONTO LOADAVG_ARQ PROC_LISTA F2D_TETO_FORCADO F2D_CARGO_TESTE LASTRO_PERFIL_BLOCO LASTRO_PERFIL_F2 LASTRO_PERFIL_F2B LASTRO_GANCHO_LOGITS $(compgen -v | grep -E '^CMP_(EST|FAKE)_' || true); do
