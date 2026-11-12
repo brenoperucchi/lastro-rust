@@ -58,7 +58,7 @@ FOLGA=${CMP_FOLGA:-180}
 LIMITE_MAX=1200
 # quadrado latino 3x3: DO1 = D_O1, DO3 = D_O3, B2O3 = B2_O3
 ORDEM_CTRL=(DO1 DO3 B2O3 B2O3 DO1 DO3 DO3 B2O3 DO1)
-SAIDA=; ESTADO=; LIMITE=$LIMITE_MAX; INTERNO=0; MODELOS=; VERIFICA=0; COLETA=0; TESTE_GPU=0; WT_CAND=
+SAIDA=; ESTADO=; LIMITE=$LIMITE_MAX; INTERNO=0; MODELOS=; VERIFICA=0; COLETA=0; TESTE_GPU=0; T_TMP_GPU=; WT_CAND=
 usa() { echo "uso: roda-f2d-janela.sh --modelos 1b|3b --saida DIR [--estado-janela DIR] [--bin-base BIN] [--bin-cand BIN] [--limite S] [--coleta [--teste-gpu --worktree-cand DIR]] | --verifica-fixos" >&2; }
 recusa() { echo "roda-f2d-janela: $*" >&2; exit 2; }
 # Potência: le_pot lê só o power.limit da 3080 Ti (vazio se a leitura falhar); 370.00 W no preflight (senão recusa 2) e de novo ao fim (senão integridade QUEBRADA)
@@ -348,11 +348,22 @@ if [ $INTERNO = 1 ]; then
     done
     if [ $TESTE_GPU = 1 ] && [ $ABORTA = 0 ]; then
       SEQ=$((SEQ + 1))
-      if [ -n "${F2D_CARGO_TESTE:-}" ]; then
-        timeout -k 5 "$TETO_TESTE_GPU" env E4B_GPU_AUTORIZADO=1 "$F2D_CARGO_TESTE" > "$SAIDA/teste-gpu.txt" 2>&1; rc_t=$?
+      # TMPDIR do teste de GPU fora do /tmp (regra do Breno: testes fora do /tmp): pasta própria dentro do alvo `target-f2d` do worktree candidato (ignorado pelo git
+      # e fora da conferência de árvore limpa), criada por mktemp e removida ao fim só pelo caminho literal que o mktemp imprimiu (nunca reatribuído nem montado).
+      mkdir -p "$WT_CAND/target-f2d" 2> /dev/null
+      T_TMP_GPU=$(mktemp -d "$WT_CAND/target-f2d/tmp-teste-gpu.XXXXXX" 2> /dev/null)
+      case "$T_TMP_GPU" in
+        /tmp/*|"") T_TMP_GPU_OK=0;;
+        *) T_TMP_GPU_OK=1;;
+      esac
+      if [ $T_TMP_GPU_OK = 0 ]; then
+        echo "não foi possível criar o TMPDIR do teste de GPU fora do /tmp em $WT_CAND/target-f2d" > "$SAIDA/teste-gpu.txt"; rc_t=2
+      elif [ -n "${F2D_CARGO_TESTE:-}" ]; then
+        TMPDIR=$T_TMP_GPU timeout -k 5 "$TETO_TESTE_GPU" env E4B_GPU_AUTORIZADO=1 "$F2D_CARGO_TESTE" > "$SAIDA/teste-gpu.txt" 2>&1; rc_t=$?
       else
-        ( cd "$WT_CAND/rust/moe-rt" && CARGO_TARGET_DIR="$WT_CAND/target-f2d" timeout -k 5 "$TETO_TESTE_GPU" env E4B_GPU_AUTORIZADO=1 cargo test --release --test motor_reforma_gpu --test motor_passo_gpu --test o3_kernels_gpu -- --ignored --nocapture ) > "$SAIDA/teste-gpu.txt" 2>&1; rc_t=$?
+        ( cd "$WT_CAND/rust/moe-rt" && TMPDIR=$T_TMP_GPU CARGO_TARGET_DIR="$WT_CAND/target-f2d" timeout -k 5 "$TETO_TESTE_GPU" env E4B_GPU_AUTORIZADO=1 cargo test --release --test motor_reforma_gpu --test motor_passo_gpu --test o3_kernels_gpu -- --ignored --nocapture ) > "$SAIDA/teste-gpu.txt" 2>&1; rc_t=$?
       fi
+      [ $T_TMP_GPU_OK = 0 ] || rm -rf -- "$T_TMP_GPU"
       echo "$rc_t" > "$SAIDA/teste-gpu.rc"
       printf '%02d teste-gpu papel=erro-em-gpu rc=%s\n' "$SEQ" "$rc_t" >> "$SAIDA/ordem.txt"
       [ "$rc_t" = 0 ] || nr "teste de erro em GPU falhou (rc $rc_t): ver teste-gpu.txt"
@@ -363,6 +374,7 @@ if [ $INTERNO = 1 ]; then
       echo "gancho_original_sha=$(sha "$SAIDA/gancho-original/gancho-logits-$MODELOS.json")"; echo "gancho_candidato_sha=$(sha "$SAIDA/gancho-candidato/gancho-logits-$MODELOS.json")"
       if [ $TESTE_GPU = 1 ]; then
         echo "teste_gpu_commit=$(git -C "$WT_CAND" rev-parse HEAD 2> /dev/null)"
+        echo "teste_gpu_tmpdir=${T_TMP_GPU:-}"
         echo "teste_gpu_exe_sha=$(sha "$(ls -t "$WT_CAND"/target-f2d/release/deps/motor_passo_gpu-* 2> /dev/null | grep -v '\.d$' | head -n 1)")"
         echo "teste_gpu_exe_sha_reforma=$(sha "$(ls -t "$WT_CAND"/target-f2d/release/deps/motor_reforma_gpu-* 2> /dev/null | grep -v '\.d$' | head -n 1)")"
         echo "teste_gpu_exe_sha_o3=$(sha "$(ls -t "$WT_CAND"/target-f2d/release/deps/o3_kernels_gpu-* 2> /dev/null | grep -v '\.d$' | head -n 1)")"
