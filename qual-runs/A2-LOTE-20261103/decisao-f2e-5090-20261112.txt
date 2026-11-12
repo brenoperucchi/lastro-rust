@@ -1,0 +1,9 @@
+Decisão do Breno de 12/11/2026, relatada pelo coordenador (mensagens diretas dele; este arquivo é o registro versionado, sem nome nem endereço da máquina):
+
+1. A repetição da medição da O3 na RTX 3080 Ti foi CANCELADA.
+2. A medição da O3 passa para a RTX 5090 de outro computador, chamado aqui de "maquina 5090". É uma série NOVA, só da 5090, sem comparar com a 3080 Ti. A prova de bits (HC1b) e o teste de erro em GPU feitos na 3080 Ti não valem na 5090 e se refazem lá, ANTES da medição.
+3. O Breno autorizou o acesso por ssh ao computador (usuário normal; root só para pacote que falte, avisando qual).
+4. A GPU da maquina 5090 é ocupada pelo strata.service (unidade de usuário, cerca de 30 GB): nunca parar o Strata por outro caminho; usar sempre ~/janela-gpu-strata.sh [--teto SEG] -- <comando>, que para o Strata, confirma a GPU livre, roda o comando e religa no EXIT. Não há voxtype nessa máquina.
+5. GPU: UUID GPU-00005090-0000-0000-0000-000000005090, limite de potência lido do nvidia-smi (600 W em 12/11), 28 núcleos, carga baixa. Modelos em ~/models/granite-3.1-{1b-a400m,3b-a800m}-instruct, CUDA em /usr/local/cuda, Rust via ~/.cargo/env.
+6. Tudo o mais do plano da O3 e do critério da F2D continua (braços D_O1/D_O3/B2_O3, quadrado latino 3x3, HC1 a HC6, limites +1,5% prefill e +2% decode, efeito distinguível só abaixo de -1%, teto de 1200 s por janela e modelo, revisão nível 2, sem push).
+7. Nada com nome ou endereço da máquina em arquivo versionado ou resultado publicado: só o rótulo "maquina 5090". Resultados voltam ao repositório local só como f2e-*-resultado.{md,json}.
