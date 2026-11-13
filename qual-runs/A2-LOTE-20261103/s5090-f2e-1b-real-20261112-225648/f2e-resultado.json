@@ -1,0 +1,195 @@
+{
+ "tipo": "f2e-resultado",
+ "contrato_b": 3,
+ "criterio": "criterio-f2e-20261112.md",
+ "modelo_da_janela": "1b",
+ "layers": 24,
+ "integridade_problemas": [],
+ "referencia_problemas": [],
+ "bloqueios": [],
+ "motivos_controle": [],
+ "ordem_efetiva": "confere com ordem.txt (quadrado latino, rc 0, n 3)",
+ "processos": [
+  {
+   "nn": 1,
+   "braco": "DO1",
+   "pasta": "ctrl-1b-L100-medio-01-DO1",
+   "valido": true,
+   "prefill_ms_mediana": 311.876045,
+   "passo_ms_mediana": 2.578599
+  },
+  {
+   "nn": 2,
+   "braco": "DO3",
+   "pasta": "ctrl-1b-L100-medio-02-DO3",
+   "valido": true,
+   "prefill_ms_mediana": 312.281889,
+   "passo_ms_mediana": 2.5666550000000004
+  },
+  {
+   "nn": 3,
+   "braco": "B2O3",
+   "pasta": "ctrl-1b-L100-medio-03-B2O3",
+   "valido": true,
+   "prefill_ms_mediana": 312.508128,
+   "passo_ms_mediana": 2.566235
+  },
+  {
+   "nn": 4,
+   "braco": "B2O3",
+   "pasta": "ctrl-1b-L100-medio-04-B2O3",
+   "valido": true,
+   "prefill_ms_mediana": 312.417308,
+   "passo_ms_mediana": 2.562974
+  },
+  {
+   "nn": 5,
+   "braco": "DO1",
+   "pasta": "ctrl-1b-L100-medio-05-DO1",
+   "valido": true,
+   "prefill_ms_mediana": 311.99010599999997,
+   "passo_ms_mediana": 2.576863
+  },
+  {
+   "nn": 6,
+   "braco": "DO3",
+   "pasta": "ctrl-1b-L100-medio-06-DO3",
+   "valido": true,
+   "prefill_ms_mediana": 312.39442099999997,
+   "passo_ms_mediana": 2.569136
+  },
+  {
+   "nn": 7,
+   "braco": "DO3",
+   "pasta": "ctrl-1b-L100-medio-07-DO3",
+   "valido": true,
+   "prefill_ms_mediana": 312.264726,
+   "passo_ms_mediana": 2.570001
+  },
+  {
+   "nn": 8,
+   "braco": "B2O3",
+   "pasta": "ctrl-1b-L100-medio-08-B2O3",
+   "valido": true,
+   "prefill_ms_mediana": 312.417871,
+   "passo_ms_mediana": 2.561922
+  },
+  {
+   "nn": 9,
+   "braco": "DO1",
+   "pasta": "ctrl-1b-L100-medio-09-DO1",
+   "valido": true,
+   "prefill_ms_mediana": 311.875861,
+   "passo_ms_mediana": 2.5782130000000003
+  }
+ ],
+ "prefill_ms_mediana_por_braco": {
+  "DO1": 311.876045,
+  "DO3": 312.281889,
+  "B2O3": 312.417871
+ },
+ "passo_ms_mediana_por_braco": {
+  "DO1": 2.5782130000000003,
+  "DO3": 2.569136,
+  "B2O3": 2.562974
+ },
+ "comparacao": {
+  "razao_prefill_novo_sobre_velho": 0.001301299046549076,
+  "razao_decode_novo_sobre_velho": -0.003520655585865229,
+  "razao_prefill_b2_sobre_dnovo": 0.0004354463220248572,
+  "razao_decode_b2_sobre_dnovo": -0.002398471704105898,
+  "HC3": "dentro do limite",
+  "HC4": "dentro do limite",
+  "HC6": "comprovada",
+  "regressao": [],
+  "efeito_prefill": {
+   "classe": "sem efeito distinguível",
+   "motivo": "razão +0.13% dentro de -1% e do limite de regressão"
+  },
+  "efeito_decode": {
+   "classe": "sem efeito distinguível",
+   "motivo": "razão -0.35% dentro de -1% e do limite de regressão"
+  }
+ },
+ "HC1": "dentro",
+ "HC1b": {
+  "classe": "dentro",
+  "divergencias": [],
+  "problemas": [],
+  "arquivos_sha": {
+   "original": "15ab89d4cce2a07ca7e1b666267f16c79f8c8261e24d6be981d6bb1a67419718",
+   "candidato": "15ab89d4cce2a07ca7e1b666267f16c79f8c8261e24d6be981d6bb1a67419718"
+  },
+  "binarios": {
+   "original": "7008b62b31dc2cf32f35e97d72e5f6923dc823d78fddc52a0d275d7cce4970dd",
+   "candidato": "1e809fd925c3fa8a9b36d25b8ec95a49aba24d858e205e17601290519c879bd7"
+  },
+  "par_aplicavel": {
+   "base": "7008b62b31dc2cf32f35e97d72e5f6923dc823d78fddc52a0d275d7cce4970dd",
+   "candidato": "1e809fd925c3fa8a9b36d25b8ec95a49aba24d858e205e17601290519c879bd7"
+  }
+ },
+ "HC2a": "descritivo",
+ "HC2b": {
+  "soma_antes_do_degrau_ns": 2044264.0,
+  "soma_patamar_ns": 5060997.5,
+  "camadas_antes": 12,
+  "camada_transicao": 12,
+  "camadas_patamar_de": 13,
+  "b_lanca_parcela": 0.9518945898259679,
+  "b_dtod_parcela": 0.0,
+  "b_lanca_mais_b_dtod_parcela": 0.9518945898259679
+ },
+ "HC5": "ressalva",
+ "h_pre_layer_mediana_camada_ns_b2_o3": [
+  178654.0,
+  169100.5,
+  169371.0,
+  170884.5,
+  167940.5,
+  171166.5,
+  169010.5,
+  169520.0,
+  171051.0,
+  168013.0,
+  171111.0,
+  168441.5,
+  200613.5,
+  462733.0,
+  461671.5,
+  461026.5,
+  457374.0,
+  460718.5,
+  459240.0,
+  458987.5,
+  459416.5,
+  457637.5,
+  460545.0,
+  461647.5
+ ],
+ "ids_iguais_entre_braços": true,
+ "divergencias_5c": [],
+ "regressao": [],
+ "orcamento": {
+  "modelos": [
+   "1b"
+  ],
+  "limite_s": 1200,
+  "folga_s": 180,
+  "decorrido_s": 129,
+  "cortes": [],
+  "reps": {
+   "controle": 3
+  },
+  "cortado": false,
+  "nao_rodou": [],
+  "estimativas_sao_tetos_de_processo": true
+ },
+ "teto_excedido": [],
+ "procedencia_clone": {
+  "clone_commit": "0a7d121d261521c66e5a08bf25097ef29c05d08f",
+  "clone_arvore_limpa": "sim",
+  "roteiro_sha": "cbc1456f597a9d7a5c3940d0011b4697e2fda189ea919a3ebd0a44e720793acd",
+  "envelope_sha": "3e85f052327e20b78c0897f3b9bad46d358c87d8d788dd186a8502eb6e5a96d4"
+ }
+}

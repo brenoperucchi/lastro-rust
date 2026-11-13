@@ -1,0 +1,37 @@
+{
+ "tipo": "f2e-coleta-resultado",
+ "modelo": "3b",
+ "HC1b": {
+  "classe": "dentro",
+  "divergencias": [],
+  "problemas": [],
+  "arquivos_sha": {
+   "original": "aa8ccf409bfe21840256269cd1f9aea0290a9c4eb6667266d07634aaf854500a",
+   "candidato": "aa8ccf409bfe21840256269cd1f9aea0290a9c4eb6667266d07634aaf854500a"
+  },
+  "binarios": {
+   "original": "7008b62b31dc2cf32f35e97d72e5f6923dc823d78fddc52a0d275d7cce4970dd",
+   "candidato": "1e809fd925c3fa8a9b36d25b8ec95a49aba24d858e205e17601290519c879bd7"
+  },
+  "par_aplicavel": {
+   "base": "7008b62b31dc2cf32f35e97d72e5f6923dc823d78fddc52a0d275d7cce4970dd",
+   "candidato": "1e809fd925c3fa8a9b36d25b8ec95a49aba24d858e205e17601290519c879bd7"
+  }
+ },
+ "teste_gpu": {
+  "executado": true,
+  "rc": 0,
+  "passou": true,
+  "procedencia_completa": true,
+  "commit_worktree": "d7d87e70343f461acd8ceb4a6619190030c60377",
+  "sha_executavel": "5d528aabda00fa0838f0c6be052a3d1d00b463fdf8f1ca85c37206ae61db7385",
+  "sha_executavel_reforma": "a2b814d2a59da2d11b877934067c7fa2e620ca8b6bf2a1d6a1669f0cda8d91bb",
+  "sha_executavel_o3": "3bfde503472f179969cb78e16c8567298ec41f60282c2977453f4154c6e7bea5"
+ },
+ "procedencia_clone": {
+  "clone_commit": "0a7d121d261521c66e5a08bf25097ef29c05d08f",
+  "clone_arvore_limpa": "sim",
+  "roteiro_sha": "cbc1456f597a9d7a5c3940d0011b4697e2fda189ea919a3ebd0a44e720793acd",
+  "envelope_sha": "3e85f052327e20b78c0897f3b9bad46d358c87d8d788dd186a8502eb6e5a96d4"
+ }
+}
