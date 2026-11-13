@@ -1,5 +1,7 @@
 # Funções comuns dos scripts de abertura da F2E (lidas por source), rodam NA maquina 5090. Sem GPU aqui.
 AQ=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+# Congelamento PENDENTE: enquanto o critério não disser COMPLETO (par C0/C1 novo, com a trava de GPU por lista, compilado e congelado), nada abre (nada é tocado).
+grep -qx 'Estado do congelamento: COMPLETO' "$AQ/criterio-f2e-20261112.md" 2> /dev/null || { echo "congelamento PENDENTE: o critério não traz 'Estado do congelamento: COMPLETO' (os binários C0/C1 atuais não têm a trava de GPU por lista): recusado (nada foi tocado)"; exit 2; }
 GPU_ARQ=$(realpath -m -- "${F2E_GPU_ARQ:-$AQ/gpu-local.uuids}")   # UUID da GPU desta execução: arquivo LOCAL fora do git (um UUID por linha); nos resultados vai só o rótulo gpu_5090
 UUID=$(grep -m1 -E '^GPU-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' "$GPU_ARQ" 2> /dev/null) || UUID=
 [ -n "$UUID" ] || { echo "sem UUID da GPU local (arquivo $GPU_ARQ ausente ou sem um UUID válido): recusado (nada foi tocado)"; exit 2; }
@@ -28,6 +30,9 @@ if [ "${F2E_MODO_TESTE:-0}" != 1 ]; then
 fi
 ENV_OBS=$(sha256sum "$JANELA_GPU" | cut -d' ' -f1)
 [ "$ENV_OBS" = "$ENVELOPE_SHA_REVISADO" ] || { echo "janela-gpu-strata.sh ($JANELA_GPU) com sha $ENV_OBS, o revisado é $ENVELOPE_SHA_REVISADO: recusado (nada foi tocado)"; exit 2; }
+SHA_GPU_5090=88269ef39d73981809645a172b26d68c98ae0470e0a38c8fb1fed4772d17e1f2   # sha256 do UUID aprovado (rótulo gpu_5090); o UUID em si fica só no arquivo local
+[ "${F2E_MODO_TESTE:-0}" != 1 ] || SHA_GPU_5090=${F2E_SHA_GPU_ESPERADO:-$SHA_GPU_5090}   # só em teste
+[ "$(printf %s "$UUID" | sha256sum | cut -d' ' -f1)" = "$SHA_GPU_5090" ] || { echo "o UUID de $GPU_ARQ não é o aprovado (sha256 diferente do da gpu_5090): recusado (nada foi tocado)"; exit 2; }
 export F2E_PROC_ENVELOPE_SHA=$(sha256sum "$JANELA_GPU" | cut -d' ' -f1)
 # Coleta aprovada do modelo M em DIR (pasta absoluta): f2e-coleta-resultado.json do MESMO modelo com HC1b "dentro" e o teste de erro em GPU executado, passou, com procedência completa.
 confere_coleta() {

@@ -31,6 +31,9 @@ set -u
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
 GPU_ARQ=$(realpath -m -- "${F2E_GPU_ARQ:-$AQUI/gpu-local.uuids}")   # UUID da GPU desta execução: arquivo LOCAL fora do git (um UUID por linha); nos resultados vai só o rótulo gpu_5090
 UUID=$(grep -m1 -E '^GPU-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' "$GPU_ARQ" 2> /dev/null) || UUID=
+SHA_GPU_5090=88269ef39d73981809645a172b26d68c98ae0470e0a38c8fb1fed4772d17e1f2   # sha256 do UUID aprovado (rótulo gpu_5090; 128 bits aleatórios, sem recuperação prática do valor); o UUID em si fica só no arquivo local
+if [ "${CMP_MODO_TESTE:-0}" = 1 ] || [ "${F2E_MODO_TESTE:-0}" = 1 ]; then SHA_GPU_5090=${F2E_SHA_GPU_ESPERADO:-$SHA_GPU_5090}; fi
+if [ -n "$UUID" ] && [ "$(printf %s "$UUID" | sha256sum | cut -d' ' -f1)" != "$SHA_GPU_5090" ]; then UUID=; fi
 BIN=$AQUI/../../rust/moe-rt/target/release/primeira-palavra
 MONITOR=${MONITOR_SH:-$AQUI/roda-f2e-monitor.sh}
 M1=${MODELO_1B:-$HOME/models/granite-3.1-1b-a400m-instruct}

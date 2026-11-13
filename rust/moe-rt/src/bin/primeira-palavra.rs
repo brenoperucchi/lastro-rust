@@ -1750,25 +1750,44 @@ mod tests {
     #[test]
     fn trava_aceita_so_a_lista_explicita_de_uuids() {
         // UUID sintético (nunca o de uma máquina real): vive só neste teste
-        let extra = "GPU-12345678-1234-1234-1234-123456789abc".to_string();
+        let s = "GPU-12345678-1234-1234-1234-123456789abc";
+        let extra = s.to_string();
         let lista = vec![extra.clone()];
+        let h = moe_rt::lastro_cli::sha256_hex(s).unwrap();
+        let aprov: [&str; 1] = [h.as_str()];
+        let nenhum: [&str; 0] = [];
+        assert_eq!(h.len(), 64);
         // sem lista local só a 3080 Ti passa
-        assert!(exige_uuid_com(Some(UUID_3080TI), &[]).is_ok());
-        assert!(exige_uuid_com(Some(&extra), &[]).is_err(), "sem a lista local o UUID extra não passa");
-        // com a lista, a 3080 Ti e o extra passam; fora da lista, vazio, 0, None e lista "a,b" não
-        assert!(exige_uuid_com(Some(UUID_3080TI), &lista).is_ok() && exige_uuid_com(Some(&extra), &lista).is_ok());
-        for v in [None, Some(""), Some("0"), Some("GPU-00000000-0000-0000-0000-000000000000"), Some("GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd")] {
-            assert!(exige_uuid_com(v, &lista).is_err(), "{v:?}");
+        assert!(exige_uuid_com(Some(UUID_3080TI), &[], &aprov).is_ok());
+        assert!(exige_uuid_com(Some(s), &[], &aprov).is_err(), "sem a lista local o UUID extra não passa");
+        // o extra passa SÓ se está no arquivo E o hash dele está na lista injetada; sem hash correspondente, recusado
+        assert!(exige_uuid_com(Some(s), &lista, &aprov).is_ok());
+        assert!(exige_uuid_com(Some(s), &lista, &nenhum).is_err(), "UUID no arquivo mas hash não aprovado");
+        assert!(exige_uuid_com(Some(s), &lista, &["0000000000000000000000000000000000000000000000000000000000000000"]).is_err(), "hash errado");
+        assert!(exige_uuid_com(Some(UUID_3080TI), &lista, &nenhum).is_ok(), "a 3080 Ti é constante, não depende da lista");
+        // outro UUID válido no arquivo (a 4090 antiga, por exemplo) não passa sem hash aprovado
+        let outra = "GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd".to_string();
+        assert!(exige_uuid_com(Some(&outra), &[outra.clone()], &aprov).is_err());
+        // vazio, 0, None, UUID fora do arquivo: recusados
+        for v in [None, Some(""), Some("0"), Some("GPU-00000000-0000-0000-0000-000000000000")] {
+            assert!(exige_uuid_com(v, &lista, &aprov).is_err(), "{v:?}");
         }
-        assert!(exige_uuid_com(Some(&format!("{UUID_3080TI},{extra}")), &lista).is_err(), "lista a,b recusada");
-        assert!(exige_uuid_com(Some(&format!("{extra},{extra}")), &lista).is_err(), "lista a,b recusada");
-        // a mensagem de recusa nunca imprime o UUID da lista local
-        let msg = exige_uuid_com(Some("GPU-00000000-0000-0000-0000-000000000000"), &lista).unwrap_err();
-        assert!(!msg.contains(&extra) && msg.contains("CUDA_VISIBLE_DEVICES"), "{msg}");
+        // composições e variações do valor: recusa e mensagem SEM o UUID extra (nem o valor bruto)
+        for v in [format!("{UUID_3080TI},{s}"), format!("{s},{UUID_3080TI}"), format!("{s},{s}"), format!(" {s}"), format!("{s} "), format!("{s}\n"), format!("{s} {s}")] {
+            let e = exige_uuid_com(Some(&v), &lista, &aprov).unwrap_err();
+            assert!(!e.contains(s), "a mensagem vazou o UUID extra para {v:?}: {e}");
+            assert!(e.contains("CUDA_VISIBLE_DEVICES") && e.contains("comprimento"), "{e}");
+        }
+        // o valor bruto também não aparece quando o UUID só está fora da lista
+        let e = exige_uuid_com(Some("GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), &lista, &aprov).unwrap_err();
+        assert!(!e.contains("aaaaaaaa-aaaa") && e.contains("fora da lista aprovada"), "{e}");
         // a lista local é validada: linha inválida recusa, sem eco do conteúdo
         assert_eq!(moe_rt::lastro_cli::parse_uuids_extra(&format!("# gpu_5090\n\n{extra}\n")).unwrap(), lista);
         let e = moe_rt::lastro_cli::parse_uuids_extra("nao-e-uuid\n").unwrap_err();
         assert!(e.contains("linha 1") && !e.contains("nao-e-uuid"), "{e}");
+        // a lista versionada tem o hash da gpu_5090 (hexadecimal de 64) e nada mais
+        assert_eq!(moe_rt::lastro_cli::SHAS_UUIDS_APROVADOS, &[moe_rt::lastro_cli::SHA_UUID_GPU_5090]);
+        assert!(moe_rt::lastro_cli::SHA_UUID_GPU_5090.len() == 64 && moe_rt::lastro_cli::SHA_UUID_GPU_5090.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
     }
 
     fn v(s: &[&str]) -> Vec<String> {

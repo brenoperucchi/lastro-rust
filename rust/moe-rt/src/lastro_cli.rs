@@ -150,7 +150,7 @@ pub fn exige_autorizacao(valor: Option<&str>) -> Result<(), String> {
 }
 
 /// Variável com o caminho de um arquivo LOCAL (fora do git) com UUIDs extras aceitos, um por linha (`GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`;
-/// linhas vazias e comentários com `#` são ignorados). Sem a variável, só a 3080 Ti passa. Os UUIDs do arquivo nunca entram em commit nem em mensagem.
+/// linhas vazias e comentários com `#` são ignorados). Sem a variável, só a 3080 Ti passa. Um UUID do arquivo só vale se o sha256 dele estiver em `SHAS_UUIDS_APROVADOS`. Os UUIDs do arquivo nunca entram em commit nem em mensagem.
 pub const VAR_UUIDS_EXTRA: &str = "LASTRO_UUIDS_EXTRA_ARQ";
 
 /// Formato `GPU-` + 8-4-4-4-12 hexadecimais minúsculos.
@@ -188,22 +188,77 @@ pub fn le_uuids_extra(caminho: Option<&str>) -> Result<Vec<String>, String> {
     }
 }
 
-/// Função ÚNICA da trava: `CUDA_VISIBLE_DEVICES` tem de ser UM único UUID, igual ao da 3080 Ti ou a um da lista `extras`. Lista "a,b", vazio,
-/// `0` ou qualquer UUID fora da lista são recusados. A mensagem nunca imprime UUID da lista local.
-pub fn exige_uuid_com(valor: Option<&str>, extras: &[String]) -> Result<(), String> {
+/// sha256 (hexadecimal minúsculo) do UUID da RTX 5090 aprovada, rótulo `gpu_5090`. O UUID em si NÃO está no código nem em commit; ele vive só num arquivo local fora
+/// do git. O UUID tem 128 bits aleatórios, então o hash não permite recuperar o valor na prática. Acrescentar outra GPU exige commit e revisão (nova entrada aqui).
+pub const SHA_UUID_GPU_5090: &str = "88269ef39d73981809645a172b26d68c98ae0470e0a38c8fb1fed4772d17e1f2";
+/// Lista versionada de hashes aprovados (além da 3080 Ti, que é a constante `UUID_3080TI`).
+pub const SHAS_UUIDS_APROVADOS: &[&str] = &[SHA_UUID_GPU_5090];
+
+/// sha256 de um texto, pelo subprocesso `sha256sum` com o texto no stdin (mesmo caminho de `sha256sum` do `primeira-palavra`; evita nova dependência). Falha = Err (a trava fica fechada).
+pub fn sha256_hex(texto: &str) -> Result<String, String> {
+    use std::io::Write;
+    let mut filho = std::process::Command::new("sha256sum")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("sha256sum: {}", e.kind()))?;
+    filho.stdin.take().ok_or("sha256sum sem stdin")?.write_all(texto.as_bytes()).map_err(|e| format!("sha256sum: {}", e.kind()))?;
+    let o = filho.wait_with_output().map_err(|e| format!("sha256sum: {}", e.kind()))?;
+    if !o.status.success() {
+        return Err("sha256sum falhou".to_string());
+    }
+    let h = String::from_utf8_lossy(&o.stdout).split_whitespace().next().unwrap_or("").to_string();
+    if h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) { Ok(h) } else { Err("sha256sum com saída ilegível".to_string()) }
+}
+
+/// Categoria do valor recusado, SEM o valor (nem pedaço dele): só a classe do erro e o comprimento.
+fn categoria_recusa(valor: Option<&str>) -> String {
     match valor {
-        Some(v) if v == UUID_3080TI || (uuid_valido(v) && extras.iter().any(|e| e == v)) => Ok(()),
-        outro => Err(format!("CUDA_VISIBLE_DEVICES tem de ser um único UUID da lista combinada (a 3080 Ti {UUID_3080TI} ou uma GPU da lista local {VAR_UUIDS_EXTRA}); veio {outro:?}")),
+        None => "ausente".to_string(),
+        Some("") => "vazio".to_string(),
+        Some(v) => {
+            let cat = if v.contains(',') || v.chars().any(char::is_whitespace) {
+                "mais de um device ou texto extra"
+            } else if !uuid_valido(v) {
+                "formato inválido"
+            } else {
+                "UUID fora da lista aprovada"
+            };
+            format!("{cat}, comprimento {}", v.chars().count())
+        }
     }
 }
 
-/// A trava com a lista local lida do ambiente. A 3080 Ti passa sem tocar no arquivo; qualquer outro valor lê a lista (arquivo ilegível ou inválido = recusa).
+/// Função ÚNICA da trava: `CUDA_VISIBLE_DEVICES` tem de ser UM único UUID: o da 3080 Ti (constante) ou um UUID da lista local `extras` cujo sha256 conste de `shas`
+/// (a lista versionada). Lista "a,b", espaços, vazio, `0`, UUID fora da lista local ou com hash não aprovado são recusados. A mensagem NUNCA imprime o valor recebido
+/// nem UUID da lista local, só a categoria do erro.
+pub fn exige_uuid_com(valor: Option<&str>, extras: &[String], shas: &[&str]) -> Result<(), String> {
+    if let Some(v) = valor {
+        if v == UUID_3080TI {
+            return Ok(());
+        }
+        if uuid_valido(v) && extras.iter().any(|e| e == v) {
+            if let Ok(h) = sha256_hex(v) {
+                if shas.contains(&h.as_str()) {
+                    return Ok(());
+                }
+            }
+        }
+    }
+    Err(format!(
+        "CUDA_VISIBLE_DEVICES recusado ({}): tem de ser um único UUID da lista aprovada (a 3080 Ti {UUID_3080TI}, ou uma GPU aprovada cujo UUID esteja na lista local {VAR_UUIDS_EXTRA} e cujo sha256 conste do código)",
+        categoria_recusa(valor)
+    ))
+}
+
+/// A trava com a lista local lida do ambiente e a lista versionada de hashes. A 3080 Ti passa sem tocar no arquivo; qualquer outro valor lê a lista (arquivo ilegível ou inválido = recusa).
 pub fn exige_uuid(valor: Option<&str>) -> Result<(), String> {
     if valor == Some(UUID_3080TI) {
         return Ok(());
     }
     let extras = le_uuids_extra(std::env::var(VAR_UUIDS_EXTRA).ok().as_deref())?;
-    exige_uuid_com(valor, &extras)
+    exige_uuid_com(valor, &extras, SHAS_UUIDS_APROVADOS)
 }
 
 /// Portão e UUID, só chamados depois de todas as recusas e imediatamente antes de abrir o device.
@@ -378,31 +433,52 @@ mod tests {
     #[test]
     fn trava_aceita_so_a_lista_explicita_de_uuids() {
         // UUID sintético (nunca o de uma máquina real): vive só neste teste
-        let extra = "GPU-12345678-1234-1234-1234-123456789abc".to_string();
+        let s = "GPU-12345678-1234-1234-1234-123456789abc";
+        let extra = s.to_string();
         let lista = vec![extra.clone()];
+        let h = sha256_hex(s).unwrap();
+        let aprov: [&str; 1] = [h.as_str()];
+        let nenhum: [&str; 0] = [];
+        assert_eq!(h.len(), 64);
         // sem lista local só a 3080 Ti passa
-        assert!(exige_uuid_com(Some(UUID_3080TI), &[]).is_ok());
-        assert!(exige_uuid_com(Some(&extra), &[]).is_err(), "sem a lista local o UUID extra não passa");
-        // com a lista, a 3080 Ti e o extra passam; fora da lista, vazio, 0, None e lista "a,b" não
-        assert!(exige_uuid_com(Some(UUID_3080TI), &lista).is_ok() && exige_uuid_com(Some(&extra), &lista).is_ok());
-        for v in [None, Some(""), Some("0"), Some("GPU-00000000-0000-0000-0000-000000000000"), Some("GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd")] {
-            assert!(exige_uuid_com(v, &lista).is_err(), "{v:?}");
+        assert!(exige_uuid_com(Some(UUID_3080TI), &[], &aprov).is_ok());
+        assert!(exige_uuid_com(Some(s), &[], &aprov).is_err(), "sem a lista local o UUID extra não passa");
+        // o extra passa SÓ se está no arquivo E o hash dele está na lista injetada; sem hash correspondente, recusado
+        assert!(exige_uuid_com(Some(s), &lista, &aprov).is_ok());
+        assert!(exige_uuid_com(Some(s), &lista, &nenhum).is_err(), "UUID no arquivo mas hash não aprovado");
+        assert!(exige_uuid_com(Some(s), &lista, &["0000000000000000000000000000000000000000000000000000000000000000"]).is_err(), "hash errado");
+        assert!(exige_uuid_com(Some(UUID_3080TI), &lista, &nenhum).is_ok(), "a 3080 Ti é constante, não depende da lista");
+        // outro UUID válido no arquivo (a 4090 antiga, por exemplo) não passa sem hash aprovado
+        let outra = "GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd".to_string();
+        assert!(exige_uuid_com(Some(&outra), &[outra.clone()], &aprov).is_err());
+        // vazio, 0, None, UUID fora do arquivo: recusados
+        for v in [None, Some(""), Some("0"), Some("GPU-00000000-0000-0000-0000-000000000000")] {
+            assert!(exige_uuid_com(v, &lista, &aprov).is_err(), "{v:?}");
         }
-        assert!(exige_uuid_com(Some(&format!("{UUID_3080TI},{extra}")), &lista).is_err(), "lista a,b recusada");
-        assert!(exige_uuid_com(Some(&format!("{extra},{extra}")), &lista).is_err(), "lista a,b recusada");
-        // a mensagem de recusa nunca imprime o UUID da lista local
-        let msg = exige_uuid_com(Some("GPU-00000000-0000-0000-0000-000000000000"), &lista).unwrap_err();
-        assert!(!msg.contains(&extra) && msg.contains("CUDA_VISIBLE_DEVICES"), "{msg}");
+        // composições e variações do valor: recusa e mensagem SEM o UUID extra (nem o valor bruto)
+        for v in [format!("{UUID_3080TI},{s}"), format!("{s},{UUID_3080TI}"), format!("{s},{s}"), format!(" {s}"), format!("{s} "), format!("{s}\n"), format!("{s} {s}")] {
+            let e = exige_uuid_com(Some(&v), &lista, &aprov).unwrap_err();
+            assert!(!e.contains(s), "a mensagem vazou o UUID extra para {v:?}: {e}");
+            assert!(e.contains("CUDA_VISIBLE_DEVICES") && e.contains("comprimento"), "{e}");
+        }
+        // o valor bruto também não aparece quando o UUID só está fora da lista
+        let e = exige_uuid_com(Some("GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), &lista, &aprov).unwrap_err();
+        assert!(!e.contains("aaaaaaaa-aaaa") && e.contains("fora da lista aprovada"), "{e}");
         // a lista local é validada: linha inválida recusa, sem eco do conteúdo
         assert_eq!(parse_uuids_extra(&format!("# gpu_5090\n\n{extra}\n")).unwrap(), lista);
         let e = parse_uuids_extra("nao-e-uuid\n").unwrap_err();
         assert!(e.contains("linha 1") && !e.contains("nao-e-uuid"), "{e}");
+        // a lista versionada tem o hash da gpu_5090 (hexadecimal de 64) e nada mais
+        assert_eq!(SHAS_UUIDS_APROVADOS, &[SHA_UUID_GPU_5090]);
+        assert!(SHA_UUID_GPU_5090.len() == 64 && SHA_UUID_GPU_5090.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
     }
 
     #[test]
     fn lista_local_por_arquivo_e_fail_closed() {
         let extra = "GPU-12345678-1234-1234-1234-123456789abc";
-        let dir = std::env::temp_dir();
+        // sob target/ do crate (nunca /tmp)
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("testes-uuids");
+        std::fs::create_dir_all(&dir).unwrap();
         let ok = dir.join(format!("lastro-uuids-teste-{}-ok.txt", std::process::id()));
         let ruim = dir.join(format!("lastro-uuids-teste-{}-ruim.txt", std::process::id()));
         std::fs::write(&ok, format!("{extra}\n")).unwrap();

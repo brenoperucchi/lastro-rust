@@ -31,6 +31,9 @@ set -u
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
 GPU_ARQ=$(realpath -m -- "${F2E_GPU_ARQ:-$AQUI/gpu-local.uuids}")   # UUID da GPU desta execução: arquivo LOCAL fora do git (um UUID por linha); nos resultados vai só o rótulo gpu_5090
 UUID=$(grep -m1 -E '^GPU-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' "$GPU_ARQ" 2> /dev/null) || UUID=
+SHA_GPU_5090=88269ef39d73981809645a172b26d68c98ae0470e0a38c8fb1fed4772d17e1f2   # sha256 do UUID aprovado (rótulo gpu_5090; 128 bits aleatórios, sem recuperação prática do valor); o UUID em si fica só no arquivo local
+if [ "${CMP_MODO_TESTE:-0}" = 1 ] || [ "${F2E_MODO_TESTE:-0}" = 1 ]; then SHA_GPU_5090=${F2E_SHA_GPU_ESPERADO:-$SHA_GPU_5090}; fi
+if [ -n "$UUID" ] && [ "$(printf %s "$UUID" | sha256sum | cut -d' ' -f1)" != "$SHA_GPU_5090" ]; then UUID=; fi
 LIMITE_SH=${LIMITE_SH:-$AQUI/roda-com-limite-f2e.sh}
 LASTRO_SH=${LASTRO_SH_CMP:-$AQUI/roda-f2e-lastro.sh}
 MONITOR=${MONITOR_SH:-$AQUI/roda-f2e-monitor.sh}
@@ -86,17 +89,21 @@ if [ "${VERIFICA:-0}" != 1 ] && [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
     case $v in
       LASTRO_PERFIL_BLOCO|LASTRO_PERFIL_F2|LASTRO_PERFIL_F2B|LASTRO_GANCHO_LOGITS|CMP_FRACAO_SLOTS|CMP_CAMADAS_CPU|CRITERIO_F2E|PLANO_O3|DECISAO_F2E|F2B_EXTRAI_PY|F2E_EXTRAI_PY|CRITERIO_D1|CRITERIO_D2|SEM_SHA_FIXO|MONITOR_SH|LASTRO_SH_CMP|EXTRAI_PY|PERFIL_EXTRAI_PY|INSTR_EXTRAI_PY|F2_EXTRAI_PY|CMP_RELOGIO_ARQ|NVIDIA_SMI|MODELO_1B|MODELO_3B|TEXTOS_5C|REF_5C|IDS_CMP|CRITERIO_CMP \
       |PROC_STAT|CMP_CPU_JANELA|CMP_CPU_ESPERA|CMP_FOLGA|CMP_SEM_MEMORIA|ESPERA_PRONTO|LOADAVG_ARQ|SYSTEMCTL|SYSTEMD_RUN|PENDENTE|CGROUP_RAIZ|PROC_LISTA|F2E_TETO_FORCADO|F2E_CARGO_TESTE \
-      |CMP_EST_*|CMP_FAKE_*|JANELA_*|LIMITE_*|F2E_MODO_TESTE|F2E_ENVELOPE_SHA_ESPERADO|F2E_JANELA_GPU)
+      |CMP_EST_*|CMP_FAKE_*|JANELA_*|LIMITE_*|F2E_MODO_TESTE|F2E_ENVELOPE_SHA_ESPERADO|F2E_JANELA_GPU|F2E_SHA_GPU_ESPERADO)
         recusa "variável só de teste presente no modo real: $v (só CMP_MODO_TESTE=1, o modo de teste explícito, a aceita); limpe o ambiente de quem chama";;
     esac
   done
+fi
+# Congelamento PENDENTE: enquanto o critério não disser COMPLETO (par C0/C1 novo, com a trava de GPU por lista, compilado e congelado), nenhuma execução real abre.
+if [ "${VERIFICA:-0}" != 1 ] && [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
+  grep -qx 'Estado do congelamento: COMPLETO' "$CRIT_F2E" 2> /dev/null || recusa "congelamento PENDENTE: o critério não traz 'Estado do congelamento: COMPLETO' (os binários C0/C1 atuais não têm a trava de GPU por lista); nada foi tocado"
 fi
 sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados. O próprio roda-f2e-janela.sh NÃO pode conter o seu sha (nem o critério o do roteiro nem o do extrator): --verifica-fixos imprime o do roteiro e o dos extratores à parte (linhas informativas).
 # PREENCHER_NO_CONGELAMENTO = (nenhum mais; vale para o que ainda não for congelado, como nos testes) ainda não congelado (binários e arquivos que mudam até a aprovação): --verifica-fixos imprime PENDENTE e sai 1, e o modo real recusa; nenhum sha de binário inexistente foi inventado aqui.
 declare -A FIXO=(
-  [criterio-f2e]=d3dfbca1ffa8b6196367acee4fee9d230c6b2f39727ae31716d59d97151788cd
+  [criterio-f2e]=0065a14b8c9c5aa5916d7747d25537d45743114971889772a0be69b368aa63ae
   [plano-o3]=e4edd1d013c4ac56ee0b145527f60f8490a0931e3f1d995ef5172f649795b032
   [decisao-f2e]=2eeb631db2eec392f5265b688c90730a85a69472c131bafec9ec9e8ba774fd87
   [binario-base]=54c0979a1b91f3afa4a0119bc403f3bff3880d4236f7a8d2ddc6604c79c44ae4
@@ -107,8 +114,8 @@ declare -A FIXO=(
   [script-instrumento-extrai]=c0c65a68d1150b77961bb70902360e1a5f8c18a14d3e94634a45afefb57221d5
   [script-perfil-extrai]=0d03c4fdf3939d2eb812d6dd516aad00830f8639a8d25e50765ecbf2fdd47e84
   [script-cmp-extrai]=e706f5d0a2f57a33469c5a72d12ad4657281665a6d151750e2c7f402cbf4ffbb
-  [script-lastro]=de7702c95d108eb139eff59b227fec23ba1ba1c629e643c5024169ce6d5ed181
-  [script-monitor]=7bf507da4892d51fc3d5ce8d4d046d0773a3532af8d7c4ac702745e05c219c2e
+  [script-lastro]=89a53a8af0f55c3b82bc47164b2e591796d7e6960922b82afb78bf220daa3764
+  [script-monitor]=dc45ef2e9c45615607b80f269df85e45c0ced839782fc6bf560b2a389d7232ad
   [script-limite]=7ff702fac093ae342c19795e74036c17829209241e0ceed34dc793c783d07aff
   [criterio-cmp]=8d9d6ad3ff1ef23d417e41982228ec55638823c613b4a2cbf00d813dc1f85b35
   [criterio-degrau1]=8c3406a9fd3ba55133dfb2c2d3800076c6ee0a765735edf8be65f6ba1a72c7de
@@ -497,7 +504,7 @@ fi
 coleta() {
   {
     echo "$1 $(date '+%d/%m %H:%M:%S')"
-    "${NVIDIA_SMI:-nvidia-smi}" --query-gpu=uuid,memory.used,utilization.gpu --format=csv 2>&1 || echo "nvidia-smi indisponível"
+    "${NVIDIA_SMI:-nvidia-smi}" --query-gpu=index,memory.used,utilization.gpu --format=csv 2>&1 || echo "nvidia-smi indisponível"
     "${NVIDIA_SMI:-nvidia-smi}" --query-compute-apps=pid,used_memory,name --format=csv,noheader 2>&1 || true
     echo "loadavg $(cat "${LOADAVG_ARQ:-/proc/loadavg}" 2>&1)"
     echo "binário base $(sha "$BIN_BASE") candidato $(sha "$BIN_CAND")"

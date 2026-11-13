@@ -101,6 +101,7 @@ chmod +x "$D/lastro-falso.sh"
 export NVIDIA_SMI=$D/smi LASTRO_SH_CMP=$D/lastro-falso.sh MODELO_1B=$D/m/1b MODELO_3B=$D/m/3b PROC_LISTA=$D/proc-vazia
 export TEXTOS_5C=$D/textos REF_5C=$D/refs IDS_CMP=$D/ids.json CRITERIO_CMP=$D/crit.md CRITERIO_D1=$D/crit-d1.md CRITERIO_D2=$D/crit-d2.md CRITERIO_F2E=$D/crit-f2e.md PLANO_O3=$D/plano.md DECISAO_O3=$D/decisao.md
 export SEM_SHA_FIXO=1 CMP_SEM_MEMORIA=1 CMP_MODO_TESTE=1
+export F2E_SHA_GPU_ESPERADO=$(printf %s "$UUID" | sha256sum | cut -d' ' -f1)   # UUID sintetico; honrado so com CMP_MODO_TESTE=1
 interno() { # nome limite [modelo=1b] [cand=$D/pp-cand]; define RC; relógio virtual zerado
   local n=$1 lim=$2 mod=${3:-1b} cand=${4:-$D/pp-cand}
   echo 0 > "$D/clock"; : > "$D/log-$n"
