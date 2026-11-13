@@ -1,7 +1,7 @@
 # Pacote das execuções da F2E (plano da O3 na RTX 5090): coletas e janelas, 12/11/2026
 
 
-> **CONGELAMENTO PENDENTE, NÃO ABRIR (13/11).** Os binários C0/C1 abaixo foram feitos antes da trava de GPU por lista de UUIDs e recusam a 5090. Depois da aprovação da trava, C0 e C1 serão refeitos (mesmo patch nos dois, diff C0 a C1 restrito à O3) e os commits, binários, shas, FIXO e comandos abaixo serão atualizados; só então o critério passa a `Estado do congelamento: COMPLETO`. Enquanto estiver PENDENTE, `abre-f2e-coleta.sh`, `abre-f2e-medicao.sh` e o roteiro recusam com código 2 sem tocar em nada. Os comandos de abertura desta página valem só depois do congelamento.
+> **Congelamento completo (12/11).** C0 e C1 foram refeitos com a trava de GPU por lista de UUIDs (mesmo patch nos dois, diff C0 a C1 restrito à O3). O critério diz `Estado do congelamento: COMPLETO`. A janela só abre depois da revisão de nível 2 deste pacote e com o horário avisado ao coordenador, sempre por `~/janela-gpu-strata.sh`.
 >
 > **Pendência de push (decisão do Breno):** o UUID real da 5090 ainda consta de commits locais anteriores (`83ecfe3`, `73bdbac` e seguintes, até o commit da trava de UUID, que o remove do estado atual). O HEAD não o contém (`git grep` vazio). Antes de qualquer push é preciso decidir sobre reescrever esses commits; nada foi reescrito.
 
@@ -21,11 +21,11 @@ Tudo roda NA maquina 5090, por ssh, a partir do clone do repositório em `~/last
 - Teto de 1200 s por janela e modelo; teto de processo 60 s (1B) e 90 s (3B). O controle (9 processos) cabe inteiro ou os nove viram NÃO RODOU; sem repetição automática.
 
 ## Fonte e binários congelados
-- Commit base C0: `7c25e1d126c0e36219e5f325131eb38040a645c3`. Commit candidato C1: `1fa8abb77fef9359391fc9bc323602512984094e` (código da O3 em `6f7d049`; mesmo candidato da F2D).
-- Binário base (D_O1): sha256 `54c0979a1b91f3afa4a0119bc403f3bff3880d4236f7a8d2ddc6604c79c44ae4`, em `~/lastro-f2e/binarios/primeira-palavra-f2e-base-54c0979a`.
-- Binário candidato (D_O3 e B2_O3): sha256 `d38a951d81c4144114d5c306c30093ec938551479d841f91ef65c2beed07f21f`, em `~/lastro-f2e/binarios/primeira-palavra-f2e-cand-d38a951d`.
+- Commit base C0: `3159b4d740f94da263ae47a9fc591490e5fc384c`. Commit candidato C1: `d7d87e70343f461acd8ceb4a6619190030c60377` (código da O3 em `6f7d049`; mesmo candidato da F2D).
+- Binário base (D_O1): sha256 `7008b62b31dc2cf32f35e97d72e5f6923dc823d78fddc52a0d275d7cce4970dd`, em `~/lastro-f2e/binarios/primeira-palavra-f2e-base-7008b62b`.
+- Binário candidato (D_O3 e B2_O3): sha256 `1e809fd925c3fa8a9b36d25b8ec95a49aba24d858e205e17601290519c879bd7`, em `~/lastro-f2e/binarios/primeira-palavra-f2e-cand-1e809fd9`.
 - Construídos na maquina 5090, em worktrees fora do repositório e fora do /tmp (`~/lastro-f2e/wt-c0` e `wt-c1`), alvo de compilação próprio (`target-f2e` de cada worktree), `--release --bin primeira-palavra`, `CUDA_VISIBLE_DEVICES` vazio, sem rodar nada na GPU; cópias modo 555.
-- Executáveis dos testes de GPU, `--no-run` em `~/lastro-f2e/wt-c1/target-f2e/release/deps/`: `motor_reforma_gpu-0273f9e3452a9799` (sha `0200af2e...`), `motor_passo_gpu-9aca5be16f40dc68` (sha `a105095e...`), `o3_kernels_gpu-b2483507a5044105` (sha `18ab08b3...`).
+- Executáveis dos testes de GPU, `--no-run` em `~/lastro-f2e/wt-c1/target-f2e/release/deps/`: `motor_reforma_gpu-0273f9e3452a9799` (sha `a2b814d2...`), `motor_passo_gpu-9aca5be16f40dc68` (sha `5d528aab...`), `o3_kernels_gpu-b2483507a5044105` (sha `3bfde503...`).
 - Scripts novos (cópias derivadas, com UUID e potência da 5090): cadeia de extratores `f2e-cmp-extrai.py`, `f2e-perfil-extrai.py`, `f2e-instrumento-extrai.py`, `f2e-f2-extrai.py`, `f2e-f2b-extrai.py`, `f2e-extrai.py`; `roda-f2e-lastro.sh`, `roda-f2e-monitor.sh`, `roda-com-limite-f2e.sh`, `roda-f2e-janela.sh`. Os da F2C e da F2D ficam intocados. Todos no FIXO de `roda-f2e-janela.sh` (shas conferidos), exceto o próprio roteiro (autorreferente; o verificador o imprime à parte). Sha256 do roteiro nesta versão: `848ad17b9dc052c09a213cbc9223339b89f93a4397a492c87b375f44c793d9fc`.
 
 ## FIXO

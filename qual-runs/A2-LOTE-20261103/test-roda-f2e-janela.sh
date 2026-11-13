@@ -36,7 +36,7 @@ confere "roteiro usa --repete 3" 'grep -q -- "--repete 3" "$J"'
 # ============================================================================================================================================
 # Parte 2: modo --interno com CÉLULA FALSA (relógio virtual, nvidia-smi falso, binários falsos). Nenhuma GPU, nenhuma janela real.
 # O binário candidato falso só delega os subcomandos --planeja-* (CPU pura) ao binário congelado real; o base falso não faz nada.
-PLAN_BIN=$HOME/lastro-f2e/binarios/primeira-palavra-f2e-cand-d38a951d
+PLAN_BIN=$HOME/lastro-f2e/binarios/primeira-palavra-f2e-cand-1e809fd9
 UUID=GPU-12345678-1234-1234-1234-123456789abc
 printf "%s\n" "$UUID" > "$D/gpu-local.uuids"; export F2E_GPU_ARQ="$D/gpu-local.uuids"
 if [ ! -x "$PLAN_BIN" ]; then echo "FALHOU: binário congelado ausente ($PLAN_BIN): preciso dos subcomandos de planejamento"; exit 1; fi

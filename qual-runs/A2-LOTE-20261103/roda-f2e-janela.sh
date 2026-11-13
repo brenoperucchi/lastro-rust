@@ -43,8 +43,8 @@ INSTR_EXTRAI=${INSTR_EXTRAI_PY:-$AQUI/f2e-instrumento-extrai.py}
 F2_EXTRAI=${F2_EXTRAI_PY:-$AQUI/f2e-f2-extrai.py}
 F2B_EXTRAI=${F2B_EXTRAI_PY:-$AQUI/f2e-f2b-extrai.py}
 F2E_EXTRAI=${F2E_EXTRAI_PY:-$AQUI/f2e-extrai.py}
-BIN_BASE=$HOME/lastro-f2e/binarios/primeira-palavra-f2e-base-54c0979a
-BIN_CAND=$HOME/lastro-f2e/binarios/primeira-palavra-f2e-cand-d38a951d
+BIN_BASE=$HOME/lastro-f2e/binarios/primeira-palavra-f2e-base-7008b62b
+BIN_CAND=$HOME/lastro-f2e/binarios/primeira-palavra-f2e-cand-1e809fd9
 M1=${MODELO_1B:-$HOME/models/granite-3.1-1b-a400m-instruct}
 M3=${MODELO_3B:-$HOME/models/granite-3.1-3b-a800m-instruct}
 TEXTOS=${TEXTOS_5C:-$AQUI/5c-textos}
@@ -99,11 +99,11 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 # SHAs congelados. O próprio roda-f2e-janela.sh NÃO pode conter o seu sha (nem o critério o do roteiro nem o do extrator): --verifica-fixos imprime o do roteiro e o dos extratores à parte (linhas informativas).
 # PREENCHER_NO_CONGELAMENTO = (nenhum mais; vale para o que ainda não for congelado, como nos testes) ainda não congelado (binários e arquivos que mudam até a aprovação): --verifica-fixos imprime PENDENTE e sai 1, e o modo real recusa; nenhum sha de binário inexistente foi inventado aqui.
 declare -A FIXO=(
-  [criterio-f2e]=0065a14b8c9c5aa5916d7747d25537d45743114971889772a0be69b368aa63ae
+  [criterio-f2e]=4c512dd7e076b3aafb3432bbe7c5c9315e35e6e6fb0db4e5f2ebee541c3108fd
   [plano-o3]=e4edd1d013c4ac56ee0b145527f60f8490a0931e3f1d995ef5172f649795b032
   [decisao-f2e]=2eeb631db2eec392f5265b688c90730a85a69472c131bafec9ec9e8ba774fd87
-  [binario-base]=54c0979a1b91f3afa4a0119bc403f3bff3880d4236f7a8d2ddc6604c79c44ae4
-  [binario-cand]=d38a951d81c4144114d5c306c30093ec938551479d841f91ef65c2beed07f21f
+  [binario-base]=7008b62b31dc2cf32f35e97d72e5f6923dc823d78fddc52a0d275d7cce4970dd
+  [binario-cand]=1e809fd925c3fa8a9b36d25b8ec95a49aba24d858e205e17601290519c879bd7
   [script-f2b-extrai-v3]=39b4edecbdd6f40a0eeb61d460031aa63454143d8e3f3f18fc1f823975a69a73
   [script-f2e-extrai]=b57540a7bae920f1176ce14fe48c4d95fa93a5e99aad599a07f313c088f9bec7
   [script-f2-extrai]=b9075ad7baabb8c847cca5d0e6b2049520f98ace792b509389edd88e5bf61aac
