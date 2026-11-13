@@ -94,10 +94,6 @@ if [ "${VERIFICA:-0}" != 1 ] && [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
     esac
   done
 fi
-# Congelamento PENDENTE: enquanto o critério não disser COMPLETO (par C0/C1 novo, com a trava de GPU por lista, compilado e congelado), nenhuma execução real abre.
-if [ "${VERIFICA:-0}" != 1 ] && [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
-  grep -qx 'Estado do congelamento: COMPLETO' "$CRIT_F2E" 2> /dev/null || recusa "congelamento PENDENTE: o critério não traz 'Estado do congelamento: COMPLETO' (os binários C0/C1 atuais não têm a trava de GPU por lista); nada foi tocado"
-fi
 sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # SHAs congelados. O próprio roda-f2e-janela.sh NÃO pode conter o seu sha (nem o critério o do roteiro nem o do extrator): --verifica-fixos imprime o do roteiro e o dos extratores à parte (linhas informativas).
@@ -466,6 +462,10 @@ case $LIMITE in ''|*[!0-9]*) recusa "limite inválido: $LIMITE";; esac
 [ "$LIMITE" -ge 1 ] && [ "$LIMITE" -le $LIMITE_MAX ] || recusa "limite fora de 1..$LIMITE_MAX s: $LIMITE"
 [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] || recusa "portão fechado: sem PRIMEIRA_PALAVRA_AUTORIZADA=1 (o 'autorizo' do Breno que nomeia a janela)"
 [ -n "$UUID" ] && [ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser o UUID da gpu_5090 (arquivo local $GPU_ARQ, um UUID válido por linha); veio outro valor ou o arquivo falta"
+# Congelamento PENDENTE: enquanto o critério não disser COMPLETO (par C0/C1 novo, com a trava de GPU por lista, compilado e congelado), nenhuma execução real abre.
+if [ "${VERIFICA:-0}" != 1 ] && [ "${CMP_MODO_TESTE:-0}" != 1 ]; then
+  grep -qx 'Estado do congelamento: COMPLETO' "$CRIT_F2E" 2> /dev/null || recusa "congelamento PENDENTE: o critério não traz 'Estado do congelamento: COMPLETO' (os binários C0/C1 atuais não têm a trava de GPU por lista); nada foi tocado"
+fi
 [ -x "$BIN_BASE" ] && [ -x "$BIN_CAND" ] || recusa "binário não executável: $BIN_BASE ou $BIN_CAND"
 [ -x "$LIMITE_SH" ] && [ -x "$LASTRO_SH" ] && [ -x "$MONITOR" ] || recusa "faltam roda-com-limite-f2e.sh, roda-f2e-lastro.sh ou roda-f2e-monitor.sh executáveis"
 [ -f "$EXTRAI" ] && [ -f "$PERFIL_EXTRAI" ] && [ -f "$INSTR_EXTRAI" ] && [ -f "$F2_EXTRAI" ] && [ -f "$F2B_EXTRAI" ] && [ -f "$F2E_EXTRAI" ] || recusa "faltam f2e-cmp-extrai.py, f2e-perfil-extrai.py, f2e-instrumento-extrai.py, f2e-f2-extrai.py, f2e-f2b-extrai.py ou f2e-extrai.py"
