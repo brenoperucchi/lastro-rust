@@ -29,7 +29,8 @@
 # do binário (emenda 5, item 11: o envelope interrompe a janela e não inicia células posteriores); celula.json é gravado mesmo assim.
 set -u
 AQUI=$(cd "$(dirname "$0")" && pwd -P)
-UUID=GPU-00005090-0000-0000-0000-000000005090
+GPU_ARQ=$(realpath -m -- "${F2E_GPU_ARQ:-$AQUI/gpu-local.uuids}")   # UUID da GPU desta execução: arquivo LOCAL fora do git (um UUID por linha); nos resultados vai só o rótulo gpu_5090
+UUID=$(grep -m1 -E '^GPU-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' "$GPU_ARQ" 2> /dev/null) || UUID=
 BIN=$AQUI/../../rust/moe-rt/target/release/primeira-palavra
 MONITOR=${MONITOR_SH:-$AQUI/roda-f2e-monitor.sh}
 M1=${MODELO_1B:-$HOME/models/granite-3.1-1b-a400m-instruct}
@@ -77,7 +78,7 @@ case $N in ''|*[!0-9]*) uso;; esac
 [ "$N" -ge 1 ] && [ "$N" -le 50 ] || recusa "--n fora de 1..50: $N"
 [ -n "$SAIDA" ] || uso
 [ "${PRIMEIRA_PALAVRA_AUTORIZADA:-}" = 1 ] || recusa "portão fechado: sem PRIMEIRA_PALAVRA_AUTORIZADA=1"
-[ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser $UUID (a RTX 5090; a 3080 Ti e a 4090 nunca); veio '${CUDA_VISIBLE_DEVICES:-}'"
+[ -n "$UUID" ] && [ "${CUDA_VISIBLE_DEVICES:-}" = "$UUID" ] || recusa "CUDA_VISIBLE_DEVICES tem de ser o UUID da gpu_5090 (arquivo local $GPU_ARQ, um UUID válido por linha); veio outro valor ou o arquivo falta"
 [ -x "$BIN" ] || recusa "binário não executável: $BIN"
 [ -x "$MONITOR" ] || recusa "monitor não executável: $MONITOR"
 if [ -e "$SAIDA" ]; then recusa "$SAIDA já existe: pasta de saída nova"; fi

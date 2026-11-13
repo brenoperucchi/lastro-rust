@@ -37,7 +37,8 @@ confere "roteiro usa --repete 3" 'grep -q -- "--repete 3" "$J"'
 # Parte 2: modo --interno com CÉLULA FALSA (relógio virtual, nvidia-smi falso, binários falsos). Nenhuma GPU, nenhuma janela real.
 # O binário candidato falso só delega os subcomandos --planeja-* (CPU pura) ao binário congelado real; o base falso não faz nada.
 PLAN_BIN=$HOME/lastro-f2e/binarios/primeira-palavra-f2e-cand-d38a951d
-UUID=GPU-00005090-0000-0000-0000-000000005090
+UUID=GPU-12345678-1234-1234-1234-123456789abc
+printf "%s\n" "$UUID" > "$D/gpu-local.uuids"; export F2E_GPU_ARQ="$D/gpu-local.uuids"
 if [ ! -x "$PLAN_BIN" ]; then echo "FALHOU: binário congelado ausente ($PLAN_BIN): preciso dos subcomandos de planejamento"; exit 1; fi
 mkdir -p "$D/m/1b" "$D/m/3b" "$D/textos" "$D/refs"
 for m in 1b 3b; do echo cfg > "$D/m/$m/config.json"; echo tok > "$D/m/$m/tokenizer.json"; done
@@ -58,7 +59,7 @@ cat > "$D/smi" <<'F'
 #!/usr/bin/env bash
 case $* in
   *"--query-gpu=power.limit --format"*) f=${0%/*}/pot-seq; if [ -s "$f" ]; then l=$(head -n 1 "$f"); tail -n +2 "$f" > "$f.t"; mv "$f.t" "$f"; [ "$l" = FALHA ] && exit 1; echo "$l"; else echo "600.00 W"; fi;;
-  *"-i GPU-00005090-0000-0000-0000-000000005090 --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max"*) echo "600.00 W, 16, 4";;
+  *"-i GPU-12345678-1234-1234-1234-123456789abc --query-gpu=power.limit,pcie.link.width.current,pcie.link.gen.max"*) echo "600.00 W, 16, 4";;
   *query-gpu*) echo "uuid, memory.used [MiB], utilization.gpu [%]"; echo "GPU-falsa, 1 MiB, 0 %";;
   *) echo;;
 esac
@@ -254,7 +255,7 @@ printf -- '- hash do commit candidato: %s\n' "$WT_HASH" > "$D/crit-f2e.md"
 confere "--teste-gpu sem --coleta: recusa 2" "[ $rc1 = 2 ] && grep -q 'só existe junto de --coleta' $D/oute-tg"
 "$J" --modelos 1b --saida "$D/se-tg2" --coleta --teste-gpu > "$D/oute-tg2" 2>&1; rc2=$?
 confere "--teste-gpu sem --worktree-cand: recusa 2" "[ $rc2 = 2 ] && grep -q 'exige --worktree-cand' $D/oute-tg2"
-env -i PATH="$PATH" HOME="$HOME" PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID F2E_CARGO_TESTE=x "$J" --modelos 1b --coleta --saida "$D/se-real" --bin-base "$D/pp-base" --bin-cand "$D/pp-cand" --limite 600 > "$D/oute-real" 2>&1; rc3=$?
+env -i PATH="$PATH" HOME="$HOME" F2E_GPU_ARQ="$F2E_GPU_ARQ" PRIMEIRA_PALAVRA_AUTORIZADA=1 CUDA_VISIBLE_DEVICES=$UUID F2E_CARGO_TESTE=x "$J" --modelos 1b --coleta --saida "$D/se-real" --bin-base "$D/pp-base" --bin-cand "$D/pp-cand" --limite 600 > "$D/oute-real" 2>&1; rc3=$?
 confere "coleta no modo real com F2E_CARGO_TESTE no ambiente: recusa 2, nada criado" "[ $rc3 = 2 ] && grep -q 'variável só de teste presente no modo real: F2E_CARGO_TESTE' $D/oute-real && [ ! -e $D/se-real ]"
 if [ $falhas = 0 ]; then
   echo "TODOS OS TESTES PASSARAM"

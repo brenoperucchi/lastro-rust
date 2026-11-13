@@ -19,7 +19,8 @@
 # O portão grava o que mediu em ARQ (linhas chave=valor) e uma linha final `portao=OK` ou `portao=FALHA motivo`.
 # Variáveis só para teste: NVIDIA_SMI, PROC_STAT, CMP_CPU_JANELA (s, padrão 3), CMP_CPU_ESPERA (s, padrão 20), LOADAVG_ARQ.
 set -u
-UUID=GPU-00005090-0000-0000-0000-000000005090
+GPU_ARQ=$(realpath -m -- "${F2E_GPU_ARQ:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/gpu-local.uuids}")   # UUID da GPU desta execução: arquivo LOCAL fora do git (um UUID por linha); nos resultados vai só o rótulo gpu_5090
+UUID=$(grep -m1 -E '^GPU-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' "$GPU_ARQ" 2> /dev/null) || UUID=
 SMI=${NVIDIA_SMI:-nvidia-smi}
 STAT=${PROC_STAT:-/proc/stat}
 JANELA_CPU=${CMP_CPU_JANELA:-3}

@@ -30,8 +30,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 const VARIAVEL: &str = "LEITURA_CORRECAO_AUTORIZADA";
-/// O UUID da RTX 3080 Ti combinado para a janela: `CUDA_VISIBLE_DEVICES` tem de ser exatamente isto.
-const UUID_3080TI: &str = "GPU-b22d9465-8552-9f97-812e-380b590645f8";
+use moe_rt::lastro_cli::exige_uuid;
 /// O hash do critério aprovado e congelado: um `--criterio` com outro conteúdo recusa antes de abrir a GPU.
 const CRITERIO_SHA: &str = "f18f659797582f45d3d8732fb89a08c8451bd28c3c5dde295e3b2b6a572eba12";
 const FRACAO_SLOTS: f64 = 0.10;
@@ -113,13 +112,6 @@ fn exige_autorizacao(valor: Option<&str>) -> Result<(), String> {
     }
 }
 
-/// O UUID da GPU: `CUDA_VISIBLE_DEVICES` tem de ser exatamente o da 3080 Ti combinada.
-fn exige_uuid(valor: Option<&str>) -> Result<(), String> {
-    match valor {
-        Some(UUID_3080TI) => Ok(()),
-        outro => Err(format!("CUDA_VISIBLE_DEVICES tem de ser {UUID_3080TI} (a 3080 Ti combinada); veio {outro:?}")),
-    }
-}
 
 /// As chaves da tabela congelada: `slots` chaves espaçadas por igual no espaço camada·E + expert (divisão mista fixa).
 fn chaves_congeladas(slots_all: usize, slots: usize) -> Vec<u32> {
@@ -445,6 +437,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use moe_rt::lastro_cli::{exige_uuid_com, UUID_3080TI};
+
+    #[test]
+    fn trava_aceita_so_a_lista_explicita_de_uuids() {
+        // UUID sintético (nunca o de uma máquina real): vive só neste teste
+        let extra = "GPU-12345678-1234-1234-1234-123456789abc".to_string();
+        let lista = vec![extra.clone()];
+        // sem lista local só a 3080 Ti passa
+        assert!(exige_uuid_com(Some(UUID_3080TI), &[]).is_ok());
+        assert!(exige_uuid_com(Some(&extra), &[]).is_err(), "sem a lista local o UUID extra não passa");
+        // com a lista, a 3080 Ti e o extra passam; fora da lista, vazio, 0, None e lista "a,b" não
+        assert!(exige_uuid_com(Some(UUID_3080TI), &lista).is_ok() && exige_uuid_com(Some(&extra), &lista).is_ok());
+        for v in [None, Some(""), Some("0"), Some("GPU-00000000-0000-0000-0000-000000000000"), Some("GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd")] {
+            assert!(exige_uuid_com(v, &lista).is_err(), "{v:?}");
+        }
+        assert!(exige_uuid_com(Some(&format!("{UUID_3080TI},{extra}")), &lista).is_err(), "lista a,b recusada");
+        assert!(exige_uuid_com(Some(&format!("{extra},{extra}")), &lista).is_err(), "lista a,b recusada");
+        // a mensagem de recusa nunca imprime o UUID da lista local
+        let msg = exige_uuid_com(Some("GPU-00000000-0000-0000-0000-000000000000"), &lista).unwrap_err();
+        assert!(!msg.contains(&extra) && msg.contains("CUDA_VISIBLE_DEVICES"), "{msg}");
+        // a lista local é validada: linha inválida recusa, sem eco do conteúdo
+        assert_eq!(moe_rt::lastro_cli::parse_uuids_extra(&format!("# gpu_5090\n\n{extra}\n")).unwrap(), lista);
+        let e = moe_rt::lastro_cli::parse_uuids_extra("nao-e-uuid\n").unwrap_err();
+        assert!(e.contains("linha 1") && !e.contains("nao-e-uuid"), "{e}");
+    }
 
     fn v(s: &[&str]) -> Vec<String> {
         s.iter().map(|x| x.to_string()).collect()

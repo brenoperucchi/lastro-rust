@@ -149,11 +149,61 @@ pub fn exige_autorizacao(valor: Option<&str>) -> Result<(), String> {
     }
 }
 
-pub fn exige_uuid(valor: Option<&str>) -> Result<(), String> {
-    match valor {
-        Some(UUID_3080TI) => Ok(()),
-        outro => Err(format!("CUDA_VISIBLE_DEVICES tem de ser {UUID_3080TI} (a 3080 Ti combinada); veio {outro:?}")),
+/// Variável com o caminho de um arquivo LOCAL (fora do git) com UUIDs extras aceitos, um por linha (`GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`;
+/// linhas vazias e comentários com `#` são ignorados). Sem a variável, só a 3080 Ti passa. Os UUIDs do arquivo nunca entram em commit nem em mensagem.
+pub const VAR_UUIDS_EXTRA: &str = "LASTRO_UUIDS_EXTRA_ARQ";
+
+/// Formato `GPU-` + 8-4-4-4-12 hexadecimais minúsculos.
+pub fn uuid_valido(s: &str) -> bool {
+    let Some(r) = s.strip_prefix("GPU-") else { return false };
+    let partes: Vec<&str> = r.split('-').collect();
+    partes.len() == 5
+        && partes.iter().zip([8usize, 4, 4, 4, 12]).all(|(p, n)| p.len() == n && p.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+}
+
+/// Lê a lista local: erro (nunca silêncio) em qualquer linha inválida; a mensagem diz só o número da linha, nunca o conteúdo.
+pub fn parse_uuids_extra(texto: &str) -> Result<Vec<String>, String> {
+    let mut v = Vec::new();
+    for (i, linha) in texto.lines().enumerate() {
+        let l = linha.trim();
+        if l.is_empty() || l.starts_with('#') {
+            continue;
+        }
+        if !uuid_valido(l) {
+            return Err(format!("lista local de UUIDs ({VAR_UUIDS_EXTRA}): linha {} não é um UUID no formato GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", i + 1));
+        }
+        v.push(l.to_string());
     }
+    Ok(v)
+}
+
+/// Carrega a lista local a partir do caminho (None ou vazio = sem lista). Falha de leitura é erro (a trava fica fechada).
+pub fn le_uuids_extra(caminho: Option<&str>) -> Result<Vec<String>, String> {
+    match caminho {
+        None | Some("") => Ok(Vec::new()),
+        Some(c) => {
+            let t = std::fs::read_to_string(c).map_err(|e| format!("lista local de UUIDs ({VAR_UUIDS_EXTRA}) ilegível: {}", e.kind()))?;
+            parse_uuids_extra(&t)
+        }
+    }
+}
+
+/// Função ÚNICA da trava: `CUDA_VISIBLE_DEVICES` tem de ser UM único UUID, igual ao da 3080 Ti ou a um da lista `extras`. Lista "a,b", vazio,
+/// `0` ou qualquer UUID fora da lista são recusados. A mensagem nunca imprime UUID da lista local.
+pub fn exige_uuid_com(valor: Option<&str>, extras: &[String]) -> Result<(), String> {
+    match valor {
+        Some(v) if v == UUID_3080TI || (uuid_valido(v) && extras.iter().any(|e| e == v)) => Ok(()),
+        outro => Err(format!("CUDA_VISIBLE_DEVICES tem de ser um único UUID da lista combinada (a 3080 Ti {UUID_3080TI} ou uma GPU da lista local {VAR_UUIDS_EXTRA}); veio {outro:?}")),
+    }
+}
+
+/// A trava com a lista local lida do ambiente. A 3080 Ti passa sem tocar no arquivo; qualquer outro valor lê a lista (arquivo ilegível ou inválido = recusa).
+pub fn exige_uuid(valor: Option<&str>) -> Result<(), String> {
+    if valor == Some(UUID_3080TI) {
+        return Ok(());
+    }
+    let extras = le_uuids_extra(std::env::var(VAR_UUIDS_EXTRA).ok().as_deref())?;
+    exige_uuid_com(valor, &extras)
 }
 
 /// Portão e UUID, só chamados depois de todas as recusas e imediatamente antes de abrir o device.
@@ -323,6 +373,47 @@ mod tests {
         assert_eq!(m, 2048 - 64);
         assert!(confere_tamanho(&t, &exato, &data, 64).is_ok());
         assert!(confere_tamanho(&t, &format!("{exato}another few words"), &data, 64).is_err());
+    }
+
+    #[test]
+    fn trava_aceita_so_a_lista_explicita_de_uuids() {
+        // UUID sintético (nunca o de uma máquina real): vive só neste teste
+        let extra = "GPU-12345678-1234-1234-1234-123456789abc".to_string();
+        let lista = vec![extra.clone()];
+        // sem lista local só a 3080 Ti passa
+        assert!(exige_uuid_com(Some(UUID_3080TI), &[]).is_ok());
+        assert!(exige_uuid_com(Some(&extra), &[]).is_err(), "sem a lista local o UUID extra não passa");
+        // com a lista, a 3080 Ti e o extra passam; fora da lista, vazio, 0, None e lista "a,b" não
+        assert!(exige_uuid_com(Some(UUID_3080TI), &lista).is_ok() && exige_uuid_com(Some(&extra), &lista).is_ok());
+        for v in [None, Some(""), Some("0"), Some("GPU-00000000-0000-0000-0000-000000000000"), Some("GPU-8f424b03-d413-23cd-ae38-a423d13bf7bd")] {
+            assert!(exige_uuid_com(v, &lista).is_err(), "{v:?}");
+        }
+        assert!(exige_uuid_com(Some(&format!("{UUID_3080TI},{extra}")), &lista).is_err(), "lista a,b recusada");
+        assert!(exige_uuid_com(Some(&format!("{extra},{extra}")), &lista).is_err(), "lista a,b recusada");
+        // a mensagem de recusa nunca imprime o UUID da lista local
+        let msg = exige_uuid_com(Some("GPU-00000000-0000-0000-0000-000000000000"), &lista).unwrap_err();
+        assert!(!msg.contains(&extra) && msg.contains("CUDA_VISIBLE_DEVICES"), "{msg}");
+        // a lista local é validada: linha inválida recusa, sem eco do conteúdo
+        assert_eq!(parse_uuids_extra(&format!("# gpu_5090\n\n{extra}\n")).unwrap(), lista);
+        let e = parse_uuids_extra("nao-e-uuid\n").unwrap_err();
+        assert!(e.contains("linha 1") && !e.contains("nao-e-uuid"), "{e}");
+    }
+
+    #[test]
+    fn lista_local_por_arquivo_e_fail_closed() {
+        let extra = "GPU-12345678-1234-1234-1234-123456789abc";
+        let dir = std::env::temp_dir();
+        let ok = dir.join(format!("lastro-uuids-teste-{}-ok.txt", std::process::id()));
+        let ruim = dir.join(format!("lastro-uuids-teste-{}-ruim.txt", std::process::id()));
+        std::fs::write(&ok, format!("{extra}\n")).unwrap();
+        std::fs::write(&ruim, "lixo\n").unwrap();
+        assert_eq!(le_uuids_extra(Some(ok.to_str().unwrap())).unwrap(), vec![extra.to_string()]);
+        assert!(le_uuids_extra(None).unwrap().is_empty() && le_uuids_extra(Some("")).unwrap().is_empty());
+        assert!(le_uuids_extra(Some(ruim.to_str().unwrap())).is_err(), "arquivo com linha inválida");
+        assert!(le_uuids_extra(Some("/caminho/que/nao/existe/uuids.txt")).is_err(), "arquivo ausente: trava fechada");
+        std::fs::remove_file(&ok).unwrap();
+        std::fs::remove_file(&ruim).unwrap();
+        assert!(uuid_valido(UUID_3080TI) && !uuid_valido("GPU-ABCDEF12-1234-1234-1234-123456789abc") && !uuid_valido("0") && !uuid_valido(""));
     }
 
     #[test]

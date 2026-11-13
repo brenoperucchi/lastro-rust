@@ -65,3 +65,6 @@ lscpu*.txt
 *-timers/
 timers*.txt
 *.timers-*.txt
+
+# UUIDs locais das GPUs da execucao F2E (nao versionar)
+/qual-runs/**/gpu-local.uuids

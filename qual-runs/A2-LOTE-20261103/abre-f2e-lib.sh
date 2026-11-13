@@ -1,6 +1,9 @@
 # Funções comuns dos scripts de abertura da F2E (lidas por source), rodam NA maquina 5090. Sem GPU aqui.
 AQ=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-UUID=GPU-00005090-0000-0000-0000-000000005090
+GPU_ARQ=$(realpath -m -- "${F2E_GPU_ARQ:-$AQ/gpu-local.uuids}")   # UUID da GPU desta execução: arquivo LOCAL fora do git (um UUID por linha); nos resultados vai só o rótulo gpu_5090
+UUID=$(grep -m1 -E '^GPU-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$' "$GPU_ARQ" 2> /dev/null) || UUID=
+[ -n "$UUID" ] || { echo "sem UUID da GPU local (arquivo $GPU_ARQ ausente ou sem um UUID válido): recusado (nada foi tocado)"; exit 2; }
+export LASTRO_UUIDS_EXTRA_ARQ="$GPU_ARQ" F2E_GPU_ARQ="$GPU_ARQ"
 JANELA_GPU=${F2E_JANELA_GPU:-$HOME/janela-gpu-strata.sh}
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 export CUDA_TOOLKIT_PATH=${CUDA_TOOLKIT_PATH:-/usr/local/cuda}

@@ -38,7 +38,7 @@ Shas congelados (o roteiro recusa se qualquer um divergir):
 
 ## 2. Desenho
 
-Por modelo (1B e 3B), texto médio, 9 processos em quadrado latino 3x3 (D_O1 D_O3 B2_O3, B2_O3 D_O1 D_O3, D_O3 B2_O3 D_O1), cada um com `--repete 3` (1 aquecimento e 3 medidas). Teto de 1200 s por janela e modelo. Portões: UUID da RTX 5090 (GPU-00005090-0000-0000-0000-000000005090; a 3080 Ti e a 4090 nunca), limite de potência de 600.00 W lido do `nvidia-smi` no preflight e ao fim (era o valor vigente na maquina 5090 em 12/11; outro valor recusa), portão de CPU da própria máquina abaixo de 10% (janela de 3 s em `/proc/stat`, espera de até 20 s, medido NA maquina 5090 antes de cada célula), nenhum outro processo de compute na GPU (a GPU é liberada do Strata só pelo `janela-gpu-strata.sh`), `--verifica-fixos` sem pipe mascarando o código, binário congelado por sha sem escrita, nenhum `cargo test` nem outro processo de GPU em execução.
+Por modelo (1B e 3B), texto médio, 9 processos em quadrado latino 3x3 (D_O1 D_O3 B2_O3, B2_O3 D_O1 D_O3, D_O3 B2_O3 D_O1), cada um com `--repete 3` (1 aquecimento e 3 medidas). Teto de 1200 s por janela e modelo. Portões: UUID da RTX 5090 (gpu_5090; a 3080 Ti e a 4090 nunca), limite de potência de 600.00 W lido do `nvidia-smi` no preflight e ao fim (era o valor vigente na maquina 5090 em 12/11; outro valor recusa), portão de CPU da própria máquina abaixo de 10% (janela de 3 s em `/proc/stat`, espera de até 20 s, medido NA maquina 5090 antes de cada célula), nenhum outro processo de compute na GPU (a GPU é liberada do Strata só pelo `janela-gpu-strata.sh`), `--verifica-fixos` sem pipe mascarando o código, binário congelado por sha sem escrita, nenhum `cargo test` nem outro processo de GPU em execução.
 
 ## 3. Estatística
 

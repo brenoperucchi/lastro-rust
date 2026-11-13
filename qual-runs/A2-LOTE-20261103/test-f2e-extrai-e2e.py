@@ -119,7 +119,7 @@ def monta(d, pre_novo=100.0, pre_b2=100.0, passo_novo=1.0, ordem_b2=None, ordem=
     w(os.path.join(sj, "integridade-depois.txt"), "".join("%s %s\n" % kv for kv in list(obs.items()) + list(extra.items())))
     w(os.path.join(sj, "teto-excedido.txt"), "")
     w(os.path.join(sj, "integridade-fixos.txt"), "".join("%s %s %s OK\n" % (k, h_, h_) for k, h_ in obs.items()) + "potencia 600.00_W 600.00_W OK\n")
-    w(os.path.join(sj, "ambiente.txt"), "uuid=GPU-00005090-0000-0000-0000-000000005090\npotencia_inicio=600.00_W\npotencia_fim=600.00_W\nbinario_base=%s\nbinario_cand=%s\n" % (BASE, CAND))
+    w(os.path.join(sj, "ambiente.txt"), "uuid=gpu_5090\npotencia_inicio=600.00_W\npotencia_fim=600.00_W\nbinario_base=%s\nbinario_cand=%s\n" % (BASE, CAND))
     w(os.path.join(sj, "orcamento.json"), json.dumps({"modelos": ["1b"], "nao_rodou": [], "cortes": [], "decorrido_s": 500, "limite_s": 1200}))
     seq = ordem or C.ORDEM_CONTROLE
     w(os.path.join(sj, "ordem.txt"), "".join("%02d ctrl-1b-L100-medio-%02d-%s n=3 braco=%s inicio=%ds fim=%ds rc=0\n" % (k + 1, k + 1, b, b, 20 * k, 20 * k + 19) for k, b in enumerate(seq)))

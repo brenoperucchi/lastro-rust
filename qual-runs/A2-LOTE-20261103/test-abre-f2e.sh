@@ -15,12 +15,13 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$REPO/roda-f2e-janela.sh"
 git -C "$REPO" init -q && git -C "$REPO" add -A && git -C "$REPO" -c user.name=t -c user.email=t@t commit -q -m base
 COMMIT=$(git -C "$REPO" rev-parse HEAD)
 # envelope de mentira: grava os argumentos e a sha vista
-printf '#!/usr/bin/env bash\necho "chamado: $*" >> "%s/chamadas.txt"\necho "sha_vista=$F2E_PROC_ENVELOPE_SHA" >> "%s/chamadas.txt"\nexit 0\n' "$B" "$B" > "$B/janela-falsa.sh"; chmod +x "$B/janela-falsa.sh"
+printf '#!/usr/bin/env bash\necho "chamado: $*" >> "%s/chamadas.txt"\necho "sha_vista=$F2E_PROC_ENVELOPE_SHA" >> "%s/chamadas.txt"\necho "uuids_arq=$LASTRO_UUIDS_EXTRA_ARQ" >> "%s/chamadas.txt"\nexit 0\n' "$B" "$B" "$B" > "$B/janela-falsa.sh"; chmod +x "$B/janela-falsa.sh"
 SHA_FALSA=$(sha256sum "$B/janela-falsa.sh" | cut -d' ' -f1)
 # coletas aprovadas de mentira
 for m in 1b 3b; do mkdir -p "$B/coleta-$m"; printf '{"modelo":"%s","HC1b":{"classe":"dentro"},"teste_gpu":{"executado":true,"passou":true,"procedencia_completa":true}}' $m > "$B/coleta-$m/f2e-coleta-resultado.json"; done
 HFAKE=$B/home; mkdir -p "$HFAKE"; cp "$B/janela-falsa.sh" "$HFAKE/janela-gpu-strata.sh"
-roda() { ( cd "$REPO" && env HOME="$HFAKE" F2E_TMPDIR="$B/tmp" "$@" ); }
+printf "GPU-12345678-1234-1234-1234-123456789abc\n" > "$B/gpu-local.uuids"   # UUID sintetico
+roda() { ( cd "$REPO" && env HOME="$HFAKE" F2E_TMPDIR="$B/tmp" F2E_GPU_ARQ="$B/gpu-local.uuids" "$@" ); }
 
 # modo real: HOME de mentira com um janela de sha DIFERENTE do revisado -> recusa 2 sem chamar
 roda F2E_COMMIT=$COMMIT bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o1.txt" 2>&1; espera "modo real, envelope com sha diferente do revisado" 2 $?
@@ -37,6 +38,11 @@ grep -q "não em F2E_COMMIT" "$B/o3.txt" && ok "mensagem de commit" || ruim "sem
 # F2E_COMMIT certo e arvore limpa chega ao teste do envelope (falha so no sha)
 roda F2E_COMMIT=$COMMIT bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o4.txt" 2>&1; espera "commit certo, arvore limpa, mas envelope diferente" 2 $?
 grep -q "o revisado é" "$B/o4.txt" && ok "passou pelas travas de clone e parou no envelope" || ruim "o4: $(cat "$B/o4.txt")"
+# sem arquivo local de UUID (ou sem UUID valido): recusa 2 antes de tocar em qualquer coisa
+roda F2E_GPU_ARQ="$B/nao-existe.uuids" F2E_COMMIT=$COMMIT bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o12.txt" 2>&1; espera "sem arquivo local de UUID" 2 $?
+grep -q "sem UUID da GPU local" "$B/o12.txt" && ! grep -q "GPU-12345678" "$B/o12.txt" && ok "mensagem sem eco de UUID" || ruim "o12: $(cat "$B/o12.txt")"
+echo "lixo" > "$B/ruim.uuids"
+roda F2E_GPU_ARQ="$B/ruim.uuids" F2E_COMMIT=$COMMIT bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o13.txt" 2>&1; espera "arquivo local sem UUID valido" 2 $?
 # sem F2E_COMMIT: recusa 2 (obrigatorio fora do modo de teste)
 roda bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o9.txt" 2>&1; espera "sem F2E_COMMIT" 2 $?
 grep -q "falta F2E_COMMIT" "$B/o9.txt" && ok "mensagem de F2E_COMMIT obrigatorio" || ruim "o9: $(cat "$B/o9.txt")"
@@ -56,7 +62,7 @@ roda F2E_JANELA_GPU="$B/janela-falsa.sh" bash abre-f2e-medicao.sh "$B/coleta-1b"
 [ ! -e "$B/chamadas.txt" ] && ok "sem chamada" || ruim "chamou"
 # modo de teste: envelope esperado igual -> chama; diferente -> recusa
 roda F2E_MODO_TESTE=1 F2E_JANELA_GPU="$B/janela-falsa.sh" F2E_ENVELOPE_SHA_ESPERADO=$SHA_FALSA bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o6.txt" 2>&1; espera "modo de teste com sha esperado" 0 $?
-grep -q -- "--teto 2700 -- bash .*abre-f2e-medicao.sh --interno" "$B/chamadas.txt" && grep -q "sha_vista=$SHA_FALSA" "$B/chamadas.txt" && ok "chamou o envelope com --teto 2700 e a sha no ambiente" || ruim "chamadas: $(cat "$B/chamadas.txt" 2>&1)"
+grep -q -- "--teto 2700 -- bash .*abre-f2e-medicao.sh --interno" "$B/chamadas.txt" && grep -q "sha_vista=$SHA_FALSA" "$B/chamadas.txt" && ok "chamou o envelope com --teto 2700 e a sha no ambiente"; grep -q "uuids_arq=$B/gpu-local.uuids" "$B/chamadas.txt" && ok "o arquivo de UUIDs vai ao motor por LASTRO_UUIDS_EXTRA_ARQ" || ruim "uuids_arq ausente" || ruim "chamadas: $(cat "$B/chamadas.txt" 2>&1)"
 rm -f "$B/chamadas.txt"
 roda F2E_MODO_TESTE=1 F2E_JANELA_GPU="$B/janela-falsa.sh" F2E_ENVELOPE_SHA_ESPERADO=$(printf 'x' | sha256sum | cut -d' ' -f1) bash abre-f2e-medicao.sh "$B/coleta-1b" "$B/coleta-3b" > "$B/o7.txt" 2>&1; espera "modo de teste com sha esperado diferente" 2 $?
 [ ! -e "$B/chamadas.txt" ] && ok "sem chamada" || ruim "chamou"

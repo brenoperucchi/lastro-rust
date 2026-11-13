@@ -242,7 +242,7 @@ def monta_janela(d, longo_n=5, trunc_curto=(), smoke_mut=None, medio_mut=None, b
     w(os.path.join(sj, "integridade-antes.txt"), "".join("%s %s\n" % kv for kv in obs.items()))
     w(os.path.join(sj, "integridade-depois.txt"), "".join("%s %s\n" % kv for kv in obs.items()))
     w(os.path.join(sj, "integridade-fixos.txt"), "".join("%s %s %s OK\n" % (k, h_, h_) for k, h_ in obs.items()) + "potencia 600.00_W 600.00_W OK\n")
-    w(os.path.join(sj, "ambiente.txt"), "uuid=GPU-00005090-0000-0000-0000-000000005090\npotencia_inicio=600.00_W\npotencia_fim=600.00_W\n")
+    w(os.path.join(sj, "ambiente.txt"), "uuid=gpu_5090\npotencia_inicio=600.00_W\npotencia_fim=600.00_W\n")
     w(os.path.join(sj, "orcamento.json"), json.dumps({"modelos": ["1b"], "nao_rodou": [], "cortes": [], "decorrido_s": 500, "limite_s": 1200}))
     ordem = ["01 smoke-1b-L100-curto-B2 n=1 braco=B2 inicio=0s fim=10s rc=0"]
     for k, b_ in enumerate(B.ORDEM_CONTROLE):
